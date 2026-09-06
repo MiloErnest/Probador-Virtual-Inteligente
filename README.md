@@ -80,18 +80,34 @@ Elige **una** de las dos opciones.
 winget install PostgreSQL.PostgreSQL.16
 ```
 
-El instalador pedirá una contraseña para el usuario `postgres`. **Apúntala.**
-Después, crea la base de datos del proyecto:
+**Necesita una terminal como administrador**: pulsa Inicio → escribe `PowerShell`
+→ clic derecho → *Ejecutar como administrador*. Sin elevar, la instalación se
+cancela sola con `0x800704c7 : The operation was canceled by the user`.
+
+Winget lo instala en **modo silencioso**: no verás ningún asistente y no te
+pedirá contraseña. Deja el superusuario `postgres` con la contraseña por defecto,
+que también es `postgres`, y registra un servicio de Windows que arranca solo con
+el equipo.
+
+Crea el rol y la base del proyecto (desde una terminal normal):
 
 ```powershell
-& "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -c "CREATE DATABASE vfit;"
+$env:PGPASSWORD='postgres'; & "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -h localhost -d postgres -c "CREATE ROLE vfit LOGIN PASSWORD 'vfit_dev_password';"
 ```
 
-Y ajusta esta línea en `backend\.env` con tu contraseña:
+```powershell
+$env:PGPASSWORD='postgres'; & "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -h localhost -d postgres -c "CREATE DATABASE vfit OWNER vfit;"
+```
 
-```
-DATABASE_URL=postgresql+psycopg://postgres:TU_PASSWORD@localhost:5432/vfit
-```
+Se usan **las mismas credenciales que `docker-compose.yml`** a propósito: así el
+`DATABASE_URL` de `.env.example` funciona sin cambios tanto con PostgreSQL nativo
+como con Docker. La aplicación se conecta con el rol `vfit`, nunca como
+superusuario.
+
+> ⚠️ La contraseña por defecto `postgres`/`postgres` es débil. Aceptable en una
+> base local que solo escucha en `localhost`; cámbiala si el equipo llega a estar
+> en una red compartida:
+> `ALTER USER postgres WITH PASSWORD 'otra-contrasena';`
 
 ### Opción B — Docker (más reproducible, instalación más pesada)
 
@@ -113,12 +129,37 @@ Con esta opción el `DATABASE_URL` por defecto de `.env.example` ya es correcto.
 
 ---
 
-## 3. Backend
+## 3. Arranque rápido (una vez completado el primer arranque)
 
-Sitúate en la carpeta:
+Dos scripts en la raíz del proyecto se encargan de releer el `PATH`, resolver
+las rutas y arrancar cada servicio. Funcionan **desde cualquier carpeta** y no
+requieren activar el entorno virtual.
+
+Terminal 1:
 
 ```powershell
-cd backend
+.\start-backend.ps1
+```
+
+Terminal 2:
+
+```powershell
+.\start-frontend.ps1
+```
+
+El resto de esta sección describe el primer arranque paso a paso, y qué hacer
+cuando algo falla.
+
+---
+
+## 4. Backend (primer arranque, paso a paso)
+
+Sitúate en la carpeta. **Usa la ruta absoluta** si no estás seguro de dónde
+estás: un `cd backend` cuando ya estás dentro de `backend` falla con
+`No se encuentra la ruta de acceso ...\backend\backend`.
+
+```powershell
+Set-Location "C:\Users\camil\OneDrive\Desktop\Universidad\ClaudePoryectos\backend"
 ```
 
 Crea el entorno virtual:
@@ -192,12 +233,12 @@ uvicorn app.main:app --reload
 
 ---
 
-## 4. Frontend
+## 5. Frontend (primer arranque, paso a paso)
 
 Abre una **segunda terminal** (la del backend sigue ocupada).
 
 ```powershell
-cd frontend
+Set-Location "C:\Users\camil\OneDrive\Desktop\Universidad\ClaudePoryectos\frontend"
 ```
 
 ```powershell
@@ -216,7 +257,7 @@ Aplicación: <http://localhost:5173>
 
 ---
 
-## 5. Pruebas
+## 6. Pruebas
 
 En una terminal con el entorno virtual activado y dentro de `backend`:
 
@@ -234,7 +275,7 @@ npm run typecheck
 
 ---
 
-## 6. Estructura
+## 7. Estructura
 
 ```
 backend/
@@ -273,7 +314,7 @@ procesamiento de IA sin reescribir el resto.
 
 ---
 
-## 7. Secretos
+## 8. Secretos
 
 Ninguna clave vive en el código. Todo se lee de variables de entorno:
 
@@ -285,12 +326,14 @@ Los archivos `.env.example` documentan cada variable y sí se versionan.
 
 ---
 
-## 8. Problemas frecuentes
+## 9. Problemas frecuentes
 
 | Síntoma | Causa | Solución |
 |---|---|---|
 | `El token '&&' no es un separador de instrucciones válido` | PowerShell 5.1 no soporta `&&` | Ejecuta los comandos de uno en uno, o instala PowerShell 7 |
-| `El término 'python' no se reconoce` **justo después de instalarlo** | El proceso arrancó antes de la instalación y conserva el `PATH` viejo | Cierra y reabre la aplicación entera, o recarga el `PATH` (ver sección 1) |
+| `El término 'python'` / `'npm' no se reconoce` **justo después de instalarlo** | El proceso arrancó antes de la instalación y conserva el `PATH` viejo | Cierra y reabre la aplicación entera, o usa `.\start-backend.ps1` / `.\start-frontend.ps1`, que releen el `PATH` solos |
+| `No se encuentra la ruta de acceso ...\backend\backend` | Un `cd backend` ejecutado cuando ya estabas dentro de `backend` | Usa `Set-Location` con la ruta absoluta, o los scripts de arranque |
+| `0x800704c7 : The operation was canceled by the user` al instalar con winget | El instalador pidió permisos de administrador y no se concedieron | Abre PowerShell **como administrador** y repite |
 | Al escribir `python` se abre la Microsoft Store | Alias de ejecución de Windows por delante del Python real | Desactívalo en Configuración (ver sección 1) |
 | `.venv\Scripts\Activate.ps1` no se puede cargar | Política de ejecución de scripts | `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned` |
 | `/api/health` responde `"database":"down"` | PostgreSQL no está levantado o el `DATABASE_URL` es incorrecto | Revisa la sección 2 y el `.env` |
