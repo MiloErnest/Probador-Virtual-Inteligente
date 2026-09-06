@@ -94,6 +94,8 @@
 | Hook `useApi` propio | TanStack Query | Aún no hay caché ni revalidación que gestionar. Se adoptará cuando exista la necesidad. |
 | React 18 | React 19 | Todo el ecosistema (incluido React Three Fiber, que llega en Fase 4) es compatible sin fricción. |
 | Tailwind v3 | Tailwind v4 | v4 cambia a configuración CSS-first; casi toda la documentación existente es de v3. |
+| Un solo `tsconfig.json` | *Project references* (`tsconfig.node.json`) | Las referencias exigen `composite: true`, incompatible con `noEmit`. Su ventaja son las compilaciones incrementales en monorepos; aquí solo añadían una configuración rota. |
+| PostgreSQL nativo con rol `vfit` dedicado | Usar el superusuario `postgres` | La aplicación no debe correr como superusuario, y así el `DATABASE_URL` es idéntico con instalación nativa o con Docker. |
 | Docker solo para PostgreSQL | Dockerizar toda la aplicación | El hot-reload nativo es más rápido y más fácil de depurar en desarrollo. |
 | `app/ai/` vacío, sin `Protocol` | Definir la interfaz ya | Una interfaz escrita antes de tener una implementación real casi siempre es la equivocada. |
 
@@ -107,14 +109,37 @@ Los pasos 1–4 no necesitan base de datos. La etapa está cerrada cuando los 9 
 | # | Comprobación | Esperado | Estado |
 |---|---|---|---|
 | 1 | `python --version` | 3.12.x | ✅ 3.12.10 |
-| 2 | `python -c "import sys; print(sys.prefix)"` con el venv activo | termina en `\backend\.venv` | ⬜ |
-| 3 | `pip install -r requirements-dev.txt` | sin errores | ⬜ dentro del venv |
-| 4 | `pytest` | 22 pruebas en verde | ✅ (con Python global) |
-| 5 | PostgreSQL levantado (nativo o Docker) | acepta conexiones en 5432 | ⬜ |
-| 6 | `python -m scripts.seed` | `Prendas creadas: 8 \| ya existentes: 0` | ⬜ |
-| 7 | `uvicorn app.main:app --reload` | arranca sin excepciones | ⬜ |
-| 8 | <http://localhost:8000/api/health> | `"status":"ok"`, `"database":"up"` | ⬜ |
-| 9 | <http://localhost:5173/catalogo> | 8 prendas y el indicador dice **En línea** | ⬜ |
+| 2 | venv activo (`python -c "import sys; print(sys.prefix)"`) | termina en `\backend\.venv` | ✅ |
+| 3 | `pip install -r requirements-dev.txt` | sin errores | ✅ |
+| 4 | `pytest` | 22 pruebas en verde | ✅ |
+| 5 | PostgreSQL escuchando en 5432 | servicio activo | ✅ 16.15-3 |
+| 6 | `python -m scripts.seed` | `Prendas creadas: 8` | ✅ 3 tablas, 8 filas |
+| 7 | La app arranca contra PostgreSQL | sin excepciones | ✅ |
+| 8 | `/api/health` | `"status":"ok"`, `"database":"up"` | ✅ |
+| 9 | <http://localhost:5173/catalogo> | 8 prendas y el indicador dice **En línea** | ✅ |
+
+**ETAPA 1 CERRADA.** Los 9 puntos verificados el 2026-09-06. El recorrido completo
+React → `fetch` → FastAPI → SQLAlchemy → PostgreSQL funciona, incluido el filtro
+por categoría. `npm run build` compila sin errores con TypeScript en modo estricto.
+
+## Entorno local verificado
+
+| Componente | Versión | Notas |
+|---|---|---|
+| Windows | 11 Pro | PowerShell 5.1 — **no admite `&&`** |
+| Python | 3.12.10 | venv en `backend\.venv` |
+| Node / npm | 24.19.0 / 11.17.0 | |
+| PostgreSQL | 16.15-3 | Instalado con winget en modo silencioso |
+
+**Base de datos local:** base `vfit`, rol `vfit` con contraseña `vfit_dev_password`
+(las mismas credenciales que `docker-compose.yml`, para que el `DATABASE_URL` sea
+idéntico con instalación nativa o con Docker).
+
+> ⚠️ El superusuario `postgres` quedó con la contraseña por defecto `postgres`,
+> que puso la instalación silenciosa de winget. Es aceptable en una base local
+> que solo escucha en `localhost`, pero **cámbiala si este equipo llega a estar
+> en una red compartida**:
+> `ALTER USER postgres WITH PASSWORD 'otra-contrasena';`
 
 ---
 

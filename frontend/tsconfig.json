@@ -6,6 +6,10 @@
     "module": "ESNext",
     "skipLibCheck": true,
 
+    // "node" hace falta para vite.config.ts (node:url). Al declarar `types`
+    // explícitamente se controla qué paquetes de tipos globales entran.
+    "types": ["node"],
+
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
@@ -24,6 +28,9 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src"],
-  "references": [{ "path": "./tsconfig.node.json" }]
+  // Un único proyecto que cubre la aplicación y la configuración de Vite.
+  // Se descartaron las "project references": exigen `composite: true`, que a
+  // su vez es incompatible con `noEmit`, y no aportan nada a un proyecto de
+  // este tamaño (su ventaja son las compilaciones incrementales en monorepos).
+  "include": ["src", "vite.config.ts"]
 }
