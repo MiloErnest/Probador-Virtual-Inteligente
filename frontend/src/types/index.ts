@@ -15,6 +15,23 @@ export interface Health {
   database: 'up' | 'down'
 }
 
+export interface User {
+  id: number
+  name: string
+  email: string
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+/** Respuesta de POST /api/auth/login. */
+export interface TokenResponse {
+  access_token: string
+  token_type: string
+  /** Segundos de validez del token. */
+  expires_in: number
+}
+
 export type GarmentCategory = 'dress' | 'top' | 'bottom' | 'outerwear' | 'other'
 
 export interface Garment {

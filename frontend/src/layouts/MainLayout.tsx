@@ -14,7 +14,7 @@ export default function MainLayout() {
       <footer className="border-t border-black/[0.07]">
         <div className="container-page flex flex-col gap-2 py-6 text-xs text-ink-muted sm:flex-row sm:items-center sm:justify-between">
           <p>Probador Virtual Inteligente · Proyecto universitario</p>
-          <p>Etapa 1 — Infraestructura base</p>
+          <p>Etapa 2 — Migraciones y autenticación</p>
         </div>
       </footer>
     </div>
