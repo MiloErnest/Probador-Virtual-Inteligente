@@ -8,90 +8,149 @@ Ver [PROJECT_STATUS.md](PROJECT_STATUS.md) para el detalle de lo que funciona y 
 
 ---
 
-## 1. Requisitos previos
+> ### ⚠️ Antes de copiar comandos
+>
+> Este proyecto se desarrolla en **Windows PowerShell 5.1**, donde el operador `&&`
+> **no existe** (`El token '&&' no es un separador de instrucciones válido`).
+> Por eso en este documento **cada comando va por separado**: ejecútalos de uno en
+> uno y comprueba que cada uno termina bien antes de pasar al siguiente.
+>
+> Si prefieres poder encadenar comandos con `&&`, instala PowerShell 7:
+> `winget install Microsoft.PowerShell` y usa la terminal «PowerShell 7».
 
-| Herramienta | Versión | Instalación en Windows |
-|---|---|---|
-| Python | 3.12 | `winget install Python.Python.3.12` |
-| Node.js | 22 LTS | `winget install OpenJS.NodeJS.LTS` |
-| PostgreSQL | 16 | Docker (recomendado) o `winget install PostgreSQL.PostgreSQL.16` |
-| Git | cualquiera | `winget install Git.Git` |
+---
 
-> **Windows:** si al escribir `python` se abre la Microsoft Store, desactiva el alias en
-> *Configuración → Aplicaciones → Configuración avanzada de aplicaciones → Alias de ejecución*.
-> Cierra y vuelve a abrir la terminal después de instalar cualquier herramienta.
+## 1. Instalar las herramientas
 
-Comprueba que todo esté disponible:
+Ninguna de estas viene con Windows. Instálalas de una en una:
 
-```bash
-python --version && node --version && npm --version
+```powershell
+winget install Python.Python.3.12
 ```
+
+```powershell
+winget install OpenJS.NodeJS.LTS
+```
+
+**Cierra y vuelve a abrir la terminal** después de instalar (el `PATH` no se
+actualiza en las ventanas ya abiertas).
+
+> **Si al escribir `python` se abre la Microsoft Store:** desactiva el alias en
+> *Configuración → Aplicaciones → Configuración avanzada de aplicaciones →
+> Alias de ejecución de aplicaciones*, y apaga las entradas `python.exe` y
+> `python3.exe`.
+
+Comprueba que todo responde:
+
+```powershell
+python --version; node --version; npm --version
+```
+
+Debe imprimir tres versiones. Si alguna falla, no sigas: soluciónala primero.
 
 ---
 
 ## 2. Base de datos
 
-### Opción A — Docker (recomendada)
+Elige **una** de las dos opciones.
 
-```bash
+### Opción A — PostgreSQL nativo (menos pasos)
+
+```powershell
+winget install PostgreSQL.PostgreSQL.16
+```
+
+El instalador pedirá una contraseña para el usuario `postgres`. **Apúntala.**
+Después, crea la base de datos del proyecto:
+
+```powershell
+& "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -c "CREATE DATABASE vfit;"
+```
+
+Y ajusta esta línea en `backend\.env` con tu contraseña:
+
+```
+DATABASE_URL=postgresql+psycopg://postgres:TU_PASSWORD@localhost:5432/vfit
+```
+
+### Opción B — Docker (más reproducible, instalación más pesada)
+
+Requiere WSL2, virtualización activada en la BIOS y un reinicio.
+
+```powershell
+winget install Docker.DockerDesktop
+```
+
+Reinicia, abre Docker Desktop una vez para que termine de configurarse, y luego:
+
+```powershell
 docker compose up -d
 ```
 
-Levanta PostgreSQL 16 en `localhost:5432` y Adminer en <http://localhost:8080>
+Levanta PostgreSQL en `localhost:5432` y Adminer en <http://localhost:8080>
 (Servidor: `db` · Usuario: `vfit` · Contraseña: `vfit_dev_password` · Base: `vfit`).
-
-### Opción B — PostgreSQL instalado nativamente
-
-Crea la base y el usuario, y ajusta `DATABASE_URL` en `backend/.env`:
-
-```sql
-CREATE USER vfit WITH PASSWORD 'vfit_dev_password';
-CREATE DATABASE vfit OWNER vfit;
-```
+Con esta opción el `DATABASE_URL` por defecto de `.env.example` ya es correcto.
 
 ---
 
 ## 3. Backend
 
-```bash
+Sitúate en la carpeta:
+
+```powershell
 cd backend
+```
+
+Crea el entorno virtual:
+
+```powershell
 python -m venv .venv
 ```
 
-Activar el entorno virtual:
+Actívalo:
 
 ```powershell
 .venv\Scripts\Activate.ps1
 ```
 
-> Si PowerShell bloquea el script:
-> `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`
+> Si PowerShell bloquea el script («no se puede cargar porque la ejecución de
+> scripts está deshabilitada»), ejecuta esto una sola vez y vuelve a intentarlo:
+>
+> ```powershell
+> Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+> ```
 
-Instalar dependencias y configurar:
+Sabrás que funcionó porque el prompt empieza por `(.venv)`.
 
-```bash
+Instala las dependencias:
+
+```powershell
 pip install -r requirements-dev.txt
 ```
+
+Crea tu archivo de configuración:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Genera una `SECRET_KEY` propia y pégala en `.env`:
+Genera una clave secreta y pégala en `SECRET_KEY` dentro de `.env`:
 
-```bash
+```powershell
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-Cargar el catálogo de ejemplo (crea también las tablas):
+Crea las tablas y carga el catálogo de ejemplo:
 
-```bash
+```powershell
 python -m scripts.seed
 ```
 
-Arrancar:
+Debe imprimir `Prendas creadas: 8 | ya existentes: 0`.
 
-```bash
+Arranca el servidor:
+
+```powershell
 uvicorn app.main:app --reload
 ```
 
@@ -99,14 +158,19 @@ uvicorn app.main:app --reload
 - Documentación interactiva: <http://localhost:8000/docs>
 - Salud: <http://localhost:8000/api/health>
 
+**Deja esta terminal abierta.** El servidor se queda ejecutándose.
+
 ---
 
 ## 4. Frontend
 
-En otra terminal:
+Abre una **segunda terminal** (la del backend sigue ocupada).
 
-```bash
+```powershell
 cd frontend
+```
+
+```powershell
 npm install
 ```
 
@@ -114,7 +178,7 @@ npm install
 Copy-Item .env.example .env
 ```
 
-```bash
+```powershell
 npm run dev
 ```
 
@@ -124,17 +188,17 @@ Aplicación: <http://localhost:5173>
 
 ## 5. Pruebas
 
-```bash
-cd backend
+En una terminal con el entorno virtual activado y dentro de `backend`:
+
+```powershell
 pytest
 ```
 
-Los tests usan SQLite en memoria: **no necesitan Docker ni PostgreSQL levantados.**
+Los tests usan SQLite en memoria: **no necesitan PostgreSQL ni Docker levantados.**
 
-Verificación de tipos del frontend:
+Verificación de tipos del frontend (dentro de `frontend`):
 
-```bash
-cd frontend
+```powershell
 npm run typecheck
 ```
 
@@ -188,3 +252,16 @@ Ninguna clave vive en el código. Todo se lee de variables de entorno:
   Nunca pongas ahí claves de API.
 
 Los archivos `.env.example` documentan cada variable y sí se versionan.
+
+---
+
+## 8. Problemas frecuentes
+
+| Síntoma | Causa | Solución |
+|---|---|---|
+| `El token '&&' no es un separador de instrucciones válido` | PowerShell 5.1 no soporta `&&` | Ejecuta los comandos de uno en uno, o instala PowerShell 7 |
+| Al escribir `python` se abre la Microsoft Store | Alias de ejecución de Windows | Desactívalo en Configuración (ver sección 1) |
+| `.venv\Scripts\Activate.ps1` no se puede cargar | Política de ejecución de scripts | `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned` |
+| `/api/health` responde `"database":"down"` | PostgreSQL no está levantado o el `DATABASE_URL` es incorrecto | Revisa la sección 2 y el `.env` |
+| El frontend muestra «Sin conexión» | El backend no está corriendo | Arranca `uvicorn` en la otra terminal |
+| `npm install` muy lento o con errores de permisos | El proyecto está dentro de OneDrive | Mueve el proyecto a `C:\dev\` |

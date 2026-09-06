@@ -66,6 +66,7 @@
 | # | Descripción | Impacto | Plan |
 |---|---|---|---|
 | 1 | **Nada se ha ejecutado todavía**: la máquina no tenía Python, Node ni Docker instalados cuando se escribió el código. | Alto | Instalar el toolchain y ejecutar la lista de verificación de este documento. |
+| 1b | ~~El README encadenaba comandos con `&&`, que no existe en Windows PowerShell 5.1.~~ **Corregido**: un comando por bloque. | — | Resuelto. Entorno de referencia: Windows 11 + PowerShell 5.1. |
 | 2 | **No hay autenticación.** Todos los endpoints son públicos. | Alto | Etapa 2. No exponer el backend fuera de `localhost` hasta entonces. |
 | 3 | **Sin migraciones.** `create_all` solo crea tablas nuevas; no aplica cambios a tablas existentes. | Medio | Alembic al inicio de la Etapa 2. |
 | 4 | Los tests usan SQLite, no PostgreSQL. No validan comportamiento específico de PG. | Medio | Aceptable mientras el esquema sea portable. |
