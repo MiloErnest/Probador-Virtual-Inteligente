@@ -1,0 +1,46 @@
+# Infraestructura local mínima para la Etapa 1.
+#
+# Deliberadamente solo contiene PostgreSQL (+ Adminer para inspeccionarlo).
+# El backend y el frontend se ejecutan en local con uvicorn / vite, porque en
+# desarrollo el hot-reload nativo es más rápido y más fácil de depurar que
+# dentro de un contenedor. Se dockerizará la aplicación cuando exista un
+# despliegue real que lo requiera.
+#
+# Arranque:  docker compose up -d
+# Parada:    docker compose down          (conserva los datos)
+# Reset:     docker compose down -v       (BORRA los datos)
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: vfit_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vfit
+      POSTGRES_PASSWORD: vfit_dev_password
+      POSTGRES_DB: vfit
+    ports:
+      # Expuesto en el host para que uvicorn (fuera de Docker) pueda conectarse.
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vfit -d vfit"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Cliente web para inspeccionar la base de datos: http://localhost:8080
+  # Sistema: PostgreSQL | Servidor: db | Usuario: vfit | Contraseña: vfit_dev_password
+  adminer:
+    image: adminer:4
+    container_name: vfit_adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

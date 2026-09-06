@@ -1,0 +1,17 @@
+# Dependencias de ejecución - Etapa 1
+# Versiones fijadas para que el entorno sea reproducible entre máquinas.
+# NO se incluye PyTorch, MediaPipe ni ningún modelo de IA: entran en Fase 2/3
+# en su propio archivo de requisitos para no inflar la instalación base.
+
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+pydantic==2.10.4
+pydantic-settings==2.7.0
+email-validator==2.2.0   # requerido por pydantic.EmailStr
+
+SQLAlchemy==2.0.36
+psycopg[binary]==3.2.3
+
+python-multipart==0.0.20
+bcrypt==4.2.1

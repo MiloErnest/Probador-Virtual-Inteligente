@@ -1,0 +1,44 @@
+# ---------- Python / Backend ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# ---------- Node / Frontend ----------
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+
+# ---------- Secretos y configuración local ----------
+.env
+.env.*
+!.env.example
+
+# ---------- Archivos subidos por usuarios ----------
+# Se versiona la estructura de carpetas (via .gitkeep), no el contenido.
+# El orden importa: git no entra en un directorio excluido, por eso hay que
+# reincluir los directorios ANTES de reincluir los .gitkeep.
+backend/storage/**/*
+!backend/storage/**/
+!backend/storage/**/.gitkeep
+
+# ---------- Editores / SO ----------
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- Logs ----------
+*.log
+npm-debug.log*
