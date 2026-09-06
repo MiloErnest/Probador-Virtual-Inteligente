@@ -9,10 +9,10 @@ configurable, lo pide aquí en lugar de leer `os.environ` por su cuenta.
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # backend/app/core/config.py -> parents[0]=core, [1]=app, [2]=backend
 BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -40,7 +40,11 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+psycopg://vfit:vfit_dev_password@localhost:5432/vfit"
 
     # --- CORS ---
-    CORS_ORIGINS: list[str] = ["http://localhost:5173"]
+    # `NoDecode` desactiva el parseo JSON automático que pydantic-settings
+    # aplica a los campos de tipo complejo. Sin él, el valor del .env se
+    # intenta leer como JSON ANTES de que corra el validador de abajo, y una
+    # lista separada por comas revienta con SettingsError.
+    CORS_ORIGINS: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
 
     # --- Almacenamiento de imágenes ---
     STORAGE_DIR: Path = BACKEND_DIR / "storage"
@@ -54,7 +58,12 @@ class Settings(BaseSettings):
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:
-        """Permite definir CORS_ORIGINS como lista separada por comas en el .env."""
+        """CORS_ORIGINS se escribe como lista separada por comas en el .env.
+
+        El formato JSON (`["http://a", "http://b"]`) NO está soportado: al
+        desactivar el decodificador con `NoDecode`, aquí llega siempre la
+        cadena en bruto.
+        """
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value

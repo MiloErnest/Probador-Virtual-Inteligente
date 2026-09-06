@@ -23,7 +23,7 @@
 - [x] Servido de archivos estáticos en `/media`.
 - [x] Historial de pruebas (solo lectura) — `GET /api/try-on-sessions`.
 - [x] Script de datos de ejemplo (`python -m scripts.seed`), idempotente.
-- [x] 17 pruebas automatizadas sobre SQLite en memoria.
+- [x] 22 pruebas automatizadas sobre SQLite en memoria — **ejecutadas y en verde**.
 
 ### Frontend
 - [x] React 18 + TypeScript + Vite + Tailwind, configurados a mano y con alias `@/`.
@@ -65,8 +65,9 @@
 
 | # | Descripción | Impacto | Plan |
 |---|---|---|---|
-| 1 | **Nada se ha ejecutado todavía**: la máquina no tenía Python, Node ni Docker instalados cuando se escribió el código. | Alto | Instalar el toolchain y ejecutar la lista de verificación de este documento. |
+| 1 | ~~Nada se ha ejecutado todavía.~~ **Backend verificado**: 22 pruebas en verde con Python 3.12.10. Falta ejecutar el frontend y la base de datos. | Medio | Pasos 6–8 de la verificación. |
 | 1b | ~~El README encadenaba comandos con `&&`, que no existe en Windows PowerShell 5.1.~~ **Corregido**: un comando por bloque. | — | Resuelto. Entorno de referencia: Windows 11 + PowerShell 5.1. |
+| 1c | ~~`CORS_ORIGINS` reventaba el arranque: pydantic-settings decodifica los campos complejos como JSON antes de los validadores.~~ **Corregido** con `NoDecode` + 5 pruebas de regresión. | — | Resuelto. |
 | 2 | **No hay autenticación.** Todos los endpoints son públicos. | Alto | Etapa 2. No exponer el backend fuera de `localhost` hasta entonces. |
 | 3 | **Sin migraciones.** `create_all` solo crea tablas nuevas; no aplica cambios a tablas existentes. | Medio | Alembic al inicio de la Etapa 2. |
 | 4 | Los tests usan SQLite, no PostgreSQL. No validan comportamiento específico de PG. | Medio | Aceptable mientras el esquema sea portable. |
@@ -100,16 +101,20 @@
 
 ## Verificación de la Etapa 1
 
-Ejecutar en orden. La etapa está cerrada cuando los 8 pasos pasan.
+Ejecutar en orden, **un comando por vez** (PowerShell 5.1 no admite `&&`).
+Los pasos 1–4 no necesitan base de datos. La etapa está cerrada cuando los 9 pasan.
 
-1. `docker compose up -d` → el contenedor `vfit_db` queda en estado *healthy*.
-2. `cd backend && pip install -r requirements-dev.txt` → sin errores.
-3. `python -m scripts.seed` → imprime `Prendas creadas: 8 | ya existentes: 0`.
-4. `pytest` → todos los tests en verde.
-5. `uvicorn app.main:app --reload` → arranca sin excepciones.
-6. <http://localhost:8000/api/health> → `{"status":"ok", ..., "database":"up"}`.
-7. `cd frontend && npm install && npm run dev` → arranca en el puerto 5173.
-8. <http://localhost:5173/catalogo> → se ven 8 prendas y el indicador superior dice **En línea**.
+| # | Comprobación | Esperado | Estado |
+|---|---|---|---|
+| 1 | `python --version` | 3.12.x | ✅ 3.12.10 |
+| 2 | `python -c "import sys; print(sys.prefix)"` con el venv activo | termina en `\backend\.venv` | ⬜ |
+| 3 | `pip install -r requirements-dev.txt` | sin errores | ⬜ dentro del venv |
+| 4 | `pytest` | 22 pruebas en verde | ✅ (con Python global) |
+| 5 | PostgreSQL levantado (nativo o Docker) | acepta conexiones en 5432 | ⬜ |
+| 6 | `python -m scripts.seed` | `Prendas creadas: 8 \| ya existentes: 0` | ⬜ |
+| 7 | `uvicorn app.main:app --reload` | arranca sin excepciones | ⬜ |
+| 8 | <http://localhost:8000/api/health> | `"status":"ok"`, `"database":"up"` | ⬜ |
+| 9 | <http://localhost:5173/catalogo> | 8 prendas y el indicador dice **En línea** | ⬜ |
 
 ---
 

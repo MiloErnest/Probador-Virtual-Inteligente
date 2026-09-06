@@ -32,13 +32,33 @@ winget install Python.Python.3.12
 winget install OpenJS.NodeJS.LTS
 ```
 
-**Cierra y vuelve a abrir la terminal** después de instalar (el `PATH` no se
-actualiza en las ventanas ya abiertas).
+### Refrescar el PATH después de instalar
 
-> **Si al escribir `python` se abre la Microsoft Store:** desactiva el alias en
+Windows fija el `PATH` cuando arranca un proceso: **los programas ya abiertos
+siguen viendo el PATH antiguo**, aunque la instalación haya ido bien. Por eso
+justo después de instalar algo suele aparecer un
+`El término 'python' no se reconoce...` aunque el programa exista.
+
+La forma segura es **cerrar la aplicación entera** (el editor o terminal, no solo
+la pestaña) y volver a abrirla. Si prefieres no cerrar nada, recarga el PATH en
+la sesión actual:
+
+```powershell
+$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
+```
+
+> **Si al escribir `python` se abre la Microsoft Store:** eso es el alias de
+> Windows (un archivo de 0 bytes en `WindowsApps`). Ocurre cuando el Python real
+> no está en el `PATH`, o está después del alias. Comprueba primero cuál se está
+> usando:
+>
+> ```powershell
+> Get-Command python -All | Select-Object -ExpandProperty Source
+> ```
+>
+> Si el primero es `...\WindowsApps\python.exe`, desactiva el alias en
 > *Configuración → Aplicaciones → Configuración avanzada de aplicaciones →
-> Alias de ejecución de aplicaciones*, y apaga las entradas `python.exe` y
-> `python3.exe`.
+> Alias de ejecución de aplicaciones*, y apaga `python.exe` y `python3.exe`.
 
 Comprueba que todo responde:
 
@@ -120,7 +140,17 @@ Actívalo:
 > Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 > ```
 
-Sabrás que funcionó porque el prompt empieza por `(.venv)`.
+**Comprueba que el entorno está realmente activo antes de seguir.** El prefijo
+`(.venv)` del prompt es fácil de pasar por alto, y si te equivocas aquí las
+dependencias se instalan en el Python global sin avisar:
+
+```powershell
+python -c "import sys; print(sys.prefix)"
+```
+
+Debe terminar en `\backend\.venv`. Si en cambio imprime
+`...\Programs\Python\Python312`, el entorno **no** está activo: no continúes
+hasta resolverlo.
 
 Instala las dependencias:
 
@@ -260,8 +290,11 @@ Los archivos `.env.example` documentan cada variable y sí se versionan.
 | Síntoma | Causa | Solución |
 |---|---|---|
 | `El token '&&' no es un separador de instrucciones válido` | PowerShell 5.1 no soporta `&&` | Ejecuta los comandos de uno en uno, o instala PowerShell 7 |
-| Al escribir `python` se abre la Microsoft Store | Alias de ejecución de Windows | Desactívalo en Configuración (ver sección 1) |
+| `El término 'python' no se reconoce` **justo después de instalarlo** | El proceso arrancó antes de la instalación y conserva el `PATH` viejo | Cierra y reabre la aplicación entera, o recarga el `PATH` (ver sección 1) |
+| Al escribir `python` se abre la Microsoft Store | Alias de ejecución de Windows por delante del Python real | Desactívalo en Configuración (ver sección 1) |
 | `.venv\Scripts\Activate.ps1` no se puede cargar | Política de ejecución de scripts | `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned` |
 | `/api/health` responde `"database":"down"` | PostgreSQL no está levantado o el `DATABASE_URL` es incorrecto | Revisa la sección 2 y el `.env` |
 | El frontend muestra «Sin conexión» | El backend no está corriendo | Arranca `uvicorn` en la otra terminal |
+| Los paquetes se instalan en el Python global en vez de en `.venv` | El entorno virtual no estaba activado | Verifica con `python -c "import sys; print(sys.prefix)"` antes de instalar |
+| `SettingsError: error parsing value for field "CORS_ORIGINS"` | Valor del `.env` con formato JSON en vez de separado por comas | Usa `CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173` |
 | `npm install` muy lento o con errores de permisos | El proyecto está dentro de OneDrive | Mueve el proyecto a `C:\dev\` |
