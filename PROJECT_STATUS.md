@@ -153,4 +153,8 @@ idéntico con instalación nativa o con Docker).
 4. Formularios de registro y login en el frontend, con el token en memoria.
 5. Retirar el campo manual de "ID de usuario" de *Mis pruebas*.
 
-No se empieza la Etapa 2 hasta que los 8 puntos de verificación estén en verde.
+La Etapa 1 está cerrada y verificada, así que la Etapa 2 puede empezar.
+
+> **Nota de continuidad:** cada etapa se desarrolla en una conversación nueva.
+> Este documento y [CLAUDE.md](CLAUDE.md) son el único puente entre sesiones —
+> mantenlos al día al cerrar cada etapa.
