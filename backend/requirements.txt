@@ -15,3 +15,13 @@ psycopg[binary]==3.2.3
 
 python-multipart==0.0.20
 bcrypt==4.2.1
+
+# --- Etapa 2 ---
+# Migraciones de esquema. Sustituye a `create_all`, que solo crea tablas
+# nuevas y no aplica cambios a las que ya tienen datos.
+alembic==1.19.2
+
+# Tokens JWT. Se elige PyJWT sobre `python-jose` (el de la documentacion
+# antigua de FastAPI): python-jose tiene mantenimiento irregular e historial
+# de CVEs. PyJWT es Python puro, sin compilacion ni dependencias pesadas.
+PyJWT==2.13.0

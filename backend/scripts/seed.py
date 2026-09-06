@@ -10,7 +10,7 @@ hasta que se suba una con POST /api/garments/{id}/image.
 
 from sqlalchemy import select
 
-from app.core.database import SessionLocal, create_tables
+from app.core.database import SessionLocal, get_schema_revision
 from app.models.garment import Garment, GarmentCategory
 
 SAMPLE_GARMENTS: list[dict] = [
@@ -58,7 +58,15 @@ SAMPLE_GARMENTS: list[dict] = [
 
 
 def main() -> None:
-    create_tables()
+    # Antes creaba las tablas por su cuenta con `create_all`. Desde la Etapa 2
+    # el esquema es responsabilidad de Alembic, y un script de datos no debe
+    # tener la potestad de inventarse un esquema paralelo. Si la base no está
+    # migrada, se dice qué hacer en vez de fallar con un error de SQL opaco.
+    if get_schema_revision() is None:
+        raise SystemExit(
+            "La base de datos no tiene migraciones aplicadas.\n"
+            "Ejecuta primero, desde la carpeta backend/:  alembic upgrade head"
+        )
 
     created = 0
     skipped = 0

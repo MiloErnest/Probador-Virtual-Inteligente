@@ -10,7 +10,7 @@ Si en el futuro medimos que la BD es el cuello de botella, migraremos a
 
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings
@@ -36,14 +36,36 @@ def get_session() -> Generator[Session, None, None]:
 
 
 def create_tables() -> None:
-    """Crea las tablas que aún no existan.
+    """Crea las tablas que aún no existan, directamente desde los modelos.
 
-    Suficiente para la Etapa 1. NO gestiona cambios de esquema: en cuanto
-    modifiquemos una tabla con datos reales necesitaremos migraciones.
-    Alembic es la primera tarea de la Etapa 2 (ver PROJECT_STATUS.md).
+    ATENCIÓN: desde la Etapa 2, el esquema de la base de datos lo gobierna
+    Alembic. Esta función YA NO se llama al arrancar la aplicación.
+
+    `create_all` solo crea tablas que faltan; no altera las que ya existen.
+    Contra una base con datos, un cambio de columna se ignora en silencio y
+    todo parece haber funcionado — que es justo el fallo que motivó poner
+    Alembic antes que la autenticación.
+
+    Se conserva únicamente para los tests, que levantan un esquema desechable
+    en SQLite desde los metadatos (ver tests/conftest.py). Para cualquier base
+    real, la orden correcta es:
+
+        alembic upgrade head
     """
     # La importación va aquí, no arriba, para evitar un ciclo de importación
     # y para garantizar que todos los modelos estén registrados en Base.metadata.
     from app.models import Base  # noqa: PLC0415
 
     Base.metadata.create_all(bind=engine)
+
+
+def get_schema_revision() -> str | None:
+    """Revisión de Alembic aplicada en la base, o None si no hay ninguna.
+
+    Sirve para distinguir "la base no está migrada" de "la base no responde",
+    que producen síntomas muy parecidos y arreglos muy distintos.
+    """
+    with engine.connect() as connection:
+        if not inspect(connection).has_table("alembic_version"):
+            return None
+        return connection.execute(text("SELECT version_num FROM alembic_version")).scalar()

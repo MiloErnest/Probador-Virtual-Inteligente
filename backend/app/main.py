@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import api_router
 from app.core.config import settings
-from app.core.database import create_tables
+from app.core.database import get_schema_revision
 from app.services.storage import LocalStorage, get_storage
 
 logger = logging.getLogger("app")
@@ -27,18 +27,29 @@ async def lifespan(_: FastAPI):
     if isinstance(storage, LocalStorage):
         storage.ensure_directories()
 
-    # La aplicación arranca aunque PostgreSQL no esté disponible. Así el
-    # frontend puede consultar /api/health y mostrar un diagnóstico claro
-    # ("backend arriba, base de datos caída") en lugar de un error de red.
+    # Desde la Etapa 2 el esquema lo gobierna Alembic: la aplicación NO crea
+    # tablas al arrancar. Solo informa de en qué revisión está la base, para
+    # que "falta migrar" no se confunda con "la base está caída".
+    #
+    # La aplicación arranca igualmente aunque PostgreSQL no esté disponible.
+    # Así el frontend puede consultar /api/health y mostrar un diagnóstico
+    # claro ("backend arriba, base de datos caída") en lugar de un error de red.
     try:
-        create_tables()
-        logger.info("Tablas verificadas correctamente.")
+        revision = get_schema_revision()
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "No se pudo conectar a la base de datos al arrancar: %s. "
             "La API responderá, pero /api/health indicará database=down.",
             exc,
         )
+    else:
+        if revision is None:
+            logger.warning(
+                "La base de datos responde pero no tiene migraciones aplicadas. "
+                "Ejecuta 'alembic upgrade head' desde la carpeta backend/."
+            )
+        else:
+            logger.info("Base de datos en la revisión %s.", revision)
 
     yield
 
