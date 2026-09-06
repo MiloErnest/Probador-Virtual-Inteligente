@@ -6,7 +6,8 @@ evidentes leyendo el código, y evita repetir errores ya cometidos.
 **Qué es:** plataforma de prueba virtual de prendas con IA generativa, visión por
 computador, 3D y realidad aumentada. Proyecto universitario, desarrollo por fases.
 
-**Estado:** Etapa 1 (infraestructura) cerrada y verificada. Ver
+**Estado:** Etapas 1 (infraestructura) y 2 (migraciones + autenticación) cerradas
+y verificadas. Siguiente: Fase 1 del MVP, el probador virtual con IA. Ver
 [PROJECT_STATUS.md](PROJECT_STATUS.md) para el detalle vivo: qué funciona, qué
 falta, errores conocidos, decisiones técnicas y próximos pasos.
 
@@ -65,7 +66,34 @@ con PostgreSQL nativo o con Docker. El superusuario `postgres` quedó con la
 contraseña por defecto `postgres` (instalación silenciosa de winget).
 
 Ejecutar pruebas: `pytest` desde `backend/` con el venv activo. Usan SQLite en
-memoria — **no necesitan PostgreSQL levantado**.
+memoria — **no necesitan PostgreSQL levantado**. Son 54 y tardan unos 15 s;
+la lentitud es bcrypt, que es lento a propósito.
+
+**El esquema lo gobierna Alembic, no `create_all`.** La aplicación ya no crea
+tablas al arrancar. Sobre una base nueva:
+
+```powershell
+alembic upgrade head
+```
+
+Tras tocar cualquier archivo de `app/models/`, comprobar si hace falta migración:
+
+```powershell
+alembic check
+```
+
+Y si la hace:
+
+```powershell
+alembic revision --autogenerate -m "descripcion"
+```
+
+Revisa siempre el archivo generado. Autogenerate ve tablas y columnas, no
+intenciones: lo que para él es "columna nueva" puede ser un renombrado que debe
+conservar los datos.
+
+Cuenta de desarrollo ya creada en la base local: `dev@example.com` /
+`vfit-dev-1234`.
 
 ---
 
@@ -131,6 +159,9 @@ Ruta (HTTP) → Servicio (negocio) → Repositorio (SQL) → Modelo
 - `app/ai/` — **vacío a propósito**, reservado para la Fase 2. No definir el
   `Protocol` hasta tener una implementación real: una interfaz inventada antes de
   usarla suele ser la equivocada.
+- `app/api/deps.py::get_current_user` — **único** punto que convierte un token en
+  un usuario. Declararlo en una ruta es lo que la protege. Ninguna ruta debe
+  decodificar un token por su cuenta.
 - `app/vision/` — reservado para la Fase 3 (MediaPipe). No instalar sus
   dependencias hasta que haya código que las use; irán en un
   `requirements-vision.txt` aparte.
@@ -142,13 +173,27 @@ Ruta (HTTP) → Servicio (negocio) → Repositorio (SQL) → Modelo
 | Fase | Contenido | Estado |
 |---|---|---|
 | Etapa 1 | Infraestructura: catálogo, usuarios, almacenamiento | ✅ cerrada |
-| Etapa 2 | Alembic + autenticación JWT | ⬜ siguiente |
-| Fase 1 | Virtual Try-On con IA (foto + prenda → resultado) | ⬜ |
+| Etapa 2 | Alembic + autenticación JWT | ✅ cerrada |
+| Fase 1 | Virtual Try-On con IA (foto + prenda → resultado) | ⬜ siguiente |
 | Fase 2 | Generación de diseños por lenguaje natural | ⬜ |
 | Fase 3 | Análisis corporal, pose, medidas, talla | ⬜ |
 | Fase 4 | 3D, Three.js / R3F, materiales PBR, telas | ⬜ |
 | Fase 5 | Realidad aumentada, cámara en vivo, oclusión | ⬜ |
 
-**Alembic va antes que JWT** por una razón concreta: ya hay datos reales en
+**Alembic fue antes que JWT** por una razón concreta: ya había datos reales en
 PostgreSQL, y `create_all` no aplica cambios a tablas existentes — falla en
 silencio y parece que funcionó.
+
+### Reparto de acceso vigente (Etapa 2)
+
+Públicos: `/api/health`, el catálogo en lectura, `POST /api/users` (registro) y
+`POST /api/auth/login`. Todo lo demás exige `Authorization: Bearer <token>`.
+
+Tres reglas que hay que mantener al añadir endpoints:
+
+1. **El usuario sale del token, nunca de un parámetro.** El historial aceptaba
+   `?user_id=` y eso permitía leer el de cualquiera cambiando un número.
+2. **Un recurso ajeno responde 404, no 403.** Un 403 confirma que existe.
+3. **Los fallos de identificación son indistinguibles entre sí**: mismo 401,
+   mismo mensaje, y mismo tiempo de respuesta (por eso se verifica contra un
+   hash señuelo cuando el email no existe).

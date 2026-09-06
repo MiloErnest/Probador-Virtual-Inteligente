@@ -211,13 +211,24 @@ Genera una clave secreta y pégala en `SECRET_KEY` dentro de `.env`:
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-Crea las tablas y carga el catálogo de ejemplo:
+Crea las tablas aplicando las migraciones:
+
+```powershell
+alembic upgrade head
+```
+
+Es el único modo correcto de crear el esquema. La aplicación ya **no** crea
+tablas al arrancar: `create_all` solo añade tablas nuevas y no aplica cambios a
+las que ya tienen datos, así que un cambio de esquema se perdía en silencio.
+
+Carga el catálogo de ejemplo:
 
 ```powershell
 python -m scripts.seed
 ```
 
-Debe imprimir `Prendas creadas: 8 | ya existentes: 0`.
+Debe imprimir `Prendas creadas: 8 | ya existentes: 0`. Si la base no está
+migrada, el script se detiene y te lo dice en vez de fallar con un error de SQL.
 
 Arranca el servidor:
 
@@ -275,6 +286,78 @@ npm run typecheck
 
 ---
 
+## 6b. Migraciones (Alembic)
+
+Todos los comandos se ejecutan desde `backend/` con el entorno virtual activo.
+La URL de la base sale de `DATABASE_URL`; no está escrita en `alembic.ini`.
+
+Aplicar las migraciones pendientes:
+
+```powershell
+alembic upgrade head
+```
+
+Ver en qué revisión está la base:
+
+```powershell
+alembic current
+```
+
+Avisar si los modelos se han separado del esquema (útil tras tocar `app/models/`):
+
+```powershell
+alembic check
+```
+
+Generar una migración después de cambiar un modelo:
+
+```powershell
+alembic revision --autogenerate -m "descripcion del cambio"
+```
+
+**Revisa siempre el archivo generado antes de aplicarlo.** Autogenerate detecta
+tablas, columnas, índices y tipos, pero no adivina intenciones: un `ALTER` que
+para él es "columna nueva" puede ser en realidad un renombrado que debe
+conservar los datos.
+
+---
+
+## 6c. Autenticación
+
+Crear una cuenta:
+
+```powershell
+curl.exe -X POST http://localhost:8000/api/users -H "Content-Type: application/json" -d "{\"name\":\"Tu Nombre\",\"email\":\"tu@example.com\",\"password\":\"una-contrasena-larga\"}"
+```
+
+Obtener un token:
+
+```powershell
+curl.exe -X POST http://localhost:8000/api/auth/login -H "Content-Type: application/json" -d "{\"email\":\"tu@example.com\",\"password\":\"una-contrasena-larga\"}"
+```
+
+Usarlo en `/docs`: botón **Authorize**, pegar el `access_token`.
+
+Qué exige token y qué no:
+
+| Endpoint | Acceso |
+|---|---|
+| `GET /api/health` | público |
+| `GET /api/garments`, `GET /api/garments/{id}` | público |
+| `POST /api/users` (registro) | público |
+| `POST /api/auth/login` | público |
+| `GET /api/auth/me` | token |
+| `GET /api/users/{id}` | token, y solo tu propia cuenta |
+| `GET /api/try-on-sessions` | token (el usuario sale del token) |
+| `GET /api/try-on-sessions/{id}` | token, y solo tus pruebas |
+| `POST /api/garments`, `POST /api/garments/{id}/image` | token |
+
+El token dura 12 horas (`ACCESS_TOKEN_EXPIRE_MINUTES`). No hay refresh token ni
+lista de revocación: cerrar sesión descarta el token en el navegador, pero
+seguiría siendo válido hasta caducar.
+
+---
+
 ## 7. Estructura
 
 ```
@@ -288,6 +371,7 @@ backend/
     services/     Lógica de negocio + almacenamiento de archivos
     ai/           RESERVADO — Fase 2
     vision/       RESERVADO — Fase 3
+  alembic/        Migraciones de esquema
   scripts/        Utilidades (seed)
   storage/        Imágenes subidas (fuera de git)
   tests/
@@ -341,3 +425,8 @@ Los archivos `.env.example` documentan cada variable y sí se versionan.
 | Los paquetes se instalan en el Python global en vez de en `.venv` | El entorno virtual no estaba activado | Verifica con `python -c "import sys; print(sys.prefix)"` antes de instalar |
 | `SettingsError: error parsing value for field "CORS_ORIGINS"` | Valor del `.env` con formato JSON en vez de separado por comas | Usa `CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173` |
 | `npm install` muy lento o con errores de permisos | El proyecto está dentro de OneDrive | Mueve el proyecto a `C:\dev\` |
+| Al arrancar: `La base de datos responde pero no tiene migraciones aplicadas` | Falta crear el esquema | `alembic upgrade head` desde `backend/` |
+| `relation "users" does not exist` | Igual que el anterior | `alembic upgrade head` |
+| `alembic` no se reconoce como comando | Instalado después de abrir la terminal, o entorno virtual sin activar | Reabre la terminal, o usa `.\start-backend.ps1` |
+| Todas las peticiones responden 401 | El token caducó (12 h) o cambió `SECRET_KEY` | Vuelve a entrar en la aplicación |
+| Al arrancar en producción: `SECRET_KEY sigue siendo un valor de ejemplo` | `ENVIRONMENT=production` con la clave del `.env.example` | Genera una real: `python -c "import secrets; print(secrets.token_urlsafe(48))"` |

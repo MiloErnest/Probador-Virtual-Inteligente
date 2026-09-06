@@ -39,6 +39,17 @@ if (-not (Test-Path (Join-Path $backendDir '.env'))) {
 }
 
 Set-Location $backendDir
+
+# Aviso -- no accion. Aplicar migraciones automaticamente al arrancar seria
+# volver al problema que Alembic vino a resolver: cambiar el esquema sin que
+# nadie lo haya decidido. Aqui solo se dice que falta hacerlo.
+$revision = & $venvPython -c "from app.core.database import get_schema_revision; print(get_schema_revision() or '')" 2>$null
+if ($LASTEXITCODE -eq 0 -and [string]::IsNullOrWhiteSpace($revision)) {
+    Write-Host "AVISO: la base de datos no tiene migraciones aplicadas." -ForegroundColor Yellow
+    Write-Host "       Ejecuta en otra terminal, dentro de backend:  alembic upgrade head" -ForegroundColor Yellow
+    Write-Host ""
+}
+
 Write-Host "Backend en http://localhost:8000  (documentación en /docs)" -ForegroundColor Green
 Write-Host "Ctrl+C para detener." -ForegroundColor DarkGray
 Write-Host ""
