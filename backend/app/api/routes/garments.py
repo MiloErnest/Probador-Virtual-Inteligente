@@ -4,11 +4,21 @@ La creación de la prenda (JSON) y la subida de su imagen (multipart) están
 separadas a propósito: mezclar ambas en un solo endpoint obliga a enviar
 todos los campos como `Form(...)`, lo que impide validar con un schema
 Pydantic y complica los tests.
+
+Etapa 2 - reparto de acceso:
+  - Leer el catalogo es PUBLICO. Se navega sin cuenta; es el escaparate.
+  - Crear una prenda y subir su imagen exige token. Antes era publico:
+    cualquiera con acceso a la red podia llenar el catalogo o gastar el disco.
+
+Limitacion conocida y aceptada: cualquier usuario registrado puede dar de
+alta prendas, porque no existe la distincion usuario/administrador. Anadir
+un rol ahora seria infraestructura por adelantado (regla 10); llegara cuando
+haya un panel de administracion que la necesite.
 """
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 
-from app.api.deps import GarmentServiceDep
+from app.api.deps import CurrentUserDep, GarmentServiceDep
 from app.core.config import settings
 from app.models.garment import GarmentCategory
 from app.schemas.garment import GarmentCreate, GarmentRead
@@ -45,20 +55,28 @@ def get_garment(garment_id: int, service: GarmentServiceDep) -> GarmentRead:
     "",
     response_model=GarmentRead,
     status_code=status.HTTP_201_CREATED,
-    summary="Crear una prenda",
+    summary="Crear una prenda (requiere autenticacion)",
+    responses={401: {"description": "Falta el token o no es valido"}},
 )
-def create_garment(payload: GarmentCreate, service: GarmentServiceDep) -> GarmentRead:
+def create_garment(
+    payload: GarmentCreate, service: GarmentServiceDep, current_user: CurrentUserDep
+) -> GarmentRead:
+    # `current_user` no se usa en el cuerpo: esta aqui para exigir el token.
+    # La prenda no se atribuye a quien la crea porque el catalogo es comun,
+    # no una coleccion por usuario.
     return service.create(payload)
 
 
 @router.post(
     "/{garment_id}/image",
     response_model=GarmentRead,
-    summary="Subir o reemplazar la imagen de una prenda",
+    summary="Subir o reemplazar la imagen de una prenda (requiere autenticacion)",
+    responses={401: {"description": "Falta el token o no es valido"}},
 )
 async def upload_garment_image(
     garment_id: int,
     service: GarmentServiceDep,
+    current_user: CurrentUserDep,
     file: UploadFile = File(..., description="JPEG, PNG o WebP"),
 ) -> GarmentRead:
     content = await file.read()

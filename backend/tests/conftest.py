@@ -72,3 +72,60 @@ def client(db_session: Session, storage: Storage) -> Generator[TestClient, None,
         yield test_client
 
     app.dependency_overrides.clear()
+
+
+# --- Autenticación (Etapa 2) -------------------------------------------------
+#
+# Casi todos los endpoints exigen ahora un token. Estas utilidades evitan que
+# cada prueba repita el registro y el login.
+
+REGISTERED_USER = {
+    "name": "Ana Torres",
+    "email": "ana@example.com",
+    "password": "contrasena-segura-1",
+}
+
+
+def register_and_login(
+    client: TestClient, **overrides: str
+) -> tuple[dict[str, object], str]:
+    """Registra un usuario y devuelve `(usuario, token)`.
+
+    Recorre los endpoints reales en lugar de insertar en la base y firmar un
+    token a mano: así la prueba también verifica que registro y login encajan
+    entre sí, que es donde suelen aparecer los fallos.
+    """
+    payload = {**REGISTERED_USER, **overrides}
+
+    created = client.post("/api/users", json=payload)
+    assert created.status_code == 201, created.text
+
+    logged_in = client.post(
+        "/api/auth/login",
+        json={"email": payload["email"], "password": payload["password"]},
+    )
+    assert logged_in.status_code == 200, logged_in.text
+
+    return created.json(), logged_in.json()["access_token"]
+
+
+def auth_headers(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def user_token(client: TestClient) -> tuple[dict[str, object], str]:
+    """Usuario registrado y con sesión iniciada."""
+    return register_and_login(client)
+
+
+@pytest.fixture
+def auth_client(client: TestClient, user_token: tuple[dict[str, object], str]) -> TestClient:
+    """Cliente que envía el token en todas sus peticiones.
+
+    Para las pruebas que solo necesitan "estar autenticadas" y no les importa
+    quién sea el usuario.
+    """
+    _, token = user_token
+    client.headers.update(auth_headers(token))
+    return client

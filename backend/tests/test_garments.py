@@ -1,4 +1,11 @@
-"""Catálogo de prendas y subida de imágenes."""
+"""Catálogo de prendas y subida de imágenes.
+
+Etapa 2: leer el catálogo sigue siendo público, pero crear prendas y subir
+imágenes exige token. Por eso las pruebas de escritura usan `auth_client`
+(cliente con la cabecera Authorization puesta) y las de lectura siguen con
+`client` a secas — así la propia firma de cada prueba documenta qué es
+público y qué no.
+"""
 
 import base64
 
@@ -16,8 +23,8 @@ DRESS = {
 }
 
 
-def test_create_garment(client: TestClient) -> None:
-    response = client.post("/api/garments", json=DRESS)
+def test_create_garment(auth_client: TestClient) -> None:
+    response = auth_client.post("/api/garments", json=DRESS)
 
     assert response.status_code == 201
     body = response.json()
@@ -28,35 +35,35 @@ def test_create_garment(client: TestClient) -> None:
     assert body["image_url"] is None
 
 
-def test_list_garments_returns_created_ones(client: TestClient) -> None:
-    client.post("/api/garments", json=DRESS)
+def test_list_garments_returns_created_ones(auth_client: TestClient) -> None:
+    auth_client.post("/api/garments", json=DRESS)
 
-    response = client.get("/api/garments")
+    response = auth_client.get("/api/garments")
 
     assert response.status_code == 200
     assert [g["name"] for g in response.json()] == [DRESS["name"]]
 
 
-def test_list_garments_filters_by_category(client: TestClient) -> None:
-    client.post("/api/garments", json=DRESS)
-    client.post("/api/garments", json={"name": "Camisa", "category": "top"})
+def test_list_garments_filters_by_category(auth_client: TestClient) -> None:
+    auth_client.post("/api/garments", json=DRESS)
+    auth_client.post("/api/garments", json={"name": "Camisa", "category": "top"})
 
-    response = client.get("/api/garments", params={"category": "top"})
+    response = auth_client.get("/api/garments", params={"category": "top"})
 
     assert [g["name"] for g in response.json()] == ["Camisa"]
 
 
-def test_inactive_garments_are_hidden_by_default(client: TestClient) -> None:
-    client.post("/api/garments", json={**DRESS, "active": False})
+def test_inactive_garments_are_hidden_by_default(auth_client: TestClient) -> None:
+    auth_client.post("/api/garments", json={**DRESS, "active": False})
 
-    assert client.get("/api/garments").json() == []
-    assert len(client.get("/api/garments", params={"include_inactive": True}).json()) == 1
+    assert auth_client.get("/api/garments").json() == []
+    assert len(auth_client.get("/api/garments", params={"include_inactive": True}).json()) == 1
 
 
-def test_upload_image_returns_public_url(client: TestClient) -> None:
-    garment_id = client.post("/api/garments", json=DRESS).json()["id"]
+def test_upload_image_returns_public_url(auth_client: TestClient) -> None:
+    garment_id = auth_client.post("/api/garments", json=DRESS).json()["id"]
 
-    response = client.post(
+    response = auth_client.post(
         f"/api/garments/{garment_id}/image",
         files={"file": ("vestido.png", ONE_PIXEL_PNG, "image/png")},
     )
@@ -68,10 +75,10 @@ def test_upload_image_returns_public_url(client: TestClient) -> None:
     assert image_url.endswith(".png")
 
 
-def test_upload_rejects_unsupported_file_type(client: TestClient) -> None:
-    garment_id = client.post("/api/garments", json=DRESS).json()["id"]
+def test_upload_rejects_unsupported_file_type(auth_client: TestClient) -> None:
+    garment_id = auth_client.post("/api/garments", json=DRESS).json()["id"]
 
-    response = client.post(
+    response = auth_client.post(
         f"/api/garments/{garment_id}/image",
         files={"file": ("notas.txt", b"no soy una imagen", "text/plain")},
     )
@@ -79,8 +86,8 @@ def test_upload_rejects_unsupported_file_type(client: TestClient) -> None:
     assert response.status_code == 422
 
 
-def test_upload_to_unknown_garment_returns_not_found(client: TestClient) -> None:
-    response = client.post(
+def test_upload_to_unknown_garment_returns_not_found(auth_client: TestClient) -> None:
+    response = auth_client.post(
         "/api/garments/9999/image",
         files={"file": ("vestido.png", ONE_PIXEL_PNG, "image/png")},
     )
@@ -88,8 +95,9 @@ def test_upload_to_unknown_garment_returns_not_found(client: TestClient) -> None
     assert response.status_code == 404
 
 
-def test_try_on_history_is_empty_for_a_new_user(client: TestClient) -> None:
-    response = client.get("/api/try-on-sessions", params={"user_id": 1})
+def test_try_on_history_is_empty_for_a_new_user(auth_client: TestClient) -> None:
+    # Ya no se pasa `?user_id=`: el usuario sale del token.
+    response = auth_client.get("/api/try-on-sessions")
 
     assert response.status_code == 200
     assert response.json() == []

@@ -23,9 +23,20 @@ class TryOnSessionService:
         sessions = self.repository.list_by_user(user_id, limit=limit, offset=offset)
         return [self.to_read(session) for session in sessions]
 
-    def get(self, session_id: int) -> TryOnSessionRead:
+    def get_for_user(self, session_id: int, *, user_id: int) -> TryOnSessionRead:
+        """Devuelve una prueba solo si pertenece a ese usuario.
+
+        Una prueba ajena produce el mismo `NotFoundError` que una inexistente,
+        y con el mismo mensaje. Es deliberado: si el error distinguiera ambos
+        casos, recorrer identificadores permitiría contar cuántas pruebas hay
+        en el sistema y quién las tiene.
+
+        La comprobación vive aquí y no en la ruta porque "de quién es este
+        recurso" es una regla de negocio. La ruta solo traduce el error a un
+        404.
+        """
         session = self.repository.get_by_id(session_id)
-        if session is None:
+        if session is None or session.user_id != user_id:
             raise NotFoundError(f"No existe la sesión de prueba {session_id}.")
         return self.to_read(session)
 

@@ -28,6 +28,3 @@ class UserService:
         if user is None:
             raise NotFoundError(f"No existe el usuario {user_id}.")
         return user
-
-    def list(self, *, limit: int = 50, offset: int = 0) -> list[User]:
-        return self.repository.list(limit=limit, offset=offset)

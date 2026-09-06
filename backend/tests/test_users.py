@@ -1,6 +1,14 @@
-"""Registro y consulta de usuarios."""
+"""Registro y consulta de usuarios.
+
+El registro sigue siendo público por necesidad: no se puede pedir un token
+para crear la cuenta con la que se obtiene el token. La consulta, en cambio,
+exige autenticación desde la Etapa 2 y solo devuelve la cuenta propia — las
+pruebas de aislamiento entre usuarios están en test_auth.py.
+"""
 
 from fastapi.testclient import TestClient
+
+from tests.conftest import auth_headers, register_and_login
 
 VALID_USER = {
     "name": "Ana Torres",
@@ -53,14 +61,24 @@ def test_password_longer_than_bcrypt_limit_is_rejected(client: TestClient) -> No
     assert response.status_code == 422
 
 
-def test_get_user_by_id(client: TestClient) -> None:
+def test_get_user_by_id_requires_a_token(client: TestClient) -> None:
     created = client.post("/api/users", json=VALID_USER).json()
 
-    response = client.get(f"/api/users/{created['id']}")
+    assert client.get(f"/api/users/{created['id']}").status_code == 401
+
+
+def test_get_own_user_by_id(client: TestClient) -> None:
+    created, token = register_and_login(client)
+
+    response = client.get(f"/api/users/{created['id']}", headers=auth_headers(token))
 
     assert response.status_code == 200
     assert response.json()["id"] == created["id"]
 
 
 def test_get_unknown_user_returns_not_found(client: TestClient) -> None:
-    assert client.get("/api/users/9999").status_code == 404
+    _, token = register_and_login(client)
+
+    response = client.get("/api/users/9999", headers=auth_headers(token))
+
+    assert response.status_code == 404

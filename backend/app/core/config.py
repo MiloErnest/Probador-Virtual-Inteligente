@@ -11,11 +11,17 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # backend/app/core/config.py -> parents[0]=core, [1]=app, [2]=backend
 BACKEND_DIR = Path(__file__).resolve().parents[2]
+
+# Valor centinela de SECRET_KEY. Permite arrancar en local sin configurar
+# nada, pero se rechaza explícitamente en producción (ver el validador de
+# más abajo): con esta clave conocida, cualquiera puede firmar un token
+# válido para cualquier usuario.
+DEFAULT_INSECURE_SECRET = "clave-insegura-solo-para-desarrollo"
 
 
 class Settings(BaseSettings):
@@ -34,7 +40,14 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # --- Seguridad ---
-    SECRET_KEY: str = "clave-insegura-solo-para-desarrollo"
+    # Firma los tokens JWT. Cambiarla invalida todas las sesiones abiertas.
+    SECRET_KEY: str = DEFAULT_INSECURE_SECRET
+
+    # Duración del token de acceso. No hay refresh token ni lista de
+    # revocación (Etapa 2): un valor muy alto alarga la ventana en la que un
+    # token robado sigue sirviendo, y uno muy bajo obliga a reidentificarse a
+    # media sesión. 12 horas cubre una jornada de trabajo del proyecto.
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 720
 
     # --- Base de datos ---
     DATABASE_URL: str = "postgresql+psycopg://vfit:vfit_dev_password@localhost:5432/vfit"
@@ -67,6 +80,29 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
+
+    @model_validator(mode="after")
+    def _reject_insecure_secret_in_production(self) -> "Settings":
+        """Impide desplegar en producción con la clave de ejemplo.
+
+        Se falla al arrancar, no en la primera petición: un backend que firma
+        tokens con una clave pública no es un backend degradado, es un backend
+        sin autenticación. Mejor que no arranque a que parezca que funciona.
+        """
+        if self.ENVIRONMENT != "production":
+            return self
+
+        placeholders = {
+            DEFAULT_INSECURE_SECRET,
+            "cambia-esto-por-una-clave-larga-y-aleatoria",
+        }
+        if self.SECRET_KEY in placeholders or len(self.SECRET_KEY) < 32:
+            raise ValueError(
+                "SECRET_KEY sigue siendo un valor de ejemplo o es demasiado corta "
+                "y ENVIRONMENT=production. Genera una clave real con:\n"
+                '  python -c "import secrets; print(secrets.token_urlsafe(48))"'
+            )
+        return self
 
     @property
     def max_upload_bytes(self) -> int:

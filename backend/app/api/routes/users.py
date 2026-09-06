@@ -1,15 +1,20 @@
 """Endpoints de usuarios.
 
-Etapa 1: registro y consulta. El login con JWT es la primera tarea de la
-Etapa 2; hasta entonces NO hay protección de endpoints, y por eso este
-backend no debe exponerse fuera de localhost.
+El registro es público, por necesidad: no se puede exigir un token para crear
+la cuenta con la que se obtiene el token.
+
+`GET /api/users`, que devolvía la lista completa de usuarios con sus correos
+sin pedir nada, se eliminó en la Etapa 2. No tenía ningún consumidor (el
+frontend nunca lo llamó) y no existe la figura de administrador que lo
+justificara. Volverá el día que haya un panel que realmente lo necesite, y
+entonces con el control de acceso que corresponda.
 """
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, status
 
-from app.api.deps import UserServiceDep
+from app.api.deps import CurrentUserDep, UserServiceDep
 from app.schemas.user import UserCreate, UserRead
-from app.services.exceptions import ConflictError, NotFoundError
+from app.services.exceptions import ConflictError
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -28,19 +33,26 @@ def create_user(payload: UserCreate, service: UserServiceDep) -> UserRead:
     return UserRead.model_validate(user)
 
 
-@router.get("", response_model=list[UserRead], summary="Listar usuarios")
-def list_users(
-    service: UserServiceDep,
-    limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-) -> list[UserRead]:
-    return [UserRead.model_validate(u) for u in service.list(limit=limit, offset=offset)]
+@router.get(
+    "/{user_id}",
+    response_model=UserRead,
+    summary="Obtener un usuario",
+    responses={
+        401: {"description": "Falta el token o no es válido"},
+        404: {"description": "El usuario no existe o no es el tuyo"},
+    },
+)
+def get_user(user_id: int, current_user: CurrentUserDep) -> UserRead:
+    """Solo puedes consultar tu propia cuenta.
 
+    Pedir la cuenta de otro devuelve 404, no 403. Un 403 confirmaría que ese
+    usuario existe, y recorrer los identificadores bastaría para contar
+    cuántas cuentas hay registradas. Con 404, "no existe" y "no es tuyo" son
+    indistinguibles desde fuera.
 
-@router.get("/{user_id}", response_model=UserRead, summary="Obtener un usuario")
-def get_user(user_id: int, service: UserServiceDep) -> UserRead:
-    try:
-        user = service.get(user_id)
-    except NotFoundError as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
-    return UserRead.model_validate(user)
+    Ya no hace falta consultar la base: el usuario autenticado viene resuelto
+    en la dependencia, y es el único que esta ruta puede devolver.
+    """
+    if user_id != current_user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"No existe el usuario {user_id}.")
+    return UserRead.model_validate(current_user)

@@ -20,3 +20,13 @@ class ConflictError(DomainError):
 
 class ValidationError(DomainError):
     """Los datos son sintácticamente válidos pero no aceptables."""
+
+
+class AuthenticationError(DomainError):
+    """No se ha podido identificar al usuario.
+
+    Cubre a propósito tres casos distintos —el email no existe, la contraseña
+    no coincide, la cuenta está desactivada— con un único error y un único
+    mensaje. Distinguirlos en la respuesta permitiría averiguar qué correos
+    están registrados probando el formulario de acceso.
+    """

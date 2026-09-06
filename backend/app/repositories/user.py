@@ -22,10 +22,6 @@ class UserRepository:
         stmt = select(User).where(User.email == email)
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def list(self, *, limit: int = 50, offset: int = 0) -> list[User]:
-        stmt = select(User).order_by(User.id).limit(limit).offset(offset)
-        return list(self.session.execute(stmt).scalars())
-
     def create(self, *, name: str, email: str, password_hash: str) -> User:
         user = User(name=name, email=email, password_hash=password_hash)
         self.session.add(user)
