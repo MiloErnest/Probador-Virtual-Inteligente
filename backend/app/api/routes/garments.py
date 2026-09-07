@@ -82,10 +82,7 @@ async def upload_garment_image(
     content = await file.read()
     try:
         return service.set_image(
-            garment_id,
-            content=content,
-            content_type=file.content_type,
-            max_bytes=settings.max_upload_bytes,
+            garment_id, content=content, max_bytes=settings.max_upload_bytes
         )
     except NotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc

@@ -1,16 +1,37 @@
-"""RESERVADO - Fase 2: IA generativa y Virtual Try-On.
+"""Proveedores de prueba virtual.
 
-Este paquete está intencionadamente vacío. Aquí vivirá:
-
-    provider.py   -> Protocol `AIProvider` (contrato común)
-    fashn.py      -> implementación con API externa
-    local.py      -> implementación con modelo local (diffusers)
-    prompts.py    -> traducción de lenguaje natural a atributos de diseño
-
-NO se define todavía el Protocol porque aún no sabemos qué métodos y qué
-parámetros necesita realmente. Una interfaz inventada antes de tener una
-implementación concreta casi siempre resulta ser la interfaz equivocada.
-
-La costura que SÍ existe ya es `settings.AI_PROVIDER`, y el hecho de que
-ninguna capa superior (rutas, modelos) mencione a un proveedor concreto.
+Punto único donde se elige la implementación, igual que `get_storage()` hace
+con el almacenamiento. Añadir el proveedor de IA de verdad consistirá en
+escribir su clase y añadir una rama aquí; ni las rutas, ni los servicios, ni
+la base de datos cambian.
 """
+
+from app.ai.local_preview import LocalPreviewProvider
+from app.ai.provider import TryOnProvider, TryOnProviderError
+from app.core.config import settings
+
+__all__ = [
+    "TryOnProvider",
+    "TryOnProviderError",
+    "LocalPreviewProvider",
+    "get_try_on_provider",
+]
+
+
+def get_try_on_provider() -> TryOnProvider:
+    """Devuelve el proveedor configurado en `AI_PROVIDER`.
+
+    Un valor desconocido falla de inmediato y con nombres concretos, en vez
+    de caer en silencio al proveedor local: creer que estás usando el modelo
+    de IA cuando en realidad estás componiendo imágenes sería el peor de los
+    errores posibles aquí.
+    """
+    nombre = settings.AI_PROVIDER.strip().lower()
+
+    if nombre in ("local", "local-preview"):
+        return LocalPreviewProvider()
+
+    raise ValueError(
+        f"AI_PROVIDER={settings.AI_PROVIDER!r} no corresponde a ningún proveedor. "
+        "Valores admitidos: 'local'."
+    )

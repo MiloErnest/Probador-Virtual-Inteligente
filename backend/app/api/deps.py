@@ -5,6 +5,7 @@ Las rutas solo declaran qué servicio necesitan; no saben cómo se arma.
 Esto también permite sustituir cualquier pieza en los tests.
 """
 
+from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
@@ -20,6 +21,7 @@ from app.services.auth import AuthService
 from app.services.exceptions import AuthenticationError
 from app.services.garment import GarmentService
 from app.services.storage import Storage, get_storage
+from app.services.try_on_jobs import run_try_on_job
 from app.services.try_on_session import TryOnSessionService
 from app.services.user import UserService
 
@@ -49,13 +51,28 @@ def get_garment_service(session: SessionDep, storage: StorageDep) -> GarmentServ
 
 
 def get_try_on_service(session: SessionDep, storage: StorageDep) -> TryOnSessionService:
-    return TryOnSessionService(TryOnSessionRepository(session), storage)
+    return TryOnSessionService(
+        TryOnSessionRepository(session), GarmentRepository(session), storage
+    )
+
+
+def get_try_on_runner() -> Callable[[int], None]:
+    """Funcion que procesa una prueba en segundo plano.
+
+    Se inyecta en lugar de llamar a `run_try_on_job` directamente desde la
+    ruta por una razon concreta: esa funcion abre su PROPIA sesion de base de
+    datos con `SessionLocal`, que en los tests apunta a PostgreSQL y no a la
+    base SQLite de prueba. Pasando por una dependencia, `conftest.py` puede
+    sustituirla por una que use la sesion del test.
+    """
+    return run_try_on_job
 
 
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 GarmentServiceDep = Annotated[GarmentService, Depends(get_garment_service)]
 TryOnServiceDep = Annotated[TryOnSessionService, Depends(get_try_on_service)]
+TryOnRunnerDep = Annotated[Callable[[int], None], Depends(get_try_on_runner)]
 
 
 def get_current_user(

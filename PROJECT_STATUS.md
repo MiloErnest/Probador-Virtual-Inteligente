@@ -2,7 +2,7 @@
 
 > Documento vivo. Se actualiza al cerrar cada etapa.
 
-**Etapa actual:** 2 — Migraciones y autenticación (cerrada)
+**Etapa actual:** Fase 1 — Probador virtual (tubería completa; falta el modelo de IA)
 **Última actualización:** 2026-09-06
 
 ---
@@ -41,6 +41,22 @@
 - [x] Sesión en el frontend: `AuthContext`, formularios de acceso y registro,
       rutas protegidas y retirada del campo manual "ID de usuario".
 - [x] 54 pruebas automatizadas — **ejecutadas y en verde**.
+
+### Fase 1 — Probador virtual
+- [x] `POST /api/try-on-sessions` (multipart: foto + `garment_id`), responde 202 con `pending`.
+- [x] Procesamiento en segundo plano con `BackgroundTasks`; el ciclo
+      `pending -> processing -> completed | failed` funciona de punta a punta.
+- [x] `app/ai/` con el `Protocol` `TryOnProvider` y una implementación real,
+      `LocalPreviewProvider` (composición con Pillow, **no es IA**).
+- [x] Validación de imágenes por CONTENIDO con Pillow, no por la cabecera
+      `Content-Type` — cierra la limitación #6, también en el catálogo.
+- [x] `Storage.read()` añadido a la costura de almacenamiento.
+- [x] Pantalla del probador completa: elegir prenda, subir foto, sondeo del
+      estado y comparación foto/resultado.
+- [x] `python -m scripts.seed --with-images` genera siluetas de ejemplo, para
+      que el probador se pueda usar sin subir fotografías a mano.
+- [x] 70 pruebas automatizadas — **ejecutadas y en verde** (antes 54).
+- [ ] **Falta el proveedor de IA de verdad.** Es la única pieza pendiente.
 
 ### Frontend
 - [x] React 18 + TypeScript + Vite + Tailwind, configurados a mano y con alias `@/`.
@@ -82,7 +98,9 @@
 | 3 | ~~Sin migraciones.~~ **Resuelto en la Etapa 2**: Alembic gobierna el esquema; `create_all` ya no corre al arrancar. | — | Resuelto. |
 | 4 | Los tests usan SQLite, no PostgreSQL. No validan comportamiento específico de PG. | Medio | Aceptable mientras el esquema sea portable. |
 | 5 | **El proyecto está dentro de OneDrive.** `node_modules` y `.venv` provocan sincronización constante, builds lentos y bloqueos de archivo. | Medio | Mover a `C:\dev\` o excluir esas carpetas de OneDrive. |
-| 6 | El tipo de imagen se valida por la cabecera `Content-Type` que envía el cliente, no por el contenido real del archivo. | Bajo | Validar con Pillow cuando se acepten fotos de usuarios. |
+| 6 | ~~El tipo de imagen se valida por la cabecera `Content-Type`.~~ **Resuelto en la Fase 1**: `app/services/images.py` abre el archivo con Pillow y usa el formato detectado. Con prueba de regresión (un texto declarado como `image/png` se rechaza). | — | Resuelto. |
+| 15 | **`BackgroundTasks` no sobrevive a un reinicio.** Si el proceso se para mientras una prueba está en `processing`, esa prueba se queda ahí para siempre: no hay reintentos ni recuperación. | Bajo | Con un proceso y un usuario es asumible. `status` ya está modelado, así que una cola encaja sin rehacer la tabla. |
+| 16 | **El proveedor actual no es IA.** `LocalPreviewProvider` superpone la prenda sobre la foto: no detecta pose ni cuerpo. La interfaz lo advierte de forma visible. | Alto | Conectar un proveedor real de Virtual Try-On. Es lo único que falta de la Fase 1. |
 | 7 | Las imágenes se sirven desde el proceso de FastAPI. | Bajo | Delegar en Nginx/CDN cuando haya despliegue real. |
 | 8 | Sin límite de peticiones ni de tamaño total de subida por usuario. **Incluye el login**: nada impide probar contraseñas en bucle. | Medio | Antes de exponer la aplicación públicamente. `slowapi` o un límite en el proxy. |
 | 9 | **Sin refresh token ni lista de revocación.** Cerrar sesión descarta el token en el navegador, pero seguiría siendo válido hasta caducar (12 h). Cambiar `SECRET_KEY` es hoy la única forma de invalidar todas las sesiones. | Bajo | Solo si aparece la necesidad real de expulsar a alguien al momento. |
@@ -115,6 +133,11 @@
 | Sin `POST /auth/logout` | Endpoint de cierre de sesión | Sin lista de revocación no podría invalidar nada: sería un endpoint que finge trabajar. |
 | `GET /api/users` eliminado | Protegerlo con token | Devolvía todos los usuarios con sus correos, no tenía consumidor y no existe la figura de administrador que lo justifique. |
 | **Seguir siendo aplicación web** | Empaquetar en un `.exe`/instalador | Se planteó el 2026-09-06 y **el usuario lo descartó: no es necesario**. Queda anotado porque la alternativa tenía consecuencias grandes: un instalador obliga a abandonar PostgreSQL (es un servicio aparte, no se empaqueta) y expondría cualquier clave de API dentro del ejecutable. Al descartarlo, PostgreSQL se queda y la arquitectura actual no necesita ningún cambio. **No reabrir sin que el usuario lo pida.** |
+| Empezar por un proveedor local que no es IA | Esperar a tener el proveedor real | Elegir proveedor de IA cuesta dinero y exige una cuenta del usuario. Sin una implementación local, esa decisión bloqueaba TODA la Fase 1; con ella, bloquea una sola clase. Además queda como modo degradado si el servicio de IA se cae o se agota la cuota. |
+| El `Protocol` de `app/ai/` se escribió AHORA | Seguir esperando | CLAUDE.md prohibía inventarlo sin implementación. Ya hay una real, así que nace de algo que funciona. Sigue siendo joven: solo lo cumple una clase, y se dará por bueno cuando lo cumpla la segunda. |
+| `BackgroundTasks` | Celery, RQ, Redis | Regla 10. Una cola son tres piezas más (broker, worker, supervisión) para un problema que hoy no existe. Su limitación está anotada como #15. |
+| Sondeo cada 2 s desde el frontend | WebSockets / SSE | Una conexión persistente para un usuario y una prueba a la vez es infraestructura sin uso. El sondeo son diez líneas y se comporta bien ante cortes de red. |
+| 202 al crear una prueba | 201 | 201 significa "creado y listo". Aquí el recurso existe pero aún no tiene resultado, que es justo lo que 202 comunica. |
 | Sin `is_admin` para dar de alta prendas | Añadir roles ya | Regla 10: infraestructura solo cuando haya necesidad demostrada. Anotado como limitación #11. |
 | `image_key` en BD, `image_url` en la API | Guardar la URL completa | Migrar a S3/R2 no obliga a reescribir filas ya almacenadas. |
 | Enums como `VARCHAR` **sin CHECK** | `ENUM` nativo de PostgreSQL | Añadir un valor a un ENUM nativo exige `ALTER TYPE`; estas listas van a crecer. **Corrección de la Etapa 2:** este documento decía "VARCHAR + CHECK". Era falso: desde SQLAlchemy 1.4, `Enum(native_enum=False)` tiene `create_constraint=False` por defecto, y se comprobó que no existe ninguna CHECK ni en la base ni en el DDL generado. Se deja así a propósito: una CHECK devolvería el mismo coste de migración que se quería evitar. Los valores los valida Pydantic en la entrada. |
@@ -230,24 +253,28 @@ idéntico con instalación nativa o con Docker).
 
 ## Próximo paso
 
-**Fase 1 del MVP — el probador virtual funcionando**, en este orden:
+**Conectar el proveedor de IA real.** Es lo único que falta de la Fase 1: la
+tubería entera —subir, encolar, procesar, guardar, mostrar— ya funciona y está
+verificada. Conectarlo consiste en escribir una clase que cumpla
+`TryOnProvider` y añadir una rama en `get_try_on_provider()`. Ni las rutas, ni
+los servicios, ni la base de datos cambian.
 
-1. Elegir proveedor de Virtual Try-On y **definir entonces** el `Protocol` de
-   `app/ai/`, no antes: una interfaz escrita sin una implementación real casi
-   siempre es la equivocada.
-2. Migración para lo que el flujo real necesite (probablemente nada nuevo: la
-   tabla `try_on_sessions` ya tiene estado, error y proveedor).
-3. `POST /api/try-on-sessions`: subir foto, invocar a la IA, guardar resultado.
-   Procesamiento con `BackgroundTasks`, **no** con Celery.
-4. Pantalla del probador con subida de foto y selección de prenda.
-5. Sondeo del estado en el frontend mientras la prueba está en `processing`.
+**Decisión pendiente del usuario: qué proveedor.** Requiere crear una cuenta y
+pagar por uso, así que no se puede tomar desde el chat. Al elegir hay que mirar:
 
-Ya hay dos cosas resueltas que la Fase 1 daba por hechas: el usuario sale del
-token (no hay que preguntar de quién es la prueba) y cambiar el esquema es
-seguro (Alembic).
+- Coste por imagen y si hay créditos gratuitos para probar.
+- Calidad sobre fotos de cuerpo entero, que es el caso de uso.
+- Latencia. Si supera el minuto largo, habrá que revisar el corte por tiempo
+  del sondeo (hoy 2 minutos, en `TryOnPage.tsx`).
 
-Punto a decidir al empezar: el proveedor de IA. La elección condiciona el
-`Protocol`, el coste y si hace falta o no una cola de verdad.
+Al conectarlo, dos cosas obligatorias:
+
+1. La clave de API va en el `.env` (regla 7), nunca en el código.
+2. Traducir los errores del proveedor a `TryOnProviderError` con mensajes
+   presentables: ese texto acaba en la pantalla del usuario.
+
+No hace falta migración: `try_on_sessions` ya tiene `status`, `error_message`
+y `provider`. Comprobado con `alembic check`.
 
 ### Después de la Fase 1
 

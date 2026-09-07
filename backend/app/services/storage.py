@@ -44,6 +44,10 @@ class Storage(Protocol):
         """Guarda los bytes y devuelve la clave generada."""
         ...
 
+    def read(self, key: str) -> bytes:
+        """Devuelve el contenido del archivo. Lanza FileNotFoundError si no está."""
+        ...
+
     def delete(self, key: str) -> None:
         """Elimina el archivo. No falla si la clave no existe."""
         ...
@@ -74,6 +78,15 @@ class LocalStorage:
         filename = f"{uuid.uuid4().hex}{extension}"
         (target_dir / filename).write_bytes(data)
         return f"{folder}/{filename}"
+
+    def read(self, key: str) -> bytes:
+        # Añadido en la Fase 1: el proveedor de try-on necesita recuperar la
+        # foto y la prenda que se guardaron antes. Pasa por `_resolve`, así
+        # que una clave manipulada del tipo "../../.env" no sale del almacén.
+        path = self._resolve(key)
+        if path is None or not path.is_file():
+            raise FileNotFoundError(f"No existe el archivo {key!r} en el almacén.")
+        return path.read_bytes()
 
     def delete(self, key: str) -> None:
         path = self._resolve(key)

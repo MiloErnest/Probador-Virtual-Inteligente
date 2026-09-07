@@ -201,6 +201,7 @@ def test_a_deactivated_user_loses_access_with_a_still_valid_token(
         ("GET", "/api/users/1"),
         ("GET", "/api/try-on-sessions"),
         ("GET", "/api/try-on-sessions/1"),
+        ("POST", "/api/try-on-sessions"),
         ("POST", "/api/garments"),
         ("POST", "/api/garments/1/image"),
     ],

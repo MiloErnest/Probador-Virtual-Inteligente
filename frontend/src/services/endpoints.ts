@@ -30,6 +30,25 @@ export function fetchTryOnSessions(signal?: AbortSignal) {
   return api.get<TryOnSession[]>('/try-on-sessions', { signal })
 }
 
+/** Una prueba concreta. Se usa para sondear su estado mientras se procesa. */
+export function fetchTryOnSession(id: number, signal?: AbortSignal) {
+  return api.get<TryOnSession>(`/try-on-sessions/${id}`, { signal })
+}
+
+/**
+ * Crea una prueba virtual. Responde 202 con la prueba en estado `pending`:
+ * el resultado NO viene aqui. Hay que sondear con `fetchTryOnSession` hasta
+ * que el estado sea `completed` o `failed`.
+ */
+export function createTryOnSession(garmentId: number, photo: File, signal?: AbortSignal) {
+  return api.postForm<TryOnSession>(
+    '/try-on-sessions',
+    { photo },
+    { garment_id: garmentId },
+    { signal },
+  )
+}
+
 // --- Autenticacion ---
 
 export function login(email: string, password: string) {

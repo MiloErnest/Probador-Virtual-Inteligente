@@ -1,21 +1,73 @@
-"""Endpoints de sesiones de prueba virtual (solo lectura en la Etapa 1).
-
-Existen para que la pantalla "Mis pruebas" del frontend consuma datos reales
-desde el primer día. Devolverán una lista vacía hasta que se implemente la
-creación de pruebas con IA.
+"""Endpoints de sesiones de prueba virtual.
 
 Etapa 2: el usuario ya no llega en `?user_id=`, sale del token. Aquel
 parámetro no era solo una comodidad temporal, era un agujero: cualquiera
 podía leer el historial de otro cambiando un número en la URL.
+
+Fase 1: se puede crear una prueba. El endpoint de creación responde
+**inmediatamente** con la prueba en estado `pending` y deja el trabajo lento
+en una tarea de fondo. El cliente sondea `GET /{id}` hasta que el estado sea
+`completed` o `failed`.
+
+Se devuelve 202 y no 201 a propósito: 201 significa "creado y listo", y aquí
+el recurso existe pero todavía no tiene resultado.
 """
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, UploadFile, status
 
-from app.api.deps import CurrentUserDep, TryOnServiceDep
+from app.api.deps import CurrentUserDep, TryOnRunnerDep, TryOnServiceDep
+from app.core.config import settings
 from app.schemas.try_on_session import TryOnSessionRead
-from app.services.exceptions import NotFoundError
+from app.services.exceptions import NotFoundError, ValidationError
 
 router = APIRouter(prefix="/try-on-sessions", tags=["try-on"])
+
+
+@router.post(
+    "",
+    response_model=TryOnSessionRead,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Crear una prueba virtual (foto + prenda)",
+    responses={
+        401: {"description": "Falta el token o no es válido"},
+        404: {"description": "La prenda no existe"},
+        422: {"description": "La foto no es válida o la prenda no se puede probar"},
+    },
+)
+async def create_try_on_session(
+    service: TryOnServiceDep,
+    current_user: CurrentUserDep,
+    background_tasks: BackgroundTasks,
+    run_job: TryOnRunnerDep,
+    garment_id: int = Form(..., description="Prenda del catálogo que se quiere probar"),
+    photo: UploadFile = File(..., description="Fotografía de la persona (JPEG, PNG o WebP)"),
+) -> TryOnSessionRead:
+    """Registra la prueba y encola su procesado.
+
+    Es `multipart/form-data` porque lleva un archivo. `garment_id` viaja como
+    campo de formulario, no como JSON: no se pueden mezclar ambos en una misma
+    petición.
+    """
+    content = await photo.read()
+
+    try:
+        session = service.create(
+            user_id=current_user.id,
+            garment_id=garment_id,
+            photo=content,
+            max_bytes=settings.max_upload_bytes,
+        )
+    except NotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+    # Se encola DESPUÉS de que la fila exista y sin usar el servicio de esta
+    # petición: la tarea abre su propia sesión de base de datos, porque la de
+    # aquí ya estará cerrada cuando llegue a ejecutarse.
+    background_tasks.add_task(run_job, session.id)
+
+    return session
 
 
 @router.get(

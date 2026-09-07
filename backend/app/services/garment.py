@@ -8,8 +8,9 @@ almacenan los archivos.
 from app.models.garment import Garment, GarmentCategory
 from app.repositories.garment import GarmentRepository
 from app.schemas.garment import GarmentCreate, GarmentRead
-from app.services.exceptions import NotFoundError, ValidationError
-from app.services.storage import ALLOWED_IMAGE_TYPES, FOLDER_GARMENTS, Storage
+from app.services.exceptions import NotFoundError
+from app.services.images import validate_image
+from app.services.storage import FOLDER_GARMENTS, Storage
 
 
 class GarmentService:
@@ -49,23 +50,13 @@ class GarmentService:
         )
         return self.to_read(garment)
 
-    def set_image(
-        self, garment_id: int, *, content: bytes, content_type: str | None, max_bytes: int
-    ) -> GarmentRead:
+    def set_image(self, garment_id: int, *, content: bytes, max_bytes: int) -> GarmentRead:
         garment = self._get_or_fail(garment_id)
 
-        extension = ALLOWED_IMAGE_TYPES.get(content_type or "")
-        if extension is None:
-            permitidos = ", ".join(sorted(ALLOWED_IMAGE_TYPES))
-            raise ValidationError(
-                f"Tipo de archivo no permitido ({content_type!r}). Se aceptan: {permitidos}."
-            )
-        if not content:
-            raise ValidationError("El archivo está vacío.")
-        if len(content) > max_bytes:
-            raise ValidationError(
-                f"La imagen supera el tamaño máximo de {max_bytes // (1024 * 1024)} MB."
-            )
+        # Fase 1: la validación pasó a mirar el CONTENIDO del archivo en vez
+        # de la cabecera `Content-Type`, que la escribe quien sube el archivo
+        # y por tanto no prueba nada. Ver app/services/images.py.
+        extension = validate_image(content, max_bytes=max_bytes)
 
         previous_key = garment.image_key
         garment.image_key = self.storage.save(

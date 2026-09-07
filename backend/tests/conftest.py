@@ -25,10 +25,15 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.ai import get_try_on_provider
+from app.api.deps import get_try_on_runner
 from app.core.database import get_session
 from app.main import app
 from app.models import Base
+from app.repositories.garment import GarmentRepository
+from app.repositories.try_on_session import TryOnSessionRepository
 from app.services.storage import LocalStorage, Storage, get_storage
+from app.services.try_on_session import TryOnSessionService
 
 
 @pytest.fixture
@@ -67,6 +72,25 @@ def storage(tmp_path: Path) -> Storage:
 def client(db_session: Session, storage: Storage) -> Generator[TestClient, None, None]:
     app.dependency_overrides[get_session] = lambda: db_session
     app.dependency_overrides[get_storage] = lambda: storage
+
+    # La tarea de fondo real (`run_try_on_job`) abre su PROPIA sesion con
+    # `SessionLocal`, que apunta a PostgreSQL. Sin esta sustitucion, crear una
+    # prueba en un test escribiria en la base de desarrollo. Aqui se ejecuta
+    # el mismo servicio, pero contra la base SQLite del test.
+    #
+    # TestClient ejecuta las tareas de fondo de forma SINCRONA al terminar la
+    # peticion, asi que al volver de `client.post(...)` la prueba ya esta
+    # procesada. Comodo para testear, distinto de produccion: eso lo cubre la
+    # verificacion manual contra el servidor real.
+    def runner_de_prueba(session_id: int) -> None:
+        service = TryOnSessionService(
+            TryOnSessionRepository(db_session),
+            GarmentRepository(db_session),
+            storage,
+        )
+        service.process(session_id, provider=get_try_on_provider())
+
+    app.dependency_overrides[get_try_on_runner] = lambda: runner_de_prueba
 
     with TestClient(app) as test_client:
         yield test_client
@@ -129,3 +153,40 @@ def auth_client(client: TestClient, user_token: tuple[dict[str, object], str]) -
     _, token = user_token
     client.headers.update(auth_headers(token))
     return client
+
+
+# --- Imágenes de prueba (Fase 1) ---------------------------------------------
+#
+# Se generan con Pillow en vez de incrustar bytes en base64: así son imágenes
+# de verdad, con el tamaño que cada prueba necesita, y se ve de un vistazo qué
+# representan.
+
+
+def make_image_bytes(
+    width: int = 400, height: int = 600, color: str = "navy", fmt: str = "PNG"
+) -> bytes:
+    """Devuelve los bytes de una imagen real del tamaño y formato pedidos."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    buffer = BytesIO()
+    Image.new("RGB", (width, height), color).save(buffer, format=fmt)
+    return buffer.getvalue()
+
+
+@pytest.fixture
+def garment_with_image(auth_client: TestClient) -> dict:
+    """Prenda del catálogo con su imagen ya subida, lista para probarse."""
+    created = auth_client.post(
+        "/api/garments", json={"name": "Camisa de prueba", "category": "top"}
+    )
+    assert created.status_code == 201, created.text
+    garment_id = created.json()["id"]
+
+    uploaded = auth_client.post(
+        f"/api/garments/{garment_id}/image",
+        files={"file": ("camisa.png", make_image_bytes(200, 260, "crimson"), "image/png")},
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    return uploaded.json()

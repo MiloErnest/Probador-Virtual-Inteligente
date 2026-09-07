@@ -65,8 +65,10 @@ class Settings(BaseSettings):
     PUBLIC_BASE_URL: str = "http://localhost:8000"
     MAX_UPLOAD_MB: int = 8
 
-    # --- Proveedor de IA (reservado para Fase 2) ---
-    AI_PROVIDER: str = "none"
+    # --- Proveedor de prueba virtual (Fase 1) ---
+    # "local" = composicion con Pillow, sin IA ni conexion. Ver app/ai/.
+    # Cuando exista el proveedor de IA de verdad, se anadira su nombre aqui.
+    AI_PROVIDER: str = "local"
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

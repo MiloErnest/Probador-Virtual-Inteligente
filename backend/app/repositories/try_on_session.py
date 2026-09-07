@@ -1,9 +1,9 @@
-"""Acceso a datos de sesiones de prueba virtual (solo lectura en Etapa 1)."""
+"""Acceso a datos de sesiones de prueba virtual."""
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.try_on_session import TryOnSession
+from app.models.try_on_session import TryOnSession, TryOnStatus
 
 
 class TryOnSessionRepository:
@@ -24,3 +24,21 @@ class TryOnSessionRepository:
             .offset(offset)
         )
         return list(self.session.execute(stmt).scalars())
+
+    def create(self, *, user_id: int, garment_id: int, input_image_key: str) -> TryOnSession:
+        session = TryOnSession(
+            user_id=user_id,
+            garment_id=garment_id,
+            input_image_key=input_image_key,
+            status=TryOnStatus.PENDING,
+        )
+        self.session.add(session)
+        self.session.commit()
+        self.session.refresh(session)
+        return session
+
+    def save(self, session: TryOnSession) -> TryOnSession:
+        self.session.add(session)
+        self.session.commit()
+        self.session.refresh(session)
+        return session

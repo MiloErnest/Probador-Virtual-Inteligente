@@ -25,3 +25,10 @@ alembic==1.19.2
 # antigua de FastAPI): python-jose tiene mantenimiento irregular e historial
 # de CVEs. PyJWT es Python puro, sin compilacion ni dependencias pesadas.
 PyJWT==2.13.0
+
+# --- Fase 1 ---
+# Tratamiento de imagenes. Se gana el sitio dos veces:
+#   1. Valida que un archivo subido sea REALMENTE una imagen, abriendolo, en
+#      vez de fiarse de la cabecera Content-Type que envia el cliente.
+#   2. Compone la prenda sobre la foto en el proveedor local de vista previa.
+Pillow==12.3.0

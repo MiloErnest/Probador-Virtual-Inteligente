@@ -7,9 +7,12 @@ evidentes leyendo el código, y evita repetir errores ya cometidos.
 computador, 3D y realidad aumentada. Proyecto universitario, desarrollo por fases.
 
 **Estado:** Etapas 1 (infraestructura) y 2 (migraciones + autenticación) cerradas
-y verificadas. Siguiente: Fase 1 del MVP, el probador virtual con IA. Ver
-[PROJECT_STATUS.md](PROJECT_STATUS.md) para el detalle vivo: qué funciona, qué
-falta, errores conocidos, decisiones técnicas y próximos pasos.
+y verificadas. **Fase 1 en curso:** la tubería del probador funciona de punta a
+punta (subir foto → encolar → procesar → mostrar), pero el proveedor actual es
+una composición local con Pillow, **no IA**. Falta conectar el modelo real.
+
+Ver [PROJECT_STATUS.md](PROJECT_STATUS.md) para el detalle vivo: qué funciona,
+qué falta, errores conocidos, decisiones técnicas y próximos pasos.
 
 ---
 
@@ -160,9 +163,11 @@ Ruta (HTTP) → Servicio (negocio) → Repositorio (SQL) → Modelo
 - `app/services/storage.py` — protocolo `Storage`. La BD guarda `image_key`
   (clave opaca), la API expone `image_url`. Migrar a S3/R2 no obliga a reescribir
   datos.
-- `app/ai/` — **vacío a propósito**, reservado para la Fase 2. No definir el
-  `Protocol` hasta tener una implementación real: una interfaz inventada antes de
-  usarla suele ser la equivocada.
+- `app/ai/` — `TryOnProvider` (protocolo) y `LocalPreviewProvider`, que compone
+  la prenda sobre la foto con Pillow y **no es IA**. Conectar el modelo real es
+  escribir una clase mas y anadir una rama en `get_try_on_provider()`. El
+  protocolo es joven: solo lo cumple una implementacion, asi que cuenta con
+  tener que ajustarlo al escribir la segunda.
 - `app/api/deps.py::get_current_user` — **único** punto que convierte un token en
   un usuario. Declararlo en una ruta es lo que la protege. Ninguna ruta debe
   decodificar un token por su cuenta.
@@ -178,7 +183,7 @@ Ruta (HTTP) → Servicio (negocio) → Repositorio (SQL) → Modelo
 |---|---|---|
 | Etapa 1 | Infraestructura: catálogo, usuarios, almacenamiento | ✅ cerrada |
 | Etapa 2 | Alembic + autenticación JWT | ✅ cerrada |
-| Fase 1 | Virtual Try-On con IA (foto + prenda → resultado) | ⬜ siguiente |
+| Fase 1 | Virtual Try-On con IA (foto + prenda → resultado) | 🟡 tuberia lista, falta el modelo |
 | Fase 2 | Generación de diseños por lenguaje natural | ⬜ |
 | Fase 3 | Análisis corporal, pose, medidas, talla | ⬜ |
 | Fase 4 | 3D, Three.js / R3F, materiales PBR, telas | ⬜ |

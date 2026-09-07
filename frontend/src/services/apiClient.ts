@@ -114,9 +114,22 @@ export const api = {
     })
   },
 
-  postFile<T>(path: string, file: File, options: { signal?: AbortSignal } = {}) {
+  /**
+   * Envía un formulario multipart: uno o varios archivos y campos sueltos.
+   *
+   * `fields` existe porque una petición no puede llevar JSON y un archivo a la
+   * vez: cuando hay archivo, TODO viaja como campos del formulario. Por eso
+   * `garment_id` se manda así y no en un cuerpo JSON.
+   */
+  postForm<T>(
+    path: string,
+    files: Record<string, File>,
+    fields: Record<string, string | number> = {},
+    options: { signal?: AbortSignal } = {},
+  ) {
     const formData = new FormData()
-    formData.append('file', file)
+    for (const [name, file] of Object.entries(files)) formData.append(name, file)
+    for (const [name, value] of Object.entries(fields)) formData.append(name, String(value))
     // Sin Content-Type manual: el navegador debe añadir el boundary de multipart.
     return request<T>(path, { method: 'POST', headers: authHeaders(), body: formData, signal: options.signal })
   },

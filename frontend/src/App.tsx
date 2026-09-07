@@ -20,7 +20,6 @@ export default function App() {
           {/* Publicas: el catalogo es el escaparate y se navega sin cuenta. */}
           <Route index element={<HomePage />} />
           <Route path="catalogo" element={<CatalogPage />} />
-          <Route path="probador" element={<TryOnPage />} />
           <Route path="disenar" element={<DesignAIPage />} />
           <Route path="entrar" element={<LoginPage />} />
           <Route path="registro" element={<RegisterPage />} />
@@ -28,6 +27,7 @@ export default function App() {
           {/* Requieren sesion. El backend las protege igualmente; esto solo
               evita enseñar una pantalla que iba a fallar. */}
           <Route element={<RequireAuth />}>
+            <Route path="probador" element={<TryOnPage />} />
             <Route path="mis-pruebas" element={<MyTryOnsPage />} />
             <Route path="perfil" element={<ProfilePage />} />
           </Route>
