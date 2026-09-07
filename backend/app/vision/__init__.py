@@ -1,10 +1,40 @@
-"""RESERVADO - Fase 3: visión por computador.
+"""Analisis corporal (Fase 3).
 
-Aquí vivirá el análisis corporal: detección de pose con MediaPipe,
-segmentación, estimación aproximada de medidas y recomendación de talla.
-
-Vacío a propósito: MediaPipe y sus dependencias pesan cientos de MB y no
-deben instalarse hasta que exista una funcionalidad que los use. Cuando
-llegue el momento se añadirán en `requirements-vision.txt`, separado del
-`requirements.txt` base.
+Punto unico donde se elige la implementacion, igual que `app/ai/`. Cuando
+entre MediaPipe, cumple `BodyAnalysisProvider` y solo cambia una rama de
+`get_body_analysis_provider()`.
 """
+
+from app.core.config import settings
+from app.vision.analysis_provider import (
+    BodyAnalysisError,
+    BodyAnalysisProvider,
+    BodyMeasurements,
+)
+from app.vision.mock_analysis import MockBodyAnalysisProvider
+
+__all__ = [
+    "BodyAnalysisProvider",
+    "BodyAnalysisError",
+    "BodyMeasurements",
+    "MockBodyAnalysisProvider",
+    "get_body_analysis_provider",
+]
+
+
+def get_body_analysis_provider() -> BodyAnalysisProvider:
+    """Devuelve el analizador configurado en `BODY_ANALYSIS_PROVIDER`.
+
+    Un valor desconocido falla en vez de caer en silencio al simulado:
+    creer que unas medidas salieron de vision por computador cuando son una
+    proporcion inventada seria enganoso.
+    """
+    nombre = settings.BODY_ANALYSIS_PROVIDER.strip().lower()
+
+    if nombre in ("mock", "mock-analysis"):
+        return MockBodyAnalysisProvider()
+
+    raise ValueError(
+        f"BODY_ANALYSIS_PROVIDER={settings.BODY_ANALYSIS_PROVIDER!r} no corresponde "
+        "a ningun analizador. Valores admitidos: 'mock'."
+    )

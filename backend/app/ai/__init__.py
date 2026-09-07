@@ -6,8 +6,10 @@ escribir su clase y añadir una rama aquí; ni las rutas, ni los servicios, ni
 la base de datos cambian.
 """
 
+from app.ai.design_provider import DesignProvider, DesignProviderError
 from app.ai.gemini import GeminiTryOnProvider
 from app.ai.local_preview import LocalPreviewProvider
+from app.ai.mock_design import MockDesignProvider
 from app.ai.provider import TryOnProvider, TryOnProviderError
 from app.core.config import settings
 
@@ -17,6 +19,10 @@ __all__ = [
     "LocalPreviewProvider",
     "GeminiTryOnProvider",
     "get_try_on_provider",
+    "DesignProvider",
+    "DesignProviderError",
+    "MockDesignProvider",
+    "get_design_provider",
 ]
 
 
@@ -46,4 +52,22 @@ def get_try_on_provider() -> TryOnProvider:
     raise ValueError(
         f"AI_PROVIDER={settings.AI_PROVIDER!r} no corresponde a ningún proveedor. "
         "Valores admitidos: 'local', 'gemini'."
+    )
+
+
+def get_design_provider() -> DesignProvider:
+    """Devuelve el generador de diseños configurado en `DESIGN_PROVIDER`.
+
+    Mismo criterio que con el try-on: un valor desconocido falla en vez de
+    caer en silencio al simulado. Creer que estás generando con un modelo real
+    cuando en realidad estás dibujando polígonos sería el peor error posible.
+    """
+    nombre = settings.DESIGN_PROVIDER.strip().lower()
+
+    if nombre in ("mock", "mock-design"):
+        return MockDesignProvider()
+
+    raise ValueError(
+        f"DESIGN_PROVIDER={settings.DESIGN_PROVIDER!r} no corresponde a ningún "
+        "generador de diseños. Valores admitidos: 'mock'."
     )

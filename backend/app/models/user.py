@@ -8,6 +8,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
+    from app.models.body_profile import BodyProfile
+    from app.models.design import Design
     from app.models.try_on_session import TryOnSession
 
 
@@ -26,6 +28,15 @@ class User(Base, TimestampMixin):
     try_on_sessions: Mapped[list["TryOnSession"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
+    )
+    designs: Mapped[list["Design"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    body_profile: Mapped["BodyProfile | None"] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        uselist=False,
     )
 
     def __repr__(self) -> str:

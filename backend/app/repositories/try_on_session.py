@@ -25,10 +25,18 @@ class TryOnSessionRepository:
         )
         return list(self.session.execute(stmt).scalars())
 
-    def create(self, *, user_id: int, garment_id: int, input_image_key: str) -> TryOnSession:
+    def create(
+        self,
+        *,
+        user_id: int,
+        input_image_key: str,
+        garment_id: int | None = None,
+        design_id: int | None = None,
+    ) -> TryOnSession:
         session = TryOnSession(
             user_id=user_id,
             garment_id=garment_id,
+            design_id=design_id,
             input_image_key=input_image_key,
             status=TryOnStatus.PENDING,
         )

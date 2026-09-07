@@ -22,6 +22,8 @@ import logging
 
 from app.ai.provider import TryOnProvider, TryOnProviderError
 from app.models.try_on_session import TryOnSession, TryOnStatus
+from app.models.design import DesignStatus
+from app.repositories.design import DesignRepository
 from app.repositories.garment import GarmentRepository
 from app.repositories.try_on_session import TryOnSessionRepository
 from app.schemas.try_on_session import TryOnSessionRead
@@ -37,6 +39,7 @@ class TryOnSessionService:
         self,
         repository: TryOnSessionRepository,
         garments: GarmentRepository,
+        designs: DesignRepository,
         storage: Storage,
     ) -> None:
         self.repository = repository
@@ -45,6 +48,8 @@ class TryOnSessionService:
         # el modelo con su `image_key`, no el contrato publico que expone
         # `image_url`.
         self.garments = garments
+        # Fase 2: una prueba tambien puede partir de un diseno generado.
+        self.designs = designs
         self.storage = storage
 
     # --- Consultas ---
@@ -75,29 +80,28 @@ class TryOnSessionService:
         self,
         *,
         user_id: int,
-        garment_id: int,
         photo: bytes,
         max_bytes: int,
+        garment_id: int | None = None,
+        design_id: int | None = None,
     ) -> TryOnSessionRead:
         """Registra una prueba nueva y deja la foto guardada.
 
         No llama al proveedor: eso es trabajo de `process()`. Aquí solo se
         valida y se persiste, para que la respuesta HTTP sea inmediata.
         """
-        garment = self.garments.get_by_id(garment_id)
-        if garment is None:
-            raise NotFoundError(f"No existe la prenda {garment_id}.")
-
-        if not garment.active:
+        # La prenda viene del catálogo o de un diseño propio, nunca de las
+        # dos ni de ninguna. La base impone la misma regla con una CHECK;
+        # esto es para dar un mensaje entendible antes de llegar a ella.
+        if (garment_id is None) == (design_id is None):
             raise ValidationError(
-                f"La prenda «{garment.name}» está retirada del catálogo."
+                "Indica una prenda del catálogo o un diseño tuyo, pero no ambos."
             )
 
-        if not garment.image_key:
-            raise ValidationError(
-                f"La prenda «{garment.name}» todavía no tiene imagen, "
-                "así que no se puede probar."
-            )
+        if garment_id is not None:
+            self._validar_prenda(garment_id)
+        else:
+            self._validar_diseno(design_id, user_id=user_id)
 
         # Valida abriendo el archivo, no fiándose de la cabecera del cliente.
         extension = validate_image(photo, max_bytes=max_bytes)
@@ -106,10 +110,36 @@ class TryOnSessionService:
 
         session = self.repository.create(
             user_id=user_id,
-            garment_id=garment.id,
+            garment_id=garment_id,
+            design_id=design_id,
             input_image_key=input_key,
         )
         return self.to_read(session)
+
+    def _validar_prenda(self, garment_id: int) -> None:
+        garment = self.garments.get_by_id(garment_id)
+        if garment is None:
+            raise NotFoundError(f"No existe la prenda {garment_id}.")
+        if not garment.active:
+            raise ValidationError(
+                f"La prenda «{garment.name}» está retirada del catálogo."
+            )
+        if not garment.image_key:
+            raise ValidationError(
+                f"La prenda «{garment.name}» todavía no tiene imagen, "
+                "así que no se puede probar."
+            )
+
+    def _validar_diseno(self, design_id: int, *, user_id: int) -> None:
+        design = self.designs.get_by_id(design_id)
+        # Un diseño ajeno responde como inexistente: probarse el diseño de
+        # otro sería una fuga, y un 403 confirmaría que existe.
+        if design is None or design.user_id != user_id:
+            raise NotFoundError(f"No existe el diseño {design_id}.")
+        if design.status is not DesignStatus.COMPLETED or not design.image_key:
+            raise ValidationError(
+                "Ese diseño todavía no se ha generado, así que no se puede probar."
+            )
 
     def process(self, session_id: int, *, provider: TryOnProvider) -> None:
         """Genera el resultado de una prueba. Se ejecuta en segundo plano.
@@ -140,9 +170,13 @@ class TryOnSessionService:
 
         try:
             person = self.storage.read(session.input_image_key)
-            garment_key = session.garment.image_key
+            # `source_image_key` resuelve el origen (prenda o diseño) para
+            # que este código no tenga que preguntarlo.
+            garment_key = session.source_image_key
             if not garment_key:
-                raise TryOnProviderError("La prenda ya no tiene imagen disponible.")
+                raise TryOnProviderError(
+                    "La prenda o el diseño ya no tienen imagen disponible."
+                )
             garment = self.storage.read(garment_key)
 
             result = provider.generate(person=person, garment=garment)
@@ -189,6 +223,7 @@ class TryOnSessionService:
             id=session.id,
             user_id=session.user_id,
             garment_id=session.garment_id,
+            design_id=session.design_id,
             status=session.status,
             input_image_url=self.storage.public_url(session.input_image_key),
             output_image_url=self.storage.public_url(session.output_image_key),

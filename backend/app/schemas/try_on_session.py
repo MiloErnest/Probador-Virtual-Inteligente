@@ -16,7 +16,10 @@ class TryOnSessionRead(BaseModel):
 
     id: int
     user_id: int
-    garment_id: int
+    # Uno de los dos, nunca ambos: la prueba parte del catálogo o de un
+    # diseño propio.
+    garment_id: int | None = None
+    design_id: int | None = None
     status: TryOnStatus
     input_image_url: str | None = None
     output_image_url: str | None = None

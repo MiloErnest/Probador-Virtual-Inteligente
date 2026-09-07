@@ -30,8 +30,8 @@ router = APIRouter(prefix="/try-on-sessions", tags=["try-on"])
     summary="Crear una prueba virtual (foto + prenda)",
     responses={
         401: {"description": "Falta el token o no es válido"},
-        404: {"description": "La prenda no existe"},
-        422: {"description": "La foto no es válida o la prenda no se puede probar"},
+        404: {"description": "La prenda o el diseño no existen"},
+        422: {"description": "La foto no es válida, o no se indicó exactamente un origen"},
     },
 )
 async def create_try_on_session(
@@ -39,14 +39,22 @@ async def create_try_on_session(
     current_user: CurrentUserDep,
     background_tasks: BackgroundTasks,
     run_job: TryOnRunnerDep,
-    garment_id: int = Form(..., description="Prenda del catálogo que se quiere probar"),
     photo: UploadFile = File(..., description="Fotografía de la persona (JPEG, PNG o WebP)"),
+    garment_id: int | None = Form(
+        None, description="Prenda del catálogo que se quiere probar"
+    ),
+    design_id: int | None = Form(
+        None, description="Diseño propio generado en la Fase 2"
+    ),
 ) -> TryOnSessionRead:
     """Registra la prueba y encola su procesado.
 
-    Es `multipart/form-data` porque lleva un archivo. `garment_id` viaja como
-    campo de formulario, no como JSON: no se pueden mezclar ambos en una misma
-    petición.
+    Es `multipart/form-data` porque lleva un archivo. Los identificadores
+    viajan como campos de formulario, no como JSON: no se pueden mezclar
+    ambos en una misma petición.
+
+    Hay que indicar `garment_id` O `design_id`, nunca los dos. El servicio
+    lo valida y la base de datos lo impone con una CHECK.
     """
     content = await photo.read()
 
@@ -54,6 +62,7 @@ async def create_try_on_session(
         session = service.create(
             user_id=current_user.id,
             garment_id=garment_id,
+            design_id=design_id,
             photo=content,
             max_bytes=settings.max_upload_bytes,
         )

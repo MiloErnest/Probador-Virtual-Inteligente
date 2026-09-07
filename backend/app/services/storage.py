@@ -34,7 +34,9 @@ ALLOWED_IMAGE_TYPES: dict[str, str] = {
 # Carpetas lógicas dentro del almacén.
 FOLDER_GARMENTS = "garments"  # fotos de catálogo
 FOLDER_UPLOADS = "uploads"    # fotos que sube el usuario (Fase 1 MVP)
-FOLDER_RESULTS = "results"    # salidas del modelo de try-on (Fase 1 MVP)
+FOLDER_RESULTS = "results"    # salidas del modelo de try-on (Fase 1)
+FOLDER_DESIGNS = "designs"    # disenos generados por texto (Fase 2)
+FOLDER_BODY = "body"          # fotos de analisis corporal (Fase 3)
 
 
 class Storage(Protocol):
@@ -66,7 +68,13 @@ class LocalStorage:
         self.public_base_url = public_base_url.rstrip("/")
 
     def ensure_directories(self) -> None:
-        for folder in (FOLDER_GARMENTS, FOLDER_UPLOADS, FOLDER_RESULTS):
+        for folder in (
+            FOLDER_GARMENTS,
+            FOLDER_UPLOADS,
+            FOLDER_RESULTS,
+            FOLDER_DESIGNS,
+            FOLDER_BODY,
+        ):
             (self.root / folder).mkdir(parents=True, exist_ok=True)
 
     def save(self, data: bytes, *, folder: str, extension: str) -> str:

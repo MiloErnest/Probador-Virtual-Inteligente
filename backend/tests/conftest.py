@@ -25,13 +25,15 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.ai import get_try_on_provider
-from app.api.deps import get_try_on_runner
+from app.ai import get_design_provider, get_try_on_provider
+from app.api.deps import get_design_runner, get_try_on_runner
 from app.core.database import get_session
 from app.main import app
 from app.models import Base
+from app.repositories.design import DesignRepository
 from app.repositories.garment import GarmentRepository
 from app.repositories.try_on_session import TryOnSessionRepository
+from app.services.design import DesignService
 from app.services.storage import LocalStorage, Storage, get_storage
 from app.services.try_on_session import TryOnSessionService
 
@@ -86,11 +88,17 @@ def client(db_session: Session, storage: Storage) -> Generator[TestClient, None,
         service = TryOnSessionService(
             TryOnSessionRepository(db_session),
             GarmentRepository(db_session),
+            DesignRepository(db_session),
             storage,
         )
         service.process(session_id, provider=get_try_on_provider())
 
+    def runner_disenos(design_id: int) -> None:
+        service = DesignService(DesignRepository(db_session), storage)
+        service.process(design_id, provider=get_design_provider())
+
     app.dependency_overrides[get_try_on_runner] = lambda: runner_de_prueba
+    app.dependency_overrides[get_design_runner] = lambda: runner_disenos
 
     with TestClient(app) as test_client:
         yield test_client
