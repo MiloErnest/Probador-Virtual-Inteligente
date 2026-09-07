@@ -32,3 +32,8 @@ PyJWT==2.13.0
 #      vez de fiarse de la cabecera Content-Type que envia el cliente.
 #   2. Compone la prenda sobre la foto en el proveedor local de vista previa.
 Pillow==12.3.0
+
+# Cliente oficial de la API de Gemini. Solo se usa con AI_PROVIDER=gemini,
+# pero se instala siempre para que el import no dependa de la configuracion.
+# Genera imagenes de pago: el nivel gratuito NO incluye generacion de imagen.
+google-genai==2.22.0

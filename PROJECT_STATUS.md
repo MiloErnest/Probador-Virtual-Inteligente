@@ -56,7 +56,11 @@
 - [x] `python -m scripts.seed --with-images` genera siluetas de ejemplo, para
       que el probador se pueda usar sin subir fotografías a mano.
 - [x] 70 pruebas automatizadas — **ejecutadas y en verde** (antes 54).
-- [ ] **Falta el proveedor de IA de verdad.** Es la única pieza pendiente.
+- [x] **Proveedor de Gemini («Nano Banana») escrito y probado.** `AI_PROVIDER=gemini`.
+      Traduce respuestas y errores del SDK a mensajes presentables, con 12 pruebas
+      sobre un cliente simulado.
+- [ ] **Sin verificar contra la API real**: requiere clave y facturación activada,
+      que aporta el usuario. Ver README §6d.
 
 ### Frontend
 - [x] React 18 + TypeScript + Vite + Tailwind, configurados a mano y con alias `@/`.
@@ -100,7 +104,10 @@
 | 5 | **El proyecto está dentro de OneDrive.** `node_modules` y `.venv` provocan sincronización constante, builds lentos y bloqueos de archivo. | Medio | Mover a `C:\dev\` o excluir esas carpetas de OneDrive. |
 | 6 | ~~El tipo de imagen se valida por la cabecera `Content-Type`.~~ **Resuelto en la Fase 1**: `app/services/images.py` abre el archivo con Pillow y usa el formato detectado. Con prueba de regresión (un texto declarado como `image/png` se rechaza). | — | Resuelto. |
 | 15 | **`BackgroundTasks` no sobrevive a un reinicio.** Si el proceso se para mientras una prueba está en `processing`, esa prueba se queda ahí para siempre: no hay reintentos ni recuperación. | Bajo | Con un proceso y un usuario es asumible. `status` ya está modelado, así que una cola encaja sin rehacer la tabla. |
-| 16 | **El proveedor actual no es IA.** `LocalPreviewProvider` superpone la prenda sobre la foto: no detecta pose ni cuerpo. La interfaz lo advierte de forma visible. | Alto | Conectar un proveedor real de Virtual Try-On. Es lo único que falta de la Fase 1. |
+| 16 | **El proveedor por defecto sigue siendo el local, que no es IA.** `LocalPreviewProvider` superpone la prenda: no detecta pose ni cuerpo. La interfaz lo advierte. El de Gemini ya está escrito; se activa con `AI_PROVIDER=gemini`. | Alto | Poner la clave y activar facturación (README §6d). |
+| 17 | **El camino de Gemini no se ha ejecutado nunca contra la API real.** Las 12 pruebas usan un cliente simulado: verifican cómo se traducen respuestas y errores, no que la petición sea la correcta ni que el modelo devuelva algo útil. | Alto | Primera prueba real cuando el usuario tenga clave y facturación. Es lo primero que hay que hacer al retomar. |
+| 18 | **Cada prueba virtual con Gemini cuesta dinero y no hay límite de peticiones.** Unas centésimas de dólar por imagen; nada impide lanzarlas en bucle. | Alto | Presupuesto con alerta en Google Cloud ANTES de la primera prueba (README §6d). Y limitación #8: límite de peticiones antes de exponer la aplicación. |
+| 19 | **Todo lo que genere Gemini lleva marca de agua invisible (SynthID).** No se puede desactivar. | Bajo | Es correcto —el resultado es sintético—, pero conviene saberlo si el proyecto se presenta como trabajo académico. |
 | 7 | Las imágenes se sirven desde el proceso de FastAPI. | Bajo | Delegar en Nginx/CDN cuando haya despliegue real. |
 | 8 | Sin límite de peticiones ni de tamaño total de subida por usuario. **Incluye el login**: nada impide probar contraseñas en bucle. | Medio | Antes de exponer la aplicación públicamente. `slowapi` o un límite en el proxy. |
 | 9 | **Sin refresh token ni lista de revocación.** Cerrar sesión descarta el token en el navegador, pero seguiría siendo válido hasta caducar (12 h). Cambiar `SECRET_KEY` es hoy la única forma de invalidar todas las sesiones. | Bajo | Solo si aparece la necesidad real de expulsar a alguien al momento. |
@@ -138,6 +145,11 @@
 | `BackgroundTasks` | Celery, RQ, Redis | Regla 10. Una cola son tres piezas más (broker, worker, supervisión) para un problema que hoy no existe. Su limitación está anotada como #15. |
 | Sondeo cada 2 s desde el frontend | WebSockets / SSE | Una conexión persistente para un usuario y una prueba a la vez es infraestructura sin uso. El sondeo son diez líneas y se comporta bien ante cortes de red. |
 | 202 al crear una prueba | 201 | 201 significa "creado y listo". Aquí el recurso existe pero aún no tiene resultado, que es justo lo que 202 comunica. |
+| Gemini («Nano Banana») como proveedor de IA | Cloudflare Workers AI | Se descartó tras revisar su catálogo: **no tiene ningún modelo que acepte dos imágenes**. Solo texto→imagen, img2img e inpainting, todos con una sola imagen más texto. Con eso se puede inventar una prenda a partir de una descripción, no vestir a alguien con la prenda del catálogo. Los modelos Gemini de imagen sí aceptan varias imágenes de referencia. |
+| Un cliente HTTP dentro de `app/ai/` | Un servidor MCP | Un MCP da herramientas al asistente dentro de una conversación. La aplicación necesita llamar a Gemini ella misma, en tiempo de ejecución, para sus usuarios. Con un MCP, el probador solo funcionaría con un chat abierto. |
+| El proveedor local sigue siendo el DEFECTO | Poner `gemini` por defecto | `gemini` cobra por imagen. Que el valor por defecto de un repositorio empiece a gastar dinero en cuanto alguien lo clona es una trampa. Se activa a conciencia. |
+| Sin reintentos automáticos | Reintentar los fallos | Reintentar algo que se cobra por uso, sin control de gasto, vacía una cuenta deprisa. El usuario puede relanzar la prueba a mano. |
+| `AI_PROVIDER` desconocido hace fallar | Caer al proveedor local | Creer que usas el modelo de pago cuando en realidad estás pegando imágenes con Pillow sería el peor error posible. Con prueba que lo cubre. |
 | Sin `is_admin` para dar de alta prendas | Añadir roles ya | Regla 10: infraestructura solo cuando haya necesidad demostrada. Anotado como limitación #11. |
 | `image_key` en BD, `image_url` en la API | Guardar la URL completa | Migrar a S3/R2 no obliga a reescribir filas ya almacenadas. |
 | Enums como `VARCHAR` **sin CHECK** | `ENUM` nativo de PostgreSQL | Añadir un valor a un ENUM nativo exige `ALTER TYPE`; estas listas van a crecer. **Corrección de la Etapa 2:** este documento decía "VARCHAR + CHECK". Era falso: desde SQLAlchemy 1.4, `Enum(native_enum=False)` tiene `create_constraint=False` por defecto, y se comprobó que no existe ninguna CHECK ni en la base ni en el DDL generado. Se deja así a propósito: una CHECK devolvería el mismo coste de migración que se quería evitar. Los valores los valida Pydantic en la entrada. |
@@ -253,28 +265,34 @@ idéntico con instalación nativa o con Docker).
 
 ## Próximo paso
 
-**Conectar el proveedor de IA real.** Es lo único que falta de la Fase 1: la
-tubería entera —subir, encolar, procesar, guardar, mostrar— ya funciona y está
-verificada. Conectarlo consiste en escribir una clase que cumpla
-`TryOnProvider` y añadir una rama en `get_try_on_provider()`. Ni las rutas, ni
-los servicios, ni la base de datos cambian.
+**Primera llamada real a Gemini.** El código está escrito y probado contra un
+cliente simulado, pero **nunca se ha ejecutado contra la API de verdad**. Eso lo
+tiene que hacer el usuario, porque exige clave y facturación activada.
 
-**Decisión pendiente del usuario: qué proveedor.** Requiere crear una cuenta y
-pagar por uso, así que no se puede tomar desde el chat. Al elegir hay que mirar:
+Pasos, en orden (detalle en README §6d):
 
-- Coste por imagen y si hay créditos gratuitos para probar.
-- Calidad sobre fotos de cuerpo entero, que es el caso de uso.
-- Latencia. Si supera el minuto largo, habrá que revisar el corte por tiempo
-  del sondeo (hoy 2 minutos, en `TryOnPage.tsx`).
+1. Crear la clave en <https://aistudio.google.com/apikey>.
+2. Activar facturación en el proyecto de Google Cloud asociado. **El nivel
+   gratuito no incluye generación de imágenes.**
+3. **Poner un presupuesto con alerta ANTES de la primera prueba.** Cada prueba
+   cuesta dinero y no hay límite de peticiones.
+4. En `backend/.env`: `AI_PROVIDER=gemini` y `GEMINI_API_KEY=...`.
+5. Lanzar una prueba desde el probador y mirar el resultado y los registros.
 
-Al conectarlo, dos cosas obligatorias:
+Qué vigilar en esa primera prueba:
 
-1. La clave de API va en el `.env` (regla 7), nunca en el código.
-2. Traducir los errores del proveedor a `TryOnProviderError` con mensajes
-   presentables: ese texto acaba en la pantalla del usuario.
+- **Que devuelva imagen y no texto.** Si el modelo contesta explicando por qué
+  no puede, el proveedor lo convierte en un mensaje presentable, pero habrá que
+  ajustar `TRY_ON_PROMPT` en `app/ai/gemini.py`.
+- **Cuánto tarda.** Si se acerca a los 100 s de `GEMINI_TIMEOUT_SECONDS`, hay
+  que subir ese valor Y el corte del sondeo del navegador (120 s en
+  `TryOnPage.tsx`), en ese orden: el del navegador debe ser el mayor.
+- **Qué calidad da.** Si respeta la cara y el fondo. Si no, el prompt es lo
+  primero que hay que tocar.
+- **Cuánto costó.** Contrastarlo con la facturación real antes de dejarlo
+  abierto a más gente.
 
-No hace falta migración: `try_on_sessions` ya tiene `status`, `error_message`
-y `provider`. Comprobado con `alembic check`.
+Después de eso, la Fase 1 se puede dar por cerrada.
 
 ### Después de la Fase 1
 

@@ -66,9 +66,24 @@ class Settings(BaseSettings):
     MAX_UPLOAD_MB: int = 8
 
     # --- Proveedor de prueba virtual (Fase 1) ---
-    # "local" = composicion con Pillow, sin IA ni conexion. Ver app/ai/.
-    # Cuando exista el proveedor de IA de verdad, se anadira su nombre aqui.
+    # "local"  = composicion con Pillow, sin IA, sin cuenta ni conexion.
+    # "gemini" = modelos de imagen de Google ("Nano Banana"). SE COBRA POR
+    #            IMAGEN y exige facturacion activada. Ver app/ai/gemini.py.
     AI_PROVIDER: str = "local"
+
+    # Clave de la API de Gemini. Solo hace falta con AI_PROVIDER=gemini.
+    # Se obtiene en https://aistudio.google.com/apikey
+    GEMINI_API_KEY: str = ""
+
+    # Modelo de imagen. Los "flash" son mas baratos y rapidos; el "pro" da
+    # mejor calidad y cuesta bastante mas. Configurable para poder cambiarlo
+    # sin tocar codigo: este catalogo se mueve deprisa.
+    GEMINI_MODEL: str = "gemini-3.1-flash-image"
+
+    # Corte de la llamada al modelo. Debe ser MENOR que el corte del sondeo
+    # del frontend (2 minutos en TryOnPage.tsx); si no, el navegador se rinde
+    # antes de que la prueba termine y el usuario no ve el resultado.
+    GEMINI_TIMEOUT_SECONDS: int = 100
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

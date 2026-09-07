@@ -358,6 +358,75 @@ seguiría siendo válido hasta caducar.
 
 ---
 
+## 6d. Conectar Gemini para la prueba virtual real
+
+Por defecto el probador usa `AI_PROVIDER=local`, que **compone la prenda sobre
+la foto con Pillow y no es IA**. Funciona sin cuenta, sin clave y sin conexion.
+
+Para usar el modelo de verdad hacen falta cuatro pasos. **Los tres primeros son
+tuyos**: implican crear una cuenta y activar un metodo de pago.
+
+### 1. Crear la clave
+
+Entra en <https://aistudio.google.com/apikey> con tu cuenta de Google y crea una
+clave de API. Anotala; solo se muestra una vez.
+
+### 2. Activar la facturacion
+
+**El nivel gratuito de la API de Gemini NO incluye generacion de imagenes.** Sin
+un metodo de pago asociado, las peticiones fallaran con un error de permisos.
+
+En Google AI Studio, la clave pertenece a un proyecto de Google Cloud. Abre ese
+proyecto en <https://console.cloud.google.com/billing> y asociale una cuenta de
+facturacion.
+
+### 3. Ponerle un limite de gasto
+
+Hazlo antes de la primera prueba, no despues. Cada prueba virtual genera una
+imagen y se cobra: del orden de unas centesimas de dolar con los modelos
+`flash`. La aplicacion **no tiene limite de peticiones** (limitacion #8), asi
+que nada impide que alguien lance pruebas en bucle.
+
+En la consola de Google Cloud, dentro de Facturacion, crea un presupuesto con
+alerta. Es la unica red de seguridad real que vas a tener.
+
+### 4. Configurar el proyecto
+
+Edita `backend/.env` (que esta en `.gitignore`, nunca se sube):
+
+```
+AI_PROVIDER=gemini
+GEMINI_API_KEY=la-clave-que-acabas-de-crear
+GEMINI_MODEL=gemini-3.1-flash-image
+```
+
+Reinicia el backend. En los registros vera la revision de la base y, a partir de
+ahi, cada prueba usara el modelo. La columna `provider` de cada prueba guarda
+cual la genero (`gemini:gemini-3.1-flash-image`), asi que el historial distingue
+las hechas con IA de las hechas con la composicion local.
+
+### Volver atras
+
+Si se agota la cuota, el servicio falla o simplemente quieres dejar de gastar:
+
+```
+AI_PROVIDER=local
+```
+
+La aplicacion sigue funcionando de forma degradada en vez de romperse.
+
+### Que esperar
+
+- **Marca de agua.** Google incrusta una marca invisible (SynthID) en todo lo
+  que genera. No se puede desactivar.
+- **Bloqueos.** El modelo puede negarse a procesar ciertas fotografias por sus
+  filtros de seguridad. La prueba quedara en `failed` con un mensaje que lo
+  explica, no colgada.
+- **Calidad.** Depende mucho de la foto: funciona mejor de cuerpo entero, de
+  frente, bien iluminada y con fondo despejado.
+
+---
+
 ## 7. Estructura
 
 ```
@@ -369,7 +438,7 @@ backend/
     schemas/      Contratos de la API (Pydantic)
     repositories/ Acceso a datos
     services/     Lógica de negocio + almacenamiento de archivos
-    ai/           RESERVADO — Fase 2
+    ai/           Proveedores de prueba virtual (local y Gemini)
     vision/       RESERVADO — Fase 3
   alembic/        Migraciones de esquema
   scripts/        Utilidades (seed)

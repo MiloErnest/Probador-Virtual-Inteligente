@@ -163,11 +163,16 @@ Ruta (HTTP) → Servicio (negocio) → Repositorio (SQL) → Modelo
 - `app/services/storage.py` — protocolo `Storage`. La BD guarda `image_key`
   (clave opaca), la API expone `image_url`. Migrar a S3/R2 no obliga a reescribir
   datos.
-- `app/ai/` — `TryOnProvider` (protocolo) y `LocalPreviewProvider`, que compone
-  la prenda sobre la foto con Pillow y **no es IA**. Conectar el modelo real es
-  escribir una clase mas y anadir una rama en `get_try_on_provider()`. El
-  protocolo es joven: solo lo cumple una implementacion, asi que cuenta con
-  tener que ajustarlo al escribir la segunda.
+- `app/ai/` — `TryOnProvider` (protocolo) con dos implementaciones:
+  `LocalPreviewProvider` (composicion con Pillow, **no es IA**, por defecto) y
+  `GeminiTryOnProvider` (modelos de imagen de Google, **se cobra por imagen**).
+  Se elige con `AI_PROVIDER` en el `.env`.
+
+  **Gemini no se ha probado nunca contra la API real**: sus 12 pruebas usan un
+  cliente simulado. Requiere clave y facturacion, que aporta el usuario.
+
+  Descartado: Cloudflare Workers AI. No tiene ningun modelo que acepte dos
+  imagenes, y una prueba virtual necesita foto + prenda.
 - `app/api/deps.py::get_current_user` — **único** punto que convierte un token en
   un usuario. Declararlo en una ruta es lo que la protege. Ninguna ruta debe
   decodificar un token por su cuenta.
