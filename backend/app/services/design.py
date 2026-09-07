@@ -18,7 +18,6 @@ from app.services.storage import FOLDER_DESIGNS, Storage
 logger = logging.getLogger("app.design")
 
 
-
 class DesignService:
     def __init__(self, repository: DesignRepository, storage: Storage) -> None:
         self.repository = repository

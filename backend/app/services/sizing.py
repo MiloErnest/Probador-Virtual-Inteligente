@@ -170,7 +170,7 @@ def recommend(profile: BodyProfile, category: GarmentCategory) -> SizeRecommenda
     # media información, la recomendación vale menos y hay que decirlo.
     cobertura = len(disponibles) / len(necesarias)
     confianza = round(0.5 + 0.5 * cobertura, 2)
-    #  puede ser None en un perfil recien construido y aun sin guardar:
+    # `source` puede ser None en un perfil recien construido y aun sin guardar:
     # el valor por defecto lo pone la base de datos, no Python.
     if profile.source is not None and profile.source.value == "analysis":
         # Medidas estimadas de una foto, no medidas tomadas con cinta.
