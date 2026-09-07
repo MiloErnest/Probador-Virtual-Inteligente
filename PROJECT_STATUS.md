@@ -89,6 +89,7 @@
 | 10 | **El token se guarda en `localStorage`.** Un fallo de XSS permitiría leerlo; una cookie `httpOnly` no. Se aceptó a cambio de que recargar no cierre la sesión, y porque la alternativa exige manejar CSRF y cookies entre orígenes. | Medio | Primer punto a revisar antes de un despliegue público. |
 | 11 | **Cualquier usuario registrado puede dar de alta prendas.** No existe la distinción usuario/administrador. | Bajo | Columna `is_admin` cuando haya un panel que la justifique. |
 | 12 | **Las migraciones no se ejecutan en los tests**, que siguen creando el esquema desde los modelos con SQLite. Los tests validan los modelos, no las migraciones. | Medio | Se contrastan a mano con `alembic check` (ver verificación de la Etapa 2). Una base PostgreSQL de test cuando el esquema se complique. |
+| 14 | **El registro no verifica que el buzón exista.** Cualquier correo con forma válida crea una cuenta: no hay correo de confirmación ni columna `is_verified`. Se comprobó el 2026-09-06: el login SÍ rechaza correos inexistentes y contraseñas erróneas (401 en ambos); el agujero está solo en el alta. | Medio | Se resolverá con el acceso mediante Google, que garantiza el buzón de paso. Ver «Próximo paso». |
 | 13 | La suite tarda ~15 s (antes 1,4 s). Es bcrypt, que es lento a propósito, multiplicado por los registros e inicios de sesión de las pruebas. | Bajo | Aceptable. Si molesta, bajar el coste de bcrypt solo en el entorno de test. |
 
 ---
@@ -113,6 +114,7 @@
 | 404 en recursos ajenos | 403 | Un 403 confirma que el recurso existe: recorrer identificadores permitiría contar cuentas y pruebas. |
 | Sin `POST /auth/logout` | Endpoint de cierre de sesión | Sin lista de revocación no podría invalidar nada: sería un endpoint que finge trabajar. |
 | `GET /api/users` eliminado | Protegerlo con token | Devolvía todos los usuarios con sus correos, no tenía consumidor y no existe la figura de administrador que lo justifique. |
+| **Seguir siendo aplicación web** | Empaquetar en un `.exe`/instalador | Se planteó el 2026-09-06 y **el usuario lo descartó: no es necesario**. Queda anotado porque la alternativa tenía consecuencias grandes: un instalador obliga a abandonar PostgreSQL (es un servicio aparte, no se empaqueta) y expondría cualquier clave de API dentro del ejecutable. Al descartarlo, PostgreSQL se queda y la arquitectura actual no necesita ningún cambio. **No reabrir sin que el usuario lo pida.** |
 | Sin `is_admin` para dar de alta prendas | Añadir roles ya | Regla 10: infraestructura solo cuando haya necesidad demostrada. Anotado como limitación #11. |
 | `image_key` en BD, `image_url` en la API | Guardar la URL completa | Migrar a S3/R2 no obliga a reescribir filas ya almacenadas. |
 | Enums como `VARCHAR` **sin CHECK** | `ENUM` nativo de PostgreSQL | Añadir un valor a un ENUM nativo exige `ALTER TYPE`; estas listas van a crecer. **Corrección de la Etapa 2:** este documento decía "VARCHAR + CHECK". Era falso: desde SQLAlchemy 1.4, `Enum(native_enum=False)` tiene `create_constraint=False` por defecto, y se comprobó que no existe ninguna CHECK ni en la base ni en el DDL generado. Se deja así a propósito: una CHECK devolvería el mismo coste de migración que se quería evitar. Los valores los valida Pydantic en la entrada. |
@@ -246,6 +248,17 @@ seguro (Alembic).
 
 Punto a decidir al empezar: el proveedor de IA. La elección condiciona el
 `Protocol`, el coste y si hace falta o no una cola de verdad.
+
+### Después de la Fase 1
+
+**Acceso con Google (OAuth).** Aplazado a propósito, no olvidado. Es aditivo, no
+toca el núcleo, y resuelve de paso la limitación #14: Google ya garantiza que el
+buzón existe y es de quien dice. Al haber descartado el instalador, el flujo es
+el sencillo (redirección web), no el de escritorio.
+
+Alternativa si Google se complica: verificación por correo con token de
+confirmación e `is_verified`. Más piezas, y necesita una cuenta de correo
+saliente.
 
 > **Nota de continuidad:** cada etapa se desarrolla en una conversación nueva.
 > Este documento y [CLAUDE.md](CLAUDE.md) son el único puente entre sesiones —

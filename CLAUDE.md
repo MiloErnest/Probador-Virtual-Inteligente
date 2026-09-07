@@ -128,7 +128,11 @@ día: son el único puente entre sesiones.
 8. Archivos completos y ejecutables, no fragmentos.
 9. Mantener al día en `PROJECT_STATUS.md`: terminado, pendiente, errores
    conocidos, decisiones y próximos pasos.
-10. **No añadir infraestructura "por si acaso"** (Redis, Celery, Kubernetes,
+10. **Es una aplicación web, no se empaqueta en un ejecutable.** Se planteó el
+    2026-09-06 y el usuario lo descartó. Implicación: PostgreSQL se queda como
+    base de datos. No proponer SQLite, PyInstaller, Electron ni Tauri salvo que
+    el usuario lo pida.
+11. **No añadir infraestructura "por si acaso"** (Redis, Celery, Kubernetes,
     microservicios, S3, pgvector, GPU serverless). Solo cuando exista una
     necesidad concreta y demostrada.
 
