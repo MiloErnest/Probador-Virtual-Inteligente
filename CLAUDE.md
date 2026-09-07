@@ -6,10 +6,11 @@ evidentes leyendo el código, y evita repetir errores ya cometidos.
 **Qué es:** plataforma de prueba virtual de prendas con IA generativa, visión por
 computador, 3D y realidad aumentada. Proyecto universitario, desarrollo por fases.
 
-**Estado:** Etapas 1 (infraestructura) y 2 (migraciones + autenticación) cerradas
-y verificadas. **Fase 1 en curso:** la tubería del probador funciona de punta a
-punta (subir foto → encolar → procesar → mostrar), pero el proveedor actual es
-una composición local con Pillow, **no IA**. Falta conectar el modelo real.
+**Estado:** Etapas 1 y 2 cerradas. **Fases 1, 2 y 3 construidas de punta a punta
+con proveedores SIMULADOS**: probador virtual, diseños por texto con iteración, y
+perfil corporal con recomendación de talla. Todo funciona hoy sin ninguna API
+externa. Lo que falta es conectar los modelos reales, y cada uno entra por su
+propio `Protocol` sin tocar nada más.
 
 Ver [PROJECT_STATUS.md](PROJECT_STATUS.md) para el detalle vivo: qué funciona,
 qué falta, errores conocidos, decisiones técnicas y próximos pasos.
@@ -176,9 +177,23 @@ Ruta (HTTP) → Servicio (negocio) → Repositorio (SQL) → Modelo
 - `app/api/deps.py::get_current_user` — **único** punto que convierte un token en
   un usuario. Declararlo en una ruta es lo que la protege. Ninguna ruta debe
   decodificar un token por su cuenta.
-- `app/vision/` — reservado para la Fase 3 (MediaPipe). No instalar sus
-  dependencias hasta que haya código que las use; irán en un
-  `requirements-vision.txt` aparte.
+- `app/vision/` — `BodyAnalysisProvider` (protocolo) y `MockBodyAnalysisProvider`,
+  que deriva medidas de proporciones medias y **no es visión por computador**.
+  MediaPipe entra cumpliendo ese mismo contrato, y sus dependencias irán en un
+  `requirements-vision.txt` aparte para no inflar la instalación base.
+
+**Los tres proveedores externos son intercambiables.** Cada uno tiene su
+`Protocol` y su selector; ninguno se toca desde las rutas ni desde el frontend:
+
+| Qué | Contrato | Selector | Variable |
+|---|---|---|---|
+| Probador | `app/ai/provider.py` | `get_try_on_provider()` | `AI_PROVIDER` |
+| Diseños | `app/ai/design_provider.py` | `get_design_provider()` | `DESIGN_PROVIDER` |
+| Cuerpo | `app/vision/analysis_provider.py` | `get_body_analysis_provider()` | `BODY_ANALYSIS_PROVIDER` |
+
+Un valor desconocido en cualquiera de esas variables **hace fallar el procesado**,
+nunca cae al simulado en silencio: creer que estás usando el modelo real cuando
+no lo estás es el peor error posible aquí.
 
 ---
 
@@ -188,9 +203,9 @@ Ruta (HTTP) → Servicio (negocio) → Repositorio (SQL) → Modelo
 |---|---|---|
 | Etapa 1 | Infraestructura: catálogo, usuarios, almacenamiento | ✅ cerrada |
 | Etapa 2 | Alembic + autenticación JWT | ✅ cerrada |
-| Fase 1 | Virtual Try-On con IA (foto + prenda → resultado) | 🟡 tuberia lista, falta el modelo |
-| Fase 2 | Generación de diseños por lenguaje natural | ⬜ |
-| Fase 3 | Análisis corporal, pose, medidas, talla | ⬜ |
+| Fase 1 | Virtual Try-On con IA (foto + prenda -> resultado) | 🟡 flujo listo, falta el modelo |
+| Fase 2 | Generacion de disenos por lenguaje natural | 🟡 flujo listo, falta el modelo |
+| Fase 3 | Analisis corporal, pose, medidas, talla | 🟡 flujo y tallaje listos, falta MediaPipe |
 | Fase 4 | 3D, Three.js / R3F, materiales PBR, telas | ⬜ |
 | Fase 5 | Realidad aumentada, cámara en vivo, oclusión | ⬜ |
 

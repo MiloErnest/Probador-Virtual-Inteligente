@@ -15,12 +15,17 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '@/components/StateBlocks'
 import { useApi } from '@/hooks/useApi'
-import { createTryOnSession, fetchGarments, fetchTryOnSession } from '@/services/endpoints'
-import type { Garment, TryOnSession } from '@/types'
+import {
+  createTryOnSession,
+  fetchDesigns,
+  fetchGarments,
+  fetchTryOnSession,
+} from '@/services/endpoints'
+import type { Design, Garment, TryOnSession } from '@/types'
 
 /** Cada cuanto se pregunta por el estado, en milisegundos. */
 const POLL_INTERVAL_MS = 2000
@@ -30,11 +35,23 @@ const POLL_TIMEOUT_MS = 120_000
 
 const MAX_PHOTO_MB = 8
 
+/** De donde sale la prenda que se prueba. El backend exige exactamente una. */
+type Origen = { tipo: 'catalogo'; id: number } | { tipo: 'diseno'; id: number }
+
 export default function TryOnPage() {
+  const location = useLocation()
+
   const fetcher = useCallback((signal: AbortSignal) => fetchGarments({ signal }), [])
   const { data: garments, loading: loadingGarments, error: garmentsError } = useApi(fetcher)
 
-  const [garmentId, setGarmentId] = useState<number | null>(null)
+  const disenosFetcher = useCallback((signal: AbortSignal) => fetchDesigns(signal), [])
+  const { data: disenos } = useApi(disenosFetcher)
+
+  // 'Probarme este diseno' desde la pantalla de disenos llega por aqui.
+  const disenoInicial = (location.state as { designId?: number } | null)?.designId
+  const [origen, setOrigen] = useState<Origen | null>(
+    disenoInicial !== undefined ? { tipo: 'diseno', id: disenoInicial } : null,
+  )
   const [photo, setPhoto] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [session, setSession] = useState<TryOnSession | null>(null)
@@ -44,6 +61,10 @@ export default function TryOnPage() {
   // Solo se pueden probar prendas que tengan imagen: el proveedor necesita
   // las dos fotos. Las demas se ocultan en vez de fallar al enviar.
   const wearable = (garments ?? []).filter((g: Garment) => g.image_url !== null)
+  // Y solo los disenos ya generados.
+  const disenosListos = (disenos ?? []).filter(
+    (d: Design) => d.status === 'completed' && d.image_url !== null,
+  )
 
   // La URL del objeto File hay que revocarla a mano; si no, el navegador
   // retiene la imagen en memoria hasta recargar la pagina.
@@ -93,13 +114,18 @@ export default function TryOnPage() {
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (garmentId === null || photo === null) return
+    if (origen === null || photo === null) return
 
     setError(null)
     setSubmitting(true)
     startedAt.current = 0
     try {
-      setSession(await createTryOnSession(garmentId, photo))
+      setSession(
+        await createTryOnSession(
+          origen.tipo === 'catalogo' ? { garmentId: origen.id } : { designId: origen.id },
+          photo,
+        ),
+      )
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'No se pudo crear la prueba.')
     } finally {
@@ -136,6 +162,39 @@ export default function TryOnPage() {
           <section className="space-y-3">
             <h2 className="font-display text-xl">1. Elige una prenda</h2>
 
+            {disenosListos.length > 0 && (
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium">Tus disenos</h3>
+                <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+                  {disenosListos.map((diseno) => {
+                    const elegido = origen?.tipo === 'diseno' && origen.id === diseno.id
+                    return (
+                      <li key={diseno.id}>
+                        <button
+                          type="button"
+                          onClick={() => setOrigen({ tipo: 'diseno', id: diseno.id })}
+                          aria-pressed={elegido}
+                          className={`card w-full overflow-hidden text-left transition ${
+                            elegido ? 'ring-2 ring-accent' : 'hover:border-black/20'
+                          }`}
+                        >
+                          <div className="aspect-[3/4] bg-canvas">
+                            <img
+                              src={diseno.image_url ?? ''}
+                              alt={diseno.prompt}
+                              className="h-full w-full object-contain"
+                            />
+                          </div>
+                          <span className="block truncate p-3 text-xs">{diseno.prompt}</span>
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+                <h3 className="pt-2 text-sm font-medium">Del catalogo</h3>
+              </div>
+            )}
+
             {loadingGarments && <LoadingBlock label="Cargando el catalogo…" />}
 
             {garmentsError && !loadingGarments && (
@@ -145,7 +204,7 @@ export default function TryOnPage() {
             {!loadingGarments && !garmentsError && wearable.length === 0 && (
               <EmptyBlock
                 title="Ninguna prenda tiene imagen todavia"
-                detail="Para probar una prenda hace falta su fotografia. Subelas desde el catalogo o con el script de datos de ejemplo."
+                detail="Para probar una prenda hace falta su fotografia. Subelas desde el catalogo, genera un diseno propio, o usa el script de datos de ejemplo."
                 action={
                   <Link to="/catalogo" className="btn-primary">
                     Ver el catalogo
@@ -157,12 +216,12 @@ export default function TryOnPage() {
             {wearable.length > 0 && (
               <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
                 {wearable.map((garment) => {
-                  const selected = garment.id === garmentId
+                  const selected = origen?.tipo === 'catalogo' && origen.id === garment.id
                   return (
                     <li key={garment.id}>
                       <button
                         type="button"
-                        onClick={() => setGarmentId(garment.id)}
+                        onClick={() => setOrigen({ tipo: 'catalogo', id: garment.id })}
                         aria-pressed={selected}
                         className={`card w-full overflow-hidden text-left transition ${
                           selected ? 'ring-2 ring-accent' : 'hover:border-black/20'
@@ -211,12 +270,12 @@ export default function TryOnPage() {
           <button
             type="submit"
             className="btn-primary"
-            disabled={submitting || garmentId === null || photo === null}
+            disabled={submitting || origen === null || photo === null}
           >
             {submitting ? 'Enviando…' : 'Generar la prueba'}
           </button>
 
-          {(garmentId === null || photo === null) && (
+          {(origen === null || photo === null) && (
             <p className="text-xs text-ink-muted">
               Elige una prenda y sube una foto para continuar.
             </p>

@@ -121,6 +121,19 @@ export const api = {
    * vez: cuando hay archivo, TODO viaja como campos del formulario. Por eso
    * `garment_id` se manda así y no en un cuerpo JSON.
    */
+  put<T>(path: string, body: unknown, options: { signal?: AbortSignal } = {}) {
+    return request<T>(path, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify(body),
+      signal: options.signal,
+    })
+  },
+
+  delete<T>(path: string, options: { signal?: AbortSignal } = {}) {
+    return request<T>(path, { method: 'DELETE', headers: authHeaders(), signal: options.signal })
+  },
+
   postForm<T>(
     path: string,
     files: Record<string, File>,

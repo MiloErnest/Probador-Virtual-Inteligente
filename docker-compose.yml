@@ -1,14 +1,24 @@
-# Infraestructura local mínima para la Etapa 1.
+# Infraestructura local del proyecto.
 #
-# Deliberadamente solo contiene PostgreSQL (+ Adminer para inspeccionarlo).
-# El backend y el frontend se ejecutan en local con uvicorn / vite, porque en
-# desarrollo el hot-reload nativo es más rápido y más fácil de depurar que
-# dentro de un contenedor. Se dockerizará la aplicación cuando exista un
-# despliegue real que lo requiera.
+# DOS MODOS, Y EL POR DEFECTO SIGUE SIENDO EL DE ANTES
+# ----------------------------------------------------
+#   docker compose up -d
+#       Solo PostgreSQL (+ Adminer). El backend y el frontend se ejecutan en
+#       local con uvicorn / vite. Es el modo de DESARROLLO y el recomendado:
+#       el hot-reload nativo es mas rapido y mas facil de depurar que dentro
+#       de un contenedor.
 #
-# Arranque:  docker compose up -d
-# Parada:    docker compose down          (conserva los datos)
-# Reset:     docker compose down -v       (BORRA los datos)
+#   docker compose --profile full up -d --build
+#       Toda la aplicacion en contenedores: base de datos, backend y frontend.
+#       Para comprobar que el proyecto arranca de cero en una maquina limpia,
+#       o para enseñarselo a alguien sin que instale Python ni Node.
+#
+# Los perfiles de Compose son lo que permite tener las dos cosas en un solo
+# archivo: un servicio con `profiles` NO se levanta salvo que se pida ese
+# perfil por su nombre.
+#
+# Parada:  docker compose --profile full down          (conserva los datos)
+# Reset:   docker compose --profile full down -v       (BORRA los datos)
 
 services:
   db:
@@ -42,5 +52,56 @@ services:
       db:
         condition: service_healthy
 
+  # --- Perfil "full": la aplicacion entera en contenedores ---
+
+  backend:
+    profiles: ["full"]
+    build:
+      context: ./backend
+    container_name: vfit_backend
+    restart: unless-stopped
+    environment:
+      # Dentro de la red de Compose, la base se llama "db", no "localhost".
+      DATABASE_URL: postgresql+psycopg://vfit:vfit_dev_password@db:5432/vfit
+      ENVIRONMENT: local
+      # Clave de desarrollo. En un despliegue real esto vendria de un gestor
+      # de secretos, no del archivo de Compose (regla 7).
+      SECRET_KEY: clave-solo-para-el-entorno-de-docker-local
+      CORS_ORIGINS: http://localhost:5173,http://localhost:3000
+      # El navegador pide las imagenes al puerto publicado en el host, no al
+      # nombre interno del contenedor.
+      PUBLIC_BASE_URL: http://localhost:8000
+      # Proveedores simulados: funcionan sin ninguna cuenta externa.
+      AI_PROVIDER: local
+      DESIGN_PROVIDER: mock
+      BODY_ANALYSIS_PROVIDER: mock
+    ports:
+      - "8000:8000"
+    volumes:
+      # Las imagenes subidas sobreviven a recrear el contenedor. Sin esto,
+      # cada `down` se llevaria por delante las fotos y los disenos.
+      - backend_storage:/app/storage
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    profiles: ["full"]
+    build:
+      context: ./frontend
+      args:
+        # Se resuelve al COMPILAR, no al ejecutar: Vite incrusta el valor en
+        # el bundle. Cambiarlo obliga a reconstruir la imagen.
+        VITE_API_BASE_URL: http://localhost:8000
+    container_name: vfit_frontend
+    restart: unless-stopped
+    ports:
+      # 3000 y no 5173: el 5173 se deja libre para el servidor de desarrollo
+      # de Vite, de modo que se pueden tener los dos a la vez.
+      - "3000:80"
+    depends_on:
+      - backend
+
 volumes:
   postgres_data:
+  backend_storage:

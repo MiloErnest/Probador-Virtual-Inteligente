@@ -2,7 +2,8 @@
 
 > Documento vivo. Se actualiza al cerrar cada etapa.
 
-**Etapa actual:** Fase 1 — Probador virtual (tubería completa; falta el modelo de IA)
+**Etapa actual:** Fases 1, 2 y 3 construidas con proveedores simulados.
+Falta conectar los modelos reales.
 **Última actualización:** 2026-09-06
 
 ---
@@ -62,6 +63,30 @@
 - [ ] **Sin verificar contra la API real**: requiere clave y facturación activada,
       que aporta el usuario. Ver README §6d.
 
+### Fase 2 — Diseñar con IA
+- [x] `Design` con `parent_id`: iterar crea una versión nueva, nunca sobrescribe.
+- [x] `DesignProvider` (Protocol) + `MockDesignProvider` (siluetas con Pillow).
+- [x] `POST /designs`, `POST /designs/{id}/refine`, `GET /designs`, `GET /designs/{id}`.
+- [x] Pantalla completa: describir, ejemplos de un clic, generar, sondear, iterar, historial.
+- [x] **Puente Diseño → Try-On**: `try_on_sessions` admite `garment_id` O `design_id`,
+      con CHECK en la base de datos. Botón «Probarme este diseño».
+- [ ] Falta el generador de imágenes real.
+
+### Fase 3 — Cuerpo y talla
+- [x] `BodyProfile`, uno por usuario, con medidas todas opcionales.
+- [x] `BodyAnalysisProvider` (Protocol) + `MockBodyAnalysisProvider`.
+- [x] **Recomendación de talla real, no simulada**: tablas por medida según
+      categoría, se toma la talla mayor cuando discrepan, y devuelve el porqué.
+- [x] `GET/PUT/DELETE /body-profile`, `POST /body-profile/analyse`,
+      `GET /body-profile/size-recommendation`.
+- [x] Pantalla «Mi cuerpo»: medidas a mano, estimación por foto y talla por categoría.
+- [ ] Falta MediaPipe o el analizador real.
+
+### Infraestructura
+- [x] `docker compose up -d` levanta solo PostgreSQL (modo desarrollo, sin cambios).
+- [x] `docker compose --profile full up -d --build` levanta la aplicación entera.
+- [x] 138 pruebas automatizadas — **ejecutadas y en verde**.
+
 ### Frontend
 - [x] React 18 + TypeScript + Vite + Tailwind, configurados a mano y con alias `@/`.
 - [x] Rutas y layout con las 6 secciones del producto.
@@ -104,6 +129,10 @@
 | 5 | **El proyecto está dentro de OneDrive.** `node_modules` y `.venv` provocan sincronización constante, builds lentos y bloqueos de archivo. | Medio | Mover a `C:\dev\` o excluir esas carpetas de OneDrive. |
 | 6 | ~~El tipo de imagen se valida por la cabecera `Content-Type`.~~ **Resuelto en la Fase 1**: `app/services/images.py` abre el archivo con Pillow y usa el formato detectado. Con prueba de regresión (un texto declarado como `image/png` se rechaza). | — | Resuelto. |
 | 15 | **`BackgroundTasks` no sobrevive a un reinicio.** Si el proceso se para mientras una prueba está en `processing`, esa prueba se queda ahí para siempre: no hay reintentos ni recuperación. | Bajo | Con un proceso y un usuario es asumible. `status` ya está modelado, así que una cola encaja sin rehacer la tabla. |
+| 20 | **Las imágenes de Docker nunca se han construido.** El demonio de Docker no estaba en marcha al escribirlas; solo se validó la sintaxis del compose y los perfiles. Los `Dockerfile` están sin probar. | Medio | `docker compose --profile full up -d --build` con Docker Desktop arrancado. Es lo primero que hay que probar de esto. |
+| 21 | **El generador de diseños no es IA.** `MockDesignProvider` dibuja siluetas según palabras que reconoce (prenda y color). La interfaz lo advierte. | Alto | Conectar un modelo de texto→imagen. |
+| 22 | **El análisis corporal no es visión por computador.** `MockBodyAnalysisProvider` deriva medidas de proporciones medias sobre la altura; no detecta a la persona. Declara confianza 0.15–0.35 a propósito. | Alto | MediaPipe, en `requirements-vision.txt` aparte. |
+| 23 | **Las tablas de tallaje son genéricas**, no de ninguna marca. Cada fabricante talla distinto. | Bajo | Tabla propia por prenda cuando el catálogo sea real. |
 | 16 | **El proveedor por defecto sigue siendo el local, que no es IA.** `LocalPreviewProvider` superpone la prenda: no detecta pose ni cuerpo. La interfaz lo advierte. El de Gemini ya está escrito; se activa con `AI_PROVIDER=gemini`. | Alto | Poner la clave y activar facturación (README §6d). |
 | 17 | **El camino de Gemini no se ha ejecutado nunca contra la API real.** Las 12 pruebas usan un cliente simulado: verifican cómo se traducen respuestas y errores, no que la petición sea la correcta ni que el modelo devuelva algo útil. | Alto | Primera prueba real cuando el usuario tenga clave y facturación. Es lo primero que hay que hacer al retomar. |
 | 18 | **Cada prueba virtual con Gemini cuesta dinero y no hay límite de peticiones.** Unas centésimas de dólar por imagen; nada impide lanzarlas en bucle. | Alto | Presupuesto con alerta en Google Cloud ANTES de la primera prueba (README §6d). Y limitación #8: límite de peticiones antes de exponer la aplicación. |
@@ -264,6 +293,26 @@ idéntico con instalación nativa o con Docker).
 ---
 
 ## Próximo paso
+
+**Conectar los modelos reales.** Todo lo demás está construido: los tres flujos
+—probador, diseños y cuerpo— funcionan de punta a punta con proveedores
+simulados, y cada uno tiene su `Protocol`. Conectar un modelo real es escribir
+una clase y añadir una rama en el selector correspondiente:
+
+| Fase | Contrato | Selector | Simulado actual |
+|---|---|---|---|
+| 1 · Probador | `app/ai/provider.py` | `get_try_on_provider()` | `LocalPreviewProvider` |
+| 2 · Diseños | `app/ai/design_provider.py` | `get_design_provider()` | `MockDesignProvider` |
+| 3 · Cuerpo | `app/vision/analysis_provider.py` | `get_body_analysis_provider()` | `MockBodyAnalysisProvider` |
+
+Ni las rutas, ni los servicios, ni la base de datos, ni el frontend cambian.
+
+**Antes de eso, dos cosas que no dependen de ninguna API:**
+
+1. Construir las imágenes de Docker por primera vez (limitación #20).
+2. Verificación del correo o acceso con Google (limitación #14).
+
+---
 
 **Primera llamada real a Gemini.** El código está escrito y probado contra un
 cliente simulado, pero **nunca se ha ejecutado contra la API de verdad**. Eso lo

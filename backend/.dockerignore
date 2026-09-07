@@ -1,0 +1,19 @@
+# Todo lo que no debe entrar en la imagen.
+# El .env es lo mas importante: contiene secretos y NUNCA debe copiarse
+# dentro de una imagen; la configuracion se inyecta por variables de entorno.
+.env
+.env.*
+!.env.example
+
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Archivos subidos: son datos, no codigo. Van en un volumen.
+storage/*/*
+!storage/*/.gitkeep
+
+tests/

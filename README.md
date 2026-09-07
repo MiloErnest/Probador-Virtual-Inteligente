@@ -427,6 +427,75 @@ La aplicacion sigue funcionando de forma degradada en vez de romperse.
 
 ---
 
+## 6e. Todo con Docker
+
+Por defecto, `docker compose up -d` levanta **solo PostgreSQL**, como siempre:
+en desarrollo el hot-reload nativo es mas rapido y mas facil de depurar.
+
+Para levantar la aplicacion entera en contenedores (base de datos, backend y
+frontend), hay un perfil aparte:
+
+```powershell
+docker compose --profile full up -d --build
+```
+
+- Frontend: <http://localhost:3000>
+- API: <http://localhost:8000>
+- Adminer: <http://localhost:8080>
+
+El puerto del frontend es 3000 y no 5173, a proposito: asi se puede tener a la
+vez el servidor de desarrollo de Vite.
+
+El contenedor del backend ejecuta `alembic upgrade head` al arrancar, asi que
+el esquema se crea solo. Los proveedores van en modo simulado (`local` y
+`mock`), o sea que funciona sin ninguna cuenta externa.
+
+Para parar:
+
+```powershell
+docker compose --profile full down
+```
+
+> **Aviso: estas imagenes nunca se han construido.** Se escribieron con el
+> demonio de Docker parado, asi que solo esta validada la sintaxis del
+> `docker-compose.yml` y el funcionamiento de los perfiles. Los `Dockerfile`
+> estan sin probar (limitacion #20 de PROJECT_STATUS.md). Si el primer
+> `--build` falla, es esperable y hay que corregirlo.
+
+---
+
+## 6f. Que hace cada pantalla
+
+| Ruta | Que hace | Estado del modelo |
+|---|---|---|
+| `/catalogo` | Prendas disponibles, filtro por categoria | Publico, sin IA |
+| `/probador` | Foto + prenda (o diseno) -> resultado | **Simulado**: compone con Pillow |
+| `/disenar` | Describe una prenda, generala, iterala | **Simulado**: siluetas por palabras clave |
+| `/cuerpo` | Medidas a mano o por foto, y tu talla | Analisis **simulado**; el tallaje es real |
+| `/mis-pruebas` | Historial de pruebas | - |
+| `/perfil` | Tu cuenta y estado del sistema | - |
+
+Las tres pantallas con modelo simulado lo advierten en un aviso visible. No se
+presentan como IA.
+
+**Endpoints anadidos en las Fases 2 y 3:**
+
+| Endpoint | Que hace |
+|---|---|
+| `POST /api/designs` | Genera un diseno desde texto (202 + sondeo) |
+| `POST /api/designs/{id}/refine` | Itera: crea una version nueva, no sobrescribe |
+| `GET /api/designs` | Tus disenos |
+| `GET /api/body-profile` | Tus medidas |
+| `PUT /api/body-profile` | Crear o actualizar medidas (parcial) |
+| `POST /api/body-profile/analyse` | Estimar medidas desde una foto |
+| `DELETE /api/body-profile` | Borrar perfil y foto |
+| `GET /api/body-profile/size-recommendation` | Tu talla, con el porque |
+
+`POST /api/try-on-sessions` acepta ahora `garment_id` **o** `design_id`, nunca
+los dos: es lo que conecta la Fase 2 con la Fase 1.
+
+---
+
 ## 7. Estructura
 
 ```
@@ -439,7 +508,7 @@ backend/
     repositories/ Acceso a datos
     services/     Lógica de negocio + almacenamiento de archivos
     ai/           Proveedores de prueba virtual (local y Gemini)
-    vision/       RESERVADO — Fase 3
+    vision/       Analisis corporal (protocolo + simulado)
   alembic/        Migraciones de esquema
   scripts/        Utilidades (seed)
   storage/        Imágenes subidas (fuera de git)

@@ -159,13 +159,20 @@ def recommend(profile: BodyProfile, category: GarmentCategory) -> SizeRecommenda
             f"{talla}, porque una prenda holgada se puede ajustar y una que no entra, no."
         )
     else:
-        razon = f"Calculada a partir de tu {' y '.join(etiquetas)}."
+        # "pecho, cintura y cadera", no "pecho y cintura y cadera".
+        if len(etiquetas) == 1:
+            lista = etiquetas[0]
+        else:
+            lista = ', '.join(etiquetas[:-1]) + ' y ' + etiquetas[-1]
+        razon = f'Calculada a partir de tu {lista}.'
 
     # La confianza baja si faltan medidas de las que la prenda necesita: con
     # media información, la recomendación vale menos y hay que decirlo.
     cobertura = len(disponibles) / len(necesarias)
     confianza = round(0.5 + 0.5 * cobertura, 2)
-    if profile.source.value == "analysis":
+    #  puede ser None en un perfil recien construido y aun sin guardar:
+    # el valor por defecto lo pone la base de datos, no Python.
+    if profile.source is not None and profile.source.value == "analysis":
         # Medidas estimadas de una foto, no medidas tomadas con cinta.
         confianza = round(confianza * 0.6, 2)
         razon += " Ojo: parten de medidas estimadas por foto, no medidas a mano."

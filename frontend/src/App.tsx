@@ -5,6 +5,7 @@ import RequireAuth from '@/auth/RequireAuth'
 import MainLayout from '@/layouts/MainLayout'
 import CatalogPage from '@/pages/CatalogPage'
 import DesignAIPage from '@/pages/DesignAIPage'
+import BodyProfilePage from '@/pages/BodyProfilePage'
 import HomePage from '@/pages/HomePage'
 import LoginPage from '@/pages/LoginPage'
 import MyTryOnsPage from '@/pages/MyTryOnsPage'
@@ -20,7 +21,6 @@ export default function App() {
           {/* Publicas: el catalogo es el escaparate y se navega sin cuenta. */}
           <Route index element={<HomePage />} />
           <Route path="catalogo" element={<CatalogPage />} />
-          <Route path="disenar" element={<DesignAIPage />} />
           <Route path="entrar" element={<LoginPage />} />
           <Route path="registro" element={<RegisterPage />} />
 
@@ -28,6 +28,8 @@ export default function App() {
               evita enseñar una pantalla que iba a fallar. */}
           <Route element={<RequireAuth />}>
             <Route path="probador" element={<TryOnPage />} />
+            <Route path="disenar" element={<DesignAIPage />} />
+            <Route path="cuerpo" element={<BodyProfilePage />} />
             <Route path="mis-pruebas" element={<MyTryOnsPage />} />
             <Route path="perfil" element={<ProfilePage />} />
           </Route>
