@@ -21,13 +21,9 @@
  *
  * LIMITES CONOCIDOS
  * -----------------
- * - Una prenda MUY cercana en color al fondo deja restos. Comprobado con la
- *   camiseta blanca real del proyecto: fondo 217,217,217 contra prenda
- *   231,230,235, solo 26 de separacion. Se recorta bien la mayor parte, pero
- *   queda una mancha de fondo a un lado. Separar eso de forma fiable ya no es
- *   cuestion de afinar umbrales: hace falta un modelo de segmentacion.
- * - El degradado suave de estudio si se resuelve, comparando cada pixel con su
- *   vecino (ver TOLERANCIA_VECINO).
+ * - Una prenda casi del mismo color que el fondo se recorta peor. En la
+ *   camiseta blanca real la separacion es de solo 26 (fondo 217,217,217
+ *   contra prenda 231,230,235), y el umbral tiene que quedar por debajo.
  * - Una prenda que toque el borde de la imagen se recorta en parte.
  * - Los bordes quedan duros; no hay suavizado del canal alfa.
  *
@@ -37,64 +33,45 @@
  */
 
 /**
- * Cuanto puede alejarse un pixel del color de fondo y seguir contando como fondo.
+ * UMBRALES ADAPTATIVOS, NO FIJOS
+ * ------------------------------
+ * Un solo numero no vale para todas las fotos, y se comprobo en las reales:
  *
- * ESTE NUMERO SE ELIGIO MIDIENDO, NO A OJO
- * ----------------------------------------
- * El caso critico es una prenda BLANCA sobre el gris claro de un packshot.
- * Con un fondo #e8e8e8 y una camiseta #ffffff, la distancia entre ambos es
- * sqrt(3 * 23^2) = 39.8. Con la tolerancia en 42 que habia al principio, el
- * relleno cruzaba al blanco y se comia la camiseta entera.
+ *   - Camiseta blanca: fondo 217,217,217 contra prenda 231,230,235. Solo 26
+ *     de separacion. Un umbral generoso se come la prenda a tiras.
+ *   - Chaqueta negra: separacion enorme. Ahi el umbral puede ser amplio sin
+ *     riesgo, y conviene que lo sea para barrer sombras.
  *
- * Medido despues sobre las fotos reales del proyecto, el margen resulto ser
- * MUCHO mas estrecho de lo que sugeria ese calculo. En la foto de la camiseta
- * blanca el fondo es 217,217,217 y el centro de la camiseta 231,230,235: solo
- * 26 de distancia. O sea que el umbral tiene que quedar por debajo de 26, no
- * de 39.
- *
- * 18 separa bien: el fondo de esas fotos es muy uniforme (las cuatro esquinas
- * y los bordes quedan a 0-5 del color de referencia), asi que no hace falta
- * mas holgura. Subirlo por encima de 25 hace desaparecer la camiseta.
+ * Asi que el umbral se calcula por imagen: se mide cuanto varia el fondo a lo
+ * largo del borde —donde con certeza no hay prenda— y se deja un margen sobre
+ * esa variacion. Un fondo de estudio uniforme da un umbral estrecho; uno con
+ * degradado, uno mas ancho.
  */
-const TOLERANCIA = 18
+
+/** Margen sobre la variacion medida del fondo. */
+const FACTOR_MARGEN = 2.0
+
+/** Suelo y techo del umbral. El techo es lo que impide comerse una prenda
+ *  clara: por debajo de los 26 medidos en la camiseta blanca. */
+const UMBRAL_MINIMO = 10
+const UMBRAL_MAXIMO = 18
 
 /**
- * Cuanto puede cambiar el color entre un pixel y su vecino y seguir siendo
- * el mismo fondo.
+ * Radio del cierre morfologico, en pixeles.
  *
- * POR QUE HACE FALTA ADEMAS DE LA TOLERANCIA GLOBAL
- * -------------------------------------------------
- * El fondo de una foto de estudio no es un gris plano: tiene un degradado
- * suave por la iluminacion. Lejos de las esquinas se aleja del color de
- * referencia mas de TOLERANCIA, el relleno se para, y quedan manchas de fondo
- * sin borrar. Se vio en dos prendas reales -- el jersey gris y la camiseta
- * blanca, las de color mas parecido al fondo.
+ * POR QUE HACE FALTA
+ * ------------------
+ * Una prenda clara tiene pliegues en sombra que son casi del color del fondo.
+ * Medido en la camiseta blanca real, recorriendo la fila de los hombros: la
+ * tela esta a distancia 37-49 del fondo, pero los pliegues bajan a 5, 16 y 18.
+ * El relleno entra por esos pliegues y TUNELA hacia dentro, dejando la prenda
+ * rayada y sin trozos.
  *
- * Comparando tambien con el pixel DESDE EL QUE se llego, el relleno puede
- * seguir un degradado suave indefinidamente, porque cada paso es pequeno. Y
- * sigue parandose en el borde de la prenda, donde el salto de color es
- * brusco. Es la diferencia entre "parecerse al fondo" y "ser continuo con el
- * fondo", y lo segundo es lo que de verdad define un fondo.
+ * Un cierre —dilatar y luego erosionar— sella tuneles y agujeros mas finos
+ * que el radio, y deja la silueta practicamente igual. 4 basta para las
+ * fotos del proyecto sin redondear los bordes de forma visible.
  */
-const TOLERANCIA_VECINO = 11
-
-/**
- * Cuanto puede alejarse el relleno del color de fondo original, aunque cada
- * paso individual sea pequeno.
- *
- * SIN ESTE TOPE, LA REGLA DEL VECINO SE COME LAS PRENDAS CLARAS
- * -------------------------------------------------------------
- * Con solo la continuidad local, el relleno sube por el borde SUAVE de una
- * camiseta blanca dando pasitos de menos de 11, y acaba borrandola entera.
- * Pasó exactamente eso al probarlo con la foto real: la camiseta desaparecio
- * y salto la salvaguarda.
- *
- * 20 permite seguir un degradado de estudio y corta antes de llegar a la
- * prenda: en la foto real, el punto de la camiseta mas parecido al fondo esta
- * a 26. Con el tope en 30 que se probo primero, el relleno llegaba hasta el y
- * se comia la camiseta entera.
- */
-const DERIVA_MAXIMA = 20
+const RADIO_CIERRE = 4
 
 /** Si el fondo ocupa mas que esto, algo salio mal y se descarta el recorte. */
 const MAXIMO_BORRADO = 0.92
@@ -142,58 +119,40 @@ export function removeBackground(imagen: HTMLImageElement): RecorteResultado {
     mediana(esquinas.map((c) => c[2])),
   ]
 
+  // Umbral a medida de esta imagen: cuanto se desvia el fondo de su propio
+  // color de referencia a lo largo del borde.
+  const tolerancia = calcularUmbral(px, width, height, fondo)
+
   // Relleno por difusion desde todo el perimetro. Se usa una pila explicita y
   // no recursion: una imagen de 1400x760 desbordaria la pila de llamadas.
   const visitado = new Uint8Array(width * height)
-  // Cada entrada lleva el indice del pixel Y el color desde el que se llego,
-  // para poder aplicar la tolerancia con el vecino.
   const pila: number[] = []
-  const empujar = (idx: number, r: number, g: number, b: number) => {
-    pila.push(idx, r, g, b)
-  }
 
   for (let x = 0; x < width; x++) {
-    empujar(x, fondo[0], fondo[1], fondo[2])
-    empujar(x + (height - 1) * width, fondo[0], fondo[1], fondo[2])
+    pila.push(x, x + (height - 1) * width)
   }
   for (let y = 0; y < height; y++) {
-    empujar(y * width, fondo[0], fondo[1], fondo[2])
-    empujar(width - 1 + y * width, fondo[0], fondo[1], fondo[2])
+    pila.push(y * width, width - 1 + y * width)
   }
 
   let borrados = 0
   while (pila.length > 0) {
-    const previoB = pila.pop() as number
-    const previoG = pila.pop() as number
-    const previoR = pila.pop() as number
     const idx = pila.pop() as number
-
     if (visitado[idx] === 1) continue
     visitado[idx] = 1
 
     const p = idx * 4
-    const r = px[p]
-    const g = px[p + 1]
-    const b = px[p + 2]
+    if (distancia(px[p], px[p + 1], px[p + 2], fondo) > tolerancia) continue
 
-    // Es fondo si se parece al color de referencia O si es continuo con el
-    // pixel del que viene. Lo segundo es lo que permite seguir un degradado.
-    const desviacion = distancia(r, g, b, fondo)
-    const pareceFondo = desviacion <= TOLERANCIA
-    const continuo =
-      distancia(r, g, b, [previoR, previoG, previoB]) <= TOLERANCIA_VECINO &&
-      desviacion <= DERIVA_MAXIMA
-    if (!pareceFondo && !continuo) continue
-
-    px[p + 3] = 0 // transparente
+    px[p + 3] = 0
     borrados++
 
     const x = idx % width
     const y = (idx - x) / width
-    if (x > 0) empujar(idx - 1, r, g, b)
-    if (x < width - 1) empujar(idx + 1, r, g, b)
-    if (y > 0) empujar(idx - width, r, g, b)
-    if (y < height - 1) empujar(idx + width, r, g, b)
+    if (x > 0) pila.push(idx - 1)
+    if (x < width - 1) pila.push(idx + 1)
+    if (y > 0) pila.push(idx - width)
+    if (y < height - 1) pila.push(idx + width)
   }
 
   // Salvaguarda: si se ha borrado casi todo, es que la prenda tenia un color
@@ -205,8 +164,173 @@ export function removeBackground(imagen: HTMLImageElement): RecorteResultado {
     return { canvas, bounds: { x: 0, y: 0, width, height } }
   }
 
+  // Limpieza final: quedarse SOLO con la mancha opaca mas grande.
+  //
+  // El relleno entra desde los bordes, asi que no alcanza las zonas de fondo
+  // que quedan rodeadas por la prenda —entre un brazo y el cuerpo, por
+  // ejemplo— ni las que estan separadas del borde. Esas quedaban como parches
+  // sueltos, que es lo que se veia al lado de la camiseta blanca.
+  //
+  // La prenda es, por definicion, la region opaca mas grande de un packshot.
+  // Todo lo demas sobra.
+  // Orden importante: primero sellar los tuneles que abrio el relleno al
+  // colarse por los pliegues, y DESPUES quitar lo que quede suelto. Al reves,
+  // un fragmento de prenda separado por un tunel se tomaria por basura y se
+  // borraria antes de poder reunirlo con el resto.
+  cerrarHuecos(px, width, height)
+  borrarRestosSueltos(px, width, height)
+
   ctx.putImageData(datos, 0, 0)
   return { canvas, bounds: calcularCaja(px, width, height) }
+}
+
+/**
+ * Umbral para esta imagen, a partir de lo que varia su propio fondo.
+ *
+ * Se recorre el borde —donde con certeza no hay prenda— y se mira cuanto se
+ * alejan sus pixeles del color de referencia. El umbral es esa variacion con
+ * un margen, acotado para no comerse prendas claras.
+ */
+function calcularUmbral(
+  px: Uint8ClampedArray,
+  width: number,
+  height: number,
+  fondo: readonly [number, number, number],
+): number {
+  let maxima = 0
+  const mirar = (x: number, y: number) => {
+    const p = (x + y * width) * 4
+    const d = distancia(px[p], px[p + 1], px[p + 2], fondo)
+    if (d > maxima) maxima = d
+  }
+
+  // Muestreo cada pocos pixeles: recorrer el borde entero no cambia el
+  // resultado y cuesta mas.
+  const paso = Math.max(1, Math.floor(width / 200))
+  for (let x = 0; x < width; x += paso) {
+    mirar(x, 0)
+    mirar(x, height - 1)
+  }
+  for (let y = 0; y < height; y += paso) {
+    mirar(0, y)
+    mirar(width - 1, y)
+  }
+
+  return Math.min(UMBRAL_MAXIMO, Math.max(UMBRAL_MINIMO, maxima * FACTOR_MARGEN))
+}
+
+/**
+ * Cierre morfologico sobre el canal alfa: dilatar y luego erosionar.
+ *
+ * Sella los tuneles por los que se colo el relleno sin engordar la silueta,
+ * porque la erosion deshace lo que la dilatacion anadio salvo donde sirvio
+ * para cerrar un hueco.
+ */
+function cerrarHuecos(px: Uint8ClampedArray, width: number, height: number) {
+  const opaco = new Uint8Array(width * height)
+  for (let i = 0; i < opaco.length; i++) opaco[i] = px[i * 4 + 3] > 24 ? 1 : 0
+
+  const dilatado = pasada(opaco, width, height, RADIO_CIERRE, true)
+  const cerrado = pasada(dilatado, width, height, RADIO_CIERRE, false)
+
+  // Solo se RESTAURA lo que el cierre marca como interior. Nunca se borra: si
+  // un pixel ya era opaco, se queda, para no comerse detalles finos.
+  for (let i = 0; i < cerrado.length; i++) {
+    if (cerrado[i] === 1 && px[i * 4 + 3] <= 24) px[i * 4 + 3] = 255
+  }
+}
+
+/**
+ * Una pasada de dilatacion (max) o erosion (min) con ventana cuadrada.
+ *
+ * Se hace separable —primero en horizontal, luego en vertical— porque asi el
+ * coste es proporcional al radio y no a su cuadrado. En una imagen de 1408x768
+ * con radio 4, la diferencia es notable.
+ */
+function pasada(
+  entrada: Uint8Array,
+  width: number,
+  height: number,
+  radio: number,
+  dilatar: boolean,
+): Uint8Array {
+  const intermedio = new Uint8Array(width * height)
+  const salida = new Uint8Array(width * height)
+  const combinar = dilatar
+    ? (a: number, b: number) => (a > b ? a : b)
+    : (a: number, b: number) => (a < b ? a : b)
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let v = entrada[x + y * width]
+      for (let k = -radio; k <= radio; k++) {
+        const xx = x + k
+        if (xx < 0 || xx >= width) continue
+        v = combinar(v, entrada[xx + y * width])
+      }
+      intermedio[x + y * width] = v
+    }
+  }
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let v = intermedio[x + y * width]
+      for (let k = -radio; k <= radio; k++) {
+        const yy = y + k
+        if (yy < 0 || yy >= height) continue
+        v = combinar(v, intermedio[x + yy * width])
+      }
+      salida[x + y * width] = v
+    }
+  }
+
+  return salida
+}
+
+/** Deja solo la region opaca conectada mas grande. */
+function borrarRestosSueltos(px: Uint8ClampedArray, width: number, height: number) {
+  const etiqueta = new Int32Array(width * height).fill(-1)
+  let mejorEtiqueta = -1
+  let mejorTamano = 0
+  let actual = 0
+
+  const pila: number[] = []
+  for (let inicio = 0; inicio < width * height; inicio++) {
+    if (etiqueta[inicio] !== -1 || px[inicio * 4 + 3] <= 24) continue
+
+    let tamano = 0
+    pila.push(inicio)
+    etiqueta[inicio] = actual
+
+    while (pila.length > 0) {
+      const idx = pila.pop() as number
+      tamano++
+      const x = idx % width
+      const y = (idx - x) / width
+      const vecinos = [
+        x > 0 ? idx - 1 : -1,
+        x < width - 1 ? idx + 1 : -1,
+        y > 0 ? idx - width : -1,
+        y < height - 1 ? idx + width : -1,
+      ]
+      for (const v of vecinos) {
+        if (v < 0 || etiqueta[v] !== -1 || px[v * 4 + 3] <= 24) continue
+        etiqueta[v] = actual
+        pila.push(v)
+      }
+    }
+
+    if (tamano > mejorTamano) {
+      mejorTamano = tamano
+      mejorEtiqueta = actual
+    }
+    actual++
+  }
+
+  if (mejorEtiqueta < 0) return
+  for (let i = 0; i < width * height; i++) {
+    if (etiqueta[i] !== mejorEtiqueta) px[i * 4 + 3] = 0
+  }
 }
 
 function leerPixel(

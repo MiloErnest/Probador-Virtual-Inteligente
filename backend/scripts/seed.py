@@ -23,6 +23,7 @@ from sqlalchemy import select
 
 from app.core.database import SessionLocal, get_schema_revision
 from app.models.garment import Garment, GarmentCategory
+from app.core.config import BACKEND_DIR
 from app.services.storage import FOLDER_GARMENTS, get_storage
 
 SAMPLE_GARMENTS: list[dict] = [
@@ -134,6 +135,11 @@ def main() -> None:
         action="store_true",
         help="Genera siluetas de ejemplo para las prendas que no tengan imagen.",
     )
+    parser.add_argument(
+        "--con-prendas-reales",
+        action="store_true",
+        help="Carga las fotografias de assets/prendas-de-ejemplo/ en el catalogo.",
+    )
     args = parser.parse_args()
 
     created = 0
@@ -168,12 +174,72 @@ def main() -> None:
 
         session.commit()
 
+    if args.con_prendas_reales:
+        cargar_prendas_reales(storage)
+
     print(f"Prendas creadas: {created} | ya existentes: {skipped}")
     if args.with_images:
         print(f"Imágenes generadas: {imaged}")
     elif created or skipped:
         print("Sin imágenes. Para generarlas:  python -m scripts.seed --with-images")
 
+
+
+# Fotografias de producto del repositorio, con la categoria que les toca.
+# Viven en assets/ y no en storage/ porque son material de partida del
+# proyecto, no algo que la aplicacion haya escrito.
+PRENDAS_REALES: list[tuple[str, str, GarmentCategory, str]] = [
+    ("camisa-marron.jpg", "Camisa marron de hombre", GarmentCategory.TOP,
+     "Camisa de manga larga con bolsillos de parche."),
+    ("camiseta-blanca.jpg", "Camiseta blanca", GarmentCategory.TOP,
+     "Camiseta basica de cuello redondo."),
+    ("chaqueta-cuero-negra.jpg", "Chaqueta de cuero negra", GarmentCategory.OUTERWEAR,
+     "Chaqueta biker de cuero con cremalleras."),
+    ("vaquero-hombre.jpg", "Vaquero de hombre", GarmentCategory.BOTTOM,
+     "Pantalon vaquero de corte recto."),
+    ("jersey-gris-mujer.jpg", "Jersey gris de mujer", GarmentCategory.TOP,
+     "Jersey de punto fino con cuello redondo."),
+]
+
+CARPETA_PRENDAS = BACKEND_DIR.parent / "assets" / "prendas-de-ejemplo"
+
+
+def cargar_prendas_reales(storage) -> None:
+    """Mete las fotografias del repositorio en el catalogo.
+
+    Idempotente: si la prenda ya existe con imagen, no la vuelve a subir. Asi
+    se puede ejecutar el seed las veces que haga falta.
+    """
+    if not CARPETA_PRENDAS.is_dir():
+        print(f"No se encontro {CARPETA_PRENDAS}; se omiten las prendas reales.")
+        return
+
+    cargadas = 0
+    with SessionLocal() as session:
+        for archivo, nombre, categoria, descripcion in PRENDAS_REALES:
+            ruta = CARPETA_PRENDAS / archivo
+            if not ruta.exists():
+                print(f"  falta {archivo}")
+                continue
+
+            garment = session.execute(
+                select(Garment).where(Garment.name == nombre)
+            ).scalar_one_or_none()
+
+            if garment is None:
+                garment = Garment(name=nombre, description=descripcion, category=categoria)
+                session.add(garment)
+                session.flush()
+
+            if not garment.image_key:
+                garment.image_key = storage.save(
+                    ruta.read_bytes(), folder=FOLDER_GARMENTS, extension=".jpg"
+                )
+                cargadas += 1
+
+        session.commit()
+
+    print(f"Prendas reales cargadas: {cargadas}")
 
 if __name__ == "__main__":
     main()

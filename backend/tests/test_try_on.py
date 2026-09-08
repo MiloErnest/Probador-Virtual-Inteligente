@@ -12,6 +12,7 @@ tiene que sondear. Ese comportamiento real se verifica a mano contra el
 servidor arrancado.
 """
 
+import pytest
 from fastapi.testclient import TestClient
 
 from tests.conftest import auth_headers, make_image_bytes, register_and_login
@@ -238,3 +239,87 @@ def test_the_history_only_shows_your_own_try_ons(
     ajeno = auth_client.get("/api/try-on-sessions", headers=auth_headers(otro_token))
 
     assert ajeno.json() == []
+
+
+# --- Privacidad de la fotografia -------------------------------------------
+
+
+def test_the_persons_photo_is_deleted_once_the_result_exists(
+    auth_client: TestClient, garment_with_image: dict, storage
+) -> None:
+    """La foto del cuerpo de alguien no se guarda mas de lo necesario.
+
+    Es el dato mas sensible que maneja la aplicacion y, generado el
+    resultado, ya no hace falta para nada.
+    """
+    session_id = crear_prueba(auth_client, garment_with_image["id"]).json()["id"]
+
+    prueba = auth_client.get(f"/api/try-on-sessions/{session_id}").json()
+
+    assert prueba["status"] == "completed", prueba.get("error_message")
+    # El resultado sigue ahi...
+    assert prueba["output_image_url"] is not None
+    # ...pero la foto de la persona ya no.
+    assert prueba["input_image_url"] is None
+
+
+def test_the_photo_is_also_deleted_when_the_try_on_fails(
+    auth_client: TestClient, storage, monkeypatch
+) -> None:
+    """Si fallo, esa foto sirve todavia menos. Tampoco se conserva."""
+    from app.ai.provider import TryOnProviderError
+    from app.ai import local_preview
+
+    def revienta(self, **_kwargs):
+        raise TryOnProviderError("fallo simulado")
+
+    monkeypatch.setattr(local_preview.LocalPreviewProvider, "generate", revienta)
+
+    sin_imagen = auth_client.post(
+        "/api/garments", json={"name": "Prenda X", "category": "top"}
+    ).json()
+    auth_client.post(
+        f"/api/garments/{sin_imagen['id']}/image",
+        files={"file": ("x.png", make_image_bytes(120, 160), "image/png")},
+    )
+    session_id = crear_prueba(auth_client, sin_imagen["id"]).json()["id"]
+
+    prueba = auth_client.get(f"/api/try-on-sessions/{session_id}").json()
+
+    assert prueba["status"] == "failed"
+    assert prueba["input_image_url"] is None
+
+
+def test_deleting_a_try_on_removes_its_files_too(
+    auth_client: TestClient, garment_with_image: dict, storage
+) -> None:
+    """Una prueba borrada que dejara sus imagenes en el disco seria peor que
+    no poder borrarla: parecerian eliminadas sin estarlo."""
+    session_id = crear_prueba(auth_client, garment_with_image["id"]).json()["id"]
+    url = auth_client.get(f"/api/try-on-sessions/{session_id}").json()["output_image_url"]
+    clave = f"results/{url.rsplit('/', 1)[1]}"
+    assert storage.read(clave)  # existe antes de borrar
+
+    respuesta = auth_client.delete(f"/api/try-on-sessions/{session_id}")
+
+    assert respuesta.status_code == 200
+    assert auth_client.get(f"/api/try-on-sessions/{session_id}").status_code == 404
+    with pytest.raises(FileNotFoundError):
+        storage.read(clave)
+
+
+def test_you_cannot_delete_someone_elses_try_on(
+    auth_client: TestClient, garment_with_image: dict
+) -> None:
+    session_id = crear_prueba(auth_client, garment_with_image["id"]).json()["id"]
+    _, otro_token = register_and_login(auth_client, email="otro@example.com")
+
+    respuesta = auth_client.delete(
+        f"/api/try-on-sessions/{session_id}", headers=auth_headers(otro_token)
+    )
+
+    assert respuesta.status_code == 404
+
+
+def test_deleting_requires_authentication(client: TestClient) -> None:
+    assert client.delete("/api/try-on-sessions/1").status_code == 401

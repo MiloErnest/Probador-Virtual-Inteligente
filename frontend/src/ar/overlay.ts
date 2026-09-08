@@ -176,14 +176,26 @@ export function dibujarEsqueleto(
 }
 
 /**
- * Cuanto mas ancha que los hombros se dibuja la prenda.
+ * Ajuste del encaje de la prenda sobre el cuerpo.
  *
- * En una foto de producto, la prenda es bastante mas ancha que los hombros de
- * quien la lleve: tiene holgura, y las mangas caen hacia fuera. 1.9 sale de
- * probar con las fotos de catalogo; es el numero que hay que tocar si la
- * prenda se ve pequena o desbordada.
+ * POR QUE ES AJUSTABLE Y NO UNA CONSTANTE
+ * ---------------------------------------
+ * El valor correcto depende de como este encuadrada la foto de producto —
+ * cuanto margen tiene, donde cae el cuello, si la prenda es holgada— y de la
+ * complexion de quien se la prueba. No hay un numero que sirva para todo, y
+ * fijarlo a ojo garantiza que a alguien le quede mal.
+ *
+ * Los valores por defecto son un punto de partida razonable; la pantalla deja
+ * corregirlos en vivo.
  */
-const HOLGURA = 1.9
+export interface Encaje {
+  /** Cuanto mas ancha que los hombros se dibuja. 1 = exactamente su ancho. */
+  ancho: number
+  /** Desplazamiento vertical, en multiplos del largo del torso. */
+  alto: number
+}
+
+export const ENCAJE_POR_DEFECTO: Encaje = { ancho: 1.9, alto: 0 }
 
 /**
  * Donde cae el cuello de la prenda respecto a su propia altura.
@@ -207,16 +219,20 @@ export function dibujarPrenda(
   prenda: HTMLCanvasElement,
   recorte: { x: number; y: number; width: number; height: number },
   medidas: Medidas,
+  encaje: Encaje = ENCAJE_POR_DEFECTO,
 ) {
   if (recorte.width === 0 || recorte.height === 0) return
 
-  const anchoDestino = medidas.anchoHombros * HOLGURA
+  const anchoDestino = medidas.anchoHombros * encaje.ancho
   const escala = anchoDestino / recorte.width
   const altoDestino = recorte.height * escala
 
   ctx.save()
   ctx.translate(medidas.centroHombros.x, medidas.centroHombros.y)
   ctx.rotate(medidas.anguloHombros)
+  // El desplazamiento va DESPUES de rotar, para que suba y baje siguiendo el
+  // eje del cuerpo y no el de la pantalla.
+  ctx.translate(0, medidas.largoTorso * encaje.alto)
   // Un poco transparente: deja intuir el cuerpo debajo y hace evidente que
   // es una vista previa y no una fotografia.
   ctx.globalAlpha = 0.92

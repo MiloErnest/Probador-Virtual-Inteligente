@@ -141,7 +141,13 @@ class TryOnSessionService:
                 "Ese diseño todavía no se ha generado, así que no se puede probar."
             )
 
-    def process(self, session_id: int, *, provider: TryOnProvider) -> None:
+    def process(
+        self,
+        session_id: int,
+        *,
+        provider: TryOnProvider,
+        keep_input: bool = False,
+    ) -> None:
         """Genera el resultado de una prueba. Se ejecuta en segundo plano.
 
         No propaga excepciones: nadie está escuchando. Cualquier fallo se
@@ -210,6 +216,32 @@ class TryOnSessionService:
 
         self.repository.save(session)
 
+        # La foto de la persona se borra en cuanto deja de hacer falta.
+        # Se hace DESPUES de guardar la fila: si el guardado fallara, la
+        # prueba se podria reintentar; borrando antes, no.
+        #
+        # Se borra tanto si fue bien como si fallo. Si fallo, esa foto ya
+        # no sirve para nada y no hay motivo para conservarla.
+        if not keep_input and session.input_image_key:
+            self.storage.delete(session.input_image_key)
+            session.input_image_key = ""
+            self.repository.save(session)
+            logger.info("Prueba %s: foto de entrada borrada.", session_id)
+
+    def delete_for_user(self, session_id: int, *, user_id: int) -> None:
+        """Borra una prueba y sus imagenes.
+
+        Los archivos se van con la fila. Una prueba borrada que dejara sus
+        imagenes en el disco seria peor que no poder borrarla: daria la
+        impresion de que se han ido cuando no es asi.
+        """
+        session = self._get_owned(session_id, user_id=user_id)
+        claves = [session.input_image_key, session.output_image_key]
+        self.repository.delete(session)
+        for clave in claves:
+            if clave:
+                self.storage.delete(clave)
+
     # --- Interno y traducción ---
 
     def _get_owned(self, session_id: int, *, user_id: int) -> TryOnSession:
@@ -225,7 +257,9 @@ class TryOnSessionService:
             garment_id=session.garment_id,
             design_id=session.design_id,
             status=session.status,
-            input_image_url=self.storage.public_url(session.input_image_key),
+            # Vacia cuando la foto ya se borro: el contrato dice `str | None`,
+            # asi que se traduce a null en vez de a una URL rota.
+            input_image_url=self.storage.public_url(session.input_image_key or None),
             output_image_url=self.storage.public_url(session.output_image_key),
             error_message=session.error_message,
             provider=session.provider,

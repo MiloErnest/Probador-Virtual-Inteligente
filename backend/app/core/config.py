@@ -80,6 +80,16 @@ class Settings(BaseSettings):
     # sin tocar codigo: este catalogo se mueve deprisa.
     GEMINI_MODEL: str = "gemini-3.1-flash-image"
 
+    # Conservar la FOTO DE LA PERSONA despues de generar el resultado.
+    #
+    # Por defecto NO. Una foto del cuerpo de alguien es el dato mas
+    # sensible que maneja esta aplicacion, y una vez generado el
+    # resultado ya no hace falta para nada. Guardarla "por si acaso" es
+    # justo la decision que crea un problema donde no lo habia.
+    #
+    # Ponerlo a true solo si se quiere la comparacion antes/despues.
+    KEEP_INPUT_PHOTOS: bool = False
+
     # --- Generador de disenos (Fase 2) ---
     # "mock" = siluetas dibujadas con Pillow a partir de palabras clave. NO es
     # IA. Existe para que la Fase 2 funcione sin cuenta de pago.

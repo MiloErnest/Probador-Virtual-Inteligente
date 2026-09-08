@@ -17,6 +17,7 @@ from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query
 
 from app.api.deps import CurrentUserDep, TryOnRunnerDep, TryOnServiceDep
 from app.core.config import settings
+from app.schemas.common import MessageResponse
 from app.schemas.try_on_session import TryOnSessionRead
 from app.services.exceptions import NotFoundError, ValidationError
 
@@ -92,6 +93,26 @@ def list_try_on_sessions(
     offset: int = Query(0, ge=0),
 ) -> list[TryOnSessionRead]:
     return service.list_by_user(current_user.id, limit=limit, offset=offset)
+
+
+@router.delete(
+    "/{session_id}",
+    response_model=MessageResponse,
+    summary="Borrar una prueba y sus imagenes",
+    responses={
+        401: {"description": "Falta el token o no es válido"},
+        404: {"description": "La prueba no existe o no es tuya"},
+    },
+)
+def delete_try_on_session(
+    session_id: int, service: TryOnServiceDep, current_user: CurrentUserDep
+) -> MessageResponse:
+    """Los archivos se borran con la fila, no solo el registro."""
+    try:
+        service.delete_for_user(session_id, user_id=current_user.id)
+    except NotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    return MessageResponse(message="Prueba eliminada.")
 
 
 @router.get(

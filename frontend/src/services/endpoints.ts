@@ -63,6 +63,11 @@ export function createTryOnSession(
   return api.postForm<TryOnSession>('/try-on-sessions', { photo }, fields, { signal })
 }
 
+/** Borra una prueba y sus imagenes del servidor. */
+export function deleteTryOnSession(id: number, signal?: AbortSignal) {
+  return api.delete<{ message: string }>(`/try-on-sessions/${id}`, { signal })
+}
+
 // --- Disenos (Fase 2) ---
 
 export function fetchDesigns(signal?: AbortSignal) {

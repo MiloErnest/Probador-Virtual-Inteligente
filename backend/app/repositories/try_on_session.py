@@ -45,6 +45,10 @@ class TryOnSessionRepository:
         self.session.refresh(session)
         return session
 
+    def delete(self, session: TryOnSession) -> None:
+        self.session.delete(session)
+        self.session.commit()
+
     def save(self, session: TryOnSession) -> TryOnSession:
         self.session.add(session)
         self.session.commit()

@@ -27,13 +27,21 @@ import { Link } from 'react-router-dom'
 
 import type { Avatar3D } from '@/ar/avatar3d'
 import { usePoseScanner } from '@/ar/usePoseScanner'
-import { dibujarEsqueleto, dibujarPrenda, dibujarSilueta, medirCuerpo } from '@/ar/overlay'
+import type { Encaje } from '@/ar/overlay'
+import {
+  ENCAJE_POR_DEFECTO,
+  dibujarEsqueleto,
+  dibujarPrenda,
+  dibujarSilueta,
+  medirCuerpo,
+} from '@/ar/overlay'
 import { removeBackground } from '@/ar/removeBackground'
 import type { RecorteResultado } from '@/ar/removeBackground'
 import { ErrorBlock, LoadingBlock } from '@/components/StateBlocks'
 import { useApi } from '@/hooks/useApi'
 import {
   createTryOnSession,
+  deleteTryOnSession,
   fetchDesigns,
   fetchBodyProfile,
   fetchGarments,
@@ -70,6 +78,7 @@ export default function ARPage() {
   const [giro, setGiro] = useState(0)
   const [perfil, setPerfil] = useState<BodyProfile | null>(null)
   const [avatarListo, setAvatarListo] = useState(false)
+  const [encaje, setEncaje] = useState<Encaje>(ENCAJE_POR_DEFECTO)
 
   // Declarado arriba porque varios efectos dependen de el.
   const escaneando = status === 'scanning'
@@ -256,11 +265,11 @@ export default function ARPage() {
     const medidas = medirCuerpo(frame.landmarks, canvas.width, canvas.height)
 
     if (medidas !== null && prendaRef.current !== null) {
-      dibujarPrenda(ctx, prendaRef.current.canvas, prendaRef.current.bounds, medidas)
+      dibujarPrenda(ctx, prendaRef.current.canvas, prendaRef.current.bounds, medidas, encaje)
     }
 
     dibujarEsqueleto(ctx, frame.landmarks, canvas.width, canvas.height, COLOR_ESQUELETO)
-  }, [frame, videoRef])
+  }, [frame, videoRef, encaje])
 
   // Sondeo del resultado, igual que en el probador de siempre.
   const enCurso = sesion?.status === 'pending' || sesion?.status === 'processing'
@@ -301,6 +310,15 @@ export default function ARPage() {
     canvas.width = video.videoWidth
     canvas.height = video.videoHeight
   }, [videoRef])
+
+  async function borrarPrueba(id: number) {
+    try {
+      await deleteTryOnSession(id)
+      setSesion(null)
+    } catch (causa) {
+      setError(causa instanceof Error ? causa.message : 'No se pudo borrar.')
+    }
+  }
 
   async function capturar() {
     const video = videoRef.current
@@ -352,7 +370,8 @@ export default function ARPage() {
       <div className="card border-sky-200 bg-sky-50/60 px-5 py-4 text-sm text-sky-900">
         <strong className="font-medium">Tu camara no sale de tu equipo.</strong> La deteccion
         del cuerpo corre entera en tu navegador y no se envia nada al servidor. Solo viaja
-        una fotografia cuando pulsas Capturar.
+        una fotografia cuando pulsas Capturar, y <strong>esa foto se borra en cuanto se
+        genera el resultado</strong>: no se guarda ninguna imagen tuya.
       </div>
 
       {(error || errorCamara) && (
@@ -457,6 +476,62 @@ export default function ARPage() {
             </div>
           )}
         </div>
+
+        {escaneando && origen !== null && (
+          <div className="card space-y-3 p-5">
+            <div>
+              <h3 className="font-display text-lg">Ajustar el encaje</h3>
+              <p className="text-xs text-ink-muted">
+                El valor bueno depende de como este encuadrada la foto de la prenda y de tu
+                complexion, asi que no hay uno que sirva para todos. Muevelos hasta que
+                cuadre y dime los numeros: los dejo como valor por defecto.
+              </p>
+            </div>
+
+            <label className="flex items-center gap-3 text-sm">
+              <span className="w-24 shrink-0 text-ink-muted">Tamano</span>
+              <input
+                type="range"
+                min={100}
+                max={320}
+                value={Math.round(encaje.ancho * 100)}
+                onChange={(e) =>
+                  setEncaje((v) => ({ ...v, ancho: Number(e.target.value) / 100 }))
+                }
+                className="w-full"
+              />
+              <span className="w-14 text-right text-xs tabular-nums text-ink-muted">
+                {encaje.ancho.toFixed(2)}x
+              </span>
+            </label>
+
+            <label className="flex items-center gap-3 text-sm">
+              <span className="w-24 shrink-0 text-ink-muted">Altura</span>
+              <input
+                type="range"
+                min={-50}
+                max={50}
+                value={Math.round(encaje.alto * 100)}
+                onChange={(e) =>
+                  setEncaje((v) => ({ ...v, alto: Number(e.target.value) / 100 }))
+                }
+                className="w-full"
+              />
+              <span className="w-14 text-right text-xs tabular-nums text-ink-muted">
+                {encaje.alto >= 0 ? '+' : ''}
+                {Math.round(encaje.alto * 100)}%
+              </span>
+            </label>
+
+            <button
+              type="button"
+              className="btn-ghost px-3.5 py-1.5"
+              onClick={() => setEncaje(ENCAJE_POR_DEFECTO)}
+            >
+              Volver a los valores por defecto
+            </button>
+          </div>
+        )}
 
         {escaneando && ver3d && (
           <div className="space-y-3">
@@ -569,17 +644,23 @@ export default function ARPage() {
           )}
 
           {sesion.status === 'completed' && sesion.output_image_url && (
-            <div className="grid gap-5 sm:grid-cols-2">
-              <figure className="card overflow-hidden">
-                <img src={sesion.input_image_url ?? ''} alt="Tu captura" className="w-full" />
-                <figcaption className="px-4 py-3 text-xs text-ink-muted">Tu captura</figcaption>
-              </figure>
+            <div className="max-w-md space-y-3">
               <figure className="card overflow-hidden">
                 <img src={sesion.output_image_url} alt="Resultado" className="w-full" />
                 <figcaption className="px-4 py-3 text-xs text-ink-muted">
                   Resultado · {sesion.provider ?? 'desconocido'}
+                  {/* Ya no se ensena la captura original al lado: no existe.
+                      Se borra en cuanto el resultado esta listo. */}
+                  <span className="mt-1 block">Tu fotografia ya se ha borrado del servidor.</span>
                 </figcaption>
               </figure>
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => borrarPrueba(sesion.id)}
+              >
+                Borrar tambien este resultado
+              </button>
             </div>
           )}
         </section>

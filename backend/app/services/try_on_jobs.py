@@ -15,6 +15,7 @@ esconderlo dentro de la ruta.
 import logging
 
 from app.ai import get_design_provider, get_try_on_provider
+from app.core.config import settings
 from app.core.database import SessionLocal
 from app.repositories.design import DesignRepository
 from app.repositories.garment import GarmentRepository
@@ -43,7 +44,11 @@ def run_try_on_job(session_id: int) -> None:
                 DesignRepository(db),
                 get_storage(),
             )
-            service.process(session_id, provider=get_try_on_provider())
+            service.process(
+                session_id,
+                provider=get_try_on_provider(),
+                keep_input=settings.KEEP_INPUT_PHOTOS,
+            )
     except Exception:  # noqa: BLE001
         logger.exception(
             "No se pudo siquiera arrancar el procesado de la prueba %s. "
