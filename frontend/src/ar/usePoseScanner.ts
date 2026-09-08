@@ -32,7 +32,11 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { NormalizedLandmark, PoseLandmarker as PoseLandmarkerType } from '@mediapipe/tasks-vision'
+import type {
+  Landmark,
+  NormalizedLandmark,
+  PoseLandmarker as PoseLandmarkerType,
+} from '@mediapipe/tasks-vision'
 
 /** Rutas de los archivos que sirve Vite desde `public/`. */
 const WASM_PATH = '/mediapipe/wasm'
@@ -46,8 +50,15 @@ export type ScannerStatus =
   | 'error'
 
 export interface PoseFrame {
-  /** Los 33 puntos del cuerpo, normalizados de 0 a 1. */
+  /** Los 33 puntos del cuerpo, normalizados de 0 a 1. Sirven para dibujar
+   *  sobre la imagen de la camara. */
   landmarks: NormalizedLandmark[]
+  /**
+   * Los mismos puntos en 3D y EN METROS, con origen en el centro de las
+   * caderas. Es lo que permite construir el maniqui tridimensional: la
+   * postura viene ya medida en el espacio, no hay que reconstruirla.
+   */
+  worldLandmarks: Landmark[]
   /**
    * Mascara de la persona: un valor de 0 a 1 por pixel, en la resolucion que
    * decide el modelo (no la del video). 1 = persona.
@@ -142,6 +153,7 @@ export function usePoseScanner() {
           try {
             const resultado = l.detectForVideo(v, timestamp)
             const puntos = resultado.landmarks?.[0] ?? null
+            const puntos3d = resultado.worldLandmarks?.[0] ?? []
             const mascara = resultado.segmentationMasks?.[0] ?? null
 
             setFrame(
@@ -149,6 +161,7 @@ export function usePoseScanner() {
                 ? null
                 : {
                     landmarks: puntos,
+                    worldLandmarks: puntos3d,
                     mask: mascara ? mascara.getAsFloat32Array() : null,
                     maskWidth: mascara?.width ?? 0,
                     maskHeight: mascara?.height ?? 0,

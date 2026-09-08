@@ -25,6 +25,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
+import type { Avatar3D } from '@/ar/avatar3d'
 import { usePoseScanner } from '@/ar/usePoseScanner'
 import { dibujarEsqueleto, dibujarPrenda, dibujarSilueta, medirCuerpo } from '@/ar/overlay'
 import { removeBackground } from '@/ar/removeBackground'
@@ -34,10 +35,11 @@ import { useApi } from '@/hooks/useApi'
 import {
   createTryOnSession,
   fetchDesigns,
+  fetchBodyProfile,
   fetchGarments,
   fetchTryOnSession,
 } from '@/services/endpoints'
-import type { Design, Garment, TryOnSession } from '@/types'
+import type { BodyProfile, Design, Garment, TryOnSession } from '@/types'
 
 const COLOR_SILUETA: [number, number, number] = [124, 58, 237]
 const COLOR_ESQUELETO = '#22d3ee'
@@ -51,6 +53,8 @@ export default function ARPage() {
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const prendaRef = useRef<RecorteResultado | null>(null)
+  const canvas3dRef = useRef<HTMLCanvasElement | null>(null)
+  const avatarRef = useRef<Avatar3D | null>(null)
 
   const garmentsFetcher = useCallback((s: AbortSignal) => fetchGarments({ signal: s }), [])
   const { data: garments } = useApi(garmentsFetcher)
@@ -62,11 +66,35 @@ export default function ARPage() {
   const [sesion, setSesion] = useState<TryOnSession | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [capturando, setCapturando] = useState(false)
+  const [ver3d, setVer3d] = useState(true)
+  const [giro, setGiro] = useState(0)
+  const [perfil, setPerfil] = useState<BodyProfile | null>(null)
+  const [avatarListo, setAvatarListo] = useState(false)
+
+  // Declarado arriba porque varios efectos dependen de el.
+  const escaneando = status === 'scanning'
 
   const vestibles = (garments ?? []).filter((g: Garment) => g.image_url !== null)
   const disenosListos = (designs ?? []).filter(
     (d: Design) => d.status === 'completed' && d.image_url !== null,
   )
+
+  // Medidas del perfil corporal. Son las que hacen que el maniqui tenga TUS
+  // proporciones y no unas genericas. Si no hay perfil, el avatar usa unos
+  // contornos por defecto y se avisa en pantalla.
+  useEffect(() => {
+    let activo = true
+    fetchBodyProfile()
+      .then((p) => {
+        if (activo) setPerfil(p)
+      })
+      .catch(() => {
+        // 404 = todavia no hay perfil. No es un error que haya que ensenar.
+      })
+    return () => {
+      activo = false
+    }
+  }, [])
 
   // Recorte del fondo de la prenda elegida. Se hace una sola vez por prenda y
   // se guarda: recortar cuesta recorrer la imagen entera y no puede repetirse
@@ -146,6 +174,66 @@ export default function ARPage() {
       activo = false
     }
   }, [origen])
+
+  // Ciclo de vida del avatar 3D. Import dinamico: Three.js son ~600 KB que no
+  // tiene sentido cargar en quien no abra el panel 3D.
+  useEffect(() => {
+    if (!ver3d || !escaneando) return
+
+    let activo = true
+    let avatar: Avatar3D | null = null
+
+    import('@/ar/avatar3d')
+      .then(({ Avatar3D: Clase }) => {
+        const canvas = canvas3dRef.current
+        if (!activo || canvas === null) return
+        avatar = new Clase(canvas)
+        avatarRef.current = avatar
+        setAvatarListo(true)
+      })
+      .catch(() => {
+        if (activo) setError('No se pudo iniciar la vista 3D.')
+      })
+
+    return () => {
+      activo = false
+      avatar?.dispose()
+      avatarRef.current = null
+      setAvatarListo(false)
+    }
+  }, [ver3d, escaneando])
+
+  // Las medidas y la prenda se pasan al avatar cuando cambian.
+  useEffect(() => {
+    avatarRef.current?.setMedidas(perfil)
+  }, [perfil, avatarListo])
+
+  useEffect(() => {
+    // Se pasa tambien la caja util: sin ella, la textura llevaria los
+    // margenes vacios del packshot y la prenda saldria diminuta.
+    avatarRef.current?.setPrenda(
+      prendaLista ? (prendaRef.current?.canvas ?? null) : null,
+      prendaRef.current?.bounds,
+    )
+  }, [prendaLista, avatarListo])
+
+  useEffect(() => {
+    avatarRef.current?.girar(giro)
+  }, [giro, avatarListo])
+
+  // Actualizar la pose del maniqui con cada fotograma detectado.
+  useEffect(() => {
+    const avatar = avatarRef.current
+    const canvas = canvas3dRef.current
+    if (avatar === null || canvas === null || frame === null) return
+    if (frame.worldLandmarks.length === 0) return
+
+    const ancho = canvas.clientWidth
+    const alto = canvas.clientHeight
+    avatar.resize(ancho, alto)
+    avatar.update(frame.worldLandmarks)
+    avatar.render()
+  }, [frame, avatarListo])
 
   // Bucle de dibujo. Separado del bucle de deteccion a proposito: la deteccion
   // la marca MediaPipe y el dibujo lo marca el navegador.
@@ -250,7 +338,6 @@ export default function ARPage() {
     }
   }
 
-  const escaneando = status === 'scanning'
   const hayPersona = frame !== null
 
   return (
@@ -371,6 +458,56 @@ export default function ARPage() {
           )}
         </div>
 
+        {escaneando && ver3d && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h3 className="font-display text-lg">Tu modelo 3D</h3>
+              <span className="text-xs text-ink-muted">
+                {perfil
+                  ? 'Con las medidas de tu perfil corporal'
+                  : 'Con medidas por defecto: rellena tu perfil corporal para que sea el tuyo'}
+              </span>
+            </div>
+
+            <div className="overflow-hidden rounded-xl2 border border-black/[0.07] bg-gradient-to-b from-slate-100 to-slate-200">
+              {/* El canvas 3D tiene su propio tamano de dibujo, que el avatar
+                  ajusta al del CSS en cada fotograma. */}
+              <canvas ref={canvas3dRef} className="block h-[420px] w-full" />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4">
+              <label className="flex flex-1 items-center gap-3 text-sm">
+                <span className="whitespace-nowrap text-ink-muted">Girar</span>
+                <input
+                  type="range"
+                  min={-180}
+                  max={180}
+                  step={1}
+                  value={Math.round((giro * 180) / Math.PI)}
+                  onChange={(e) => setGiro((Number(e.target.value) * Math.PI) / 180)}
+                  className="w-full"
+                />
+                <span className="w-12 text-right text-xs tabular-nums text-ink-muted">
+                  {Math.round((giro * 180) / Math.PI)}°
+                </span>
+              </label>
+              <button
+                type="button"
+                className="btn-ghost px-3.5 py-1.5"
+                onClick={() => setGiro(0)}
+              >
+                De frente
+              </button>
+            </div>
+
+            <p className="text-xs text-ink-muted">
+              La postura y las proporciones son tuyas. La cara no: reconstruir el rostro de
+              una persona en 3D es otro problema, mucho mayor, y prefiero un maniquí neutro
+              antes que fingir un parecido que no existe.
+            </p>
+          </div>
+        )}
+
         {escaneando && (
           <div className="flex flex-wrap items-center gap-3">
             <span
@@ -383,6 +520,13 @@ export default function ARPage() {
             {origen !== null && !prendaLista && (
               <span className="pill bg-black/[0.05] text-ink-muted">Recortando la prenda…</span>
             )}
+            <button
+              type="button"
+              className="btn-ghost px-3.5 py-1.5"
+              onClick={() => setVer3d((v) => !v)}
+            >
+              {ver3d ? 'Ocultar el 3D' : 'Ver en 3D'}
+            </button>
             <button type="button" className="btn-ghost px-3.5 py-1.5" onClick={stop}>
               Apagar la camara
             </button>
