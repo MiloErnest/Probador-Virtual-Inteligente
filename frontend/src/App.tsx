@@ -5,6 +5,7 @@ import RequireAuth from '@/auth/RequireAuth'
 import MainLayout from '@/layouts/MainLayout'
 import CatalogPage from '@/pages/CatalogPage'
 import DesignAIPage from '@/pages/DesignAIPage'
+import ARPage from '@/pages/ARPage'
 import BodyProfilePage from '@/pages/BodyProfilePage'
 import HomePage from '@/pages/HomePage'
 import LoginPage from '@/pages/LoginPage'
@@ -28,6 +29,7 @@ export default function App() {
               evita enseñar una pantalla que iba a fallar. */}
           <Route element={<RequireAuth />}>
             <Route path="probador" element={<TryOnPage />} />
+            <Route path="camara" element={<ARPage />} />
             <Route path="disenar" element={<DesignAIPage />} />
             <Route path="cuerpo" element={<BodyProfilePage />} />
             <Route path="mis-pruebas" element={<MyTryOnsPage />} />

@@ -19,6 +19,13 @@ dist-ssr/
 *.local
 *.tsbuildinfo
 
+# ---------- MediaPipe ----------
+# El runtime WASM son ~22 MB que `npm install` ya descarga: se copia
+# desde node_modules con `npm run prepare:mediapipe`, no se versiona.
+# El modelo .task SI se versiona (5,6 MB): no viene con ningun paquete
+# y sin el la aplicacion no arranca.
+frontend/public/mediapipe/
+
 # ---------- Secretos y configuración local ----------
 .env
 .env.*
