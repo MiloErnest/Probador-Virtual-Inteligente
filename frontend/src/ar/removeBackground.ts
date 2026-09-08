@@ -21,7 +21,13 @@
  *
  * LIMITES CONOCIDOS
  * -----------------
- * - Un fondo con degradado fuerte o con sombra marcada deja restos.
+ * - Una prenda MUY cercana en color al fondo deja restos. Comprobado con la
+ *   camiseta blanca real del proyecto: fondo 217,217,217 contra prenda
+ *   231,230,235, solo 26 de separacion. Se recorta bien la mayor parte, pero
+ *   queda una mancha de fondo a un lado. Separar eso de forma fiable ya no es
+ *   cuestion de afinar umbrales: hace falta un modelo de segmentacion.
+ * - El degradado suave de estudio si se resuelve, comparando cada pixel con su
+ *   vecino (ver TOLERANCIA_VECINO).
  * - Una prenda que toque el borde de la imagen se recorta en parte.
  * - Los bordes quedan duros; no hay suavizado del canal alfa.
  *
@@ -40,12 +46,55 @@
  * sqrt(3 * 23^2) = 39.8. Con la tolerancia en 42 que habia al principio, el
  * relleno cruzaba al blanco y se comia la camiseta entera.
  *
- * 24 deja margen de sobra por debajo de esa frontera y sigue absorbiendo el
- * ruido y las sombras suaves de un fondo de estudio. Si algun dia un fondo con
- * degradado fuerte deja restos, este es el numero a subir -- pero nunca por
- * encima de ~35, o las prendas blancas vuelven a desaparecer.
+ * Medido despues sobre las fotos reales del proyecto, el margen resulto ser
+ * MUCHO mas estrecho de lo que sugeria ese calculo. En la foto de la camiseta
+ * blanca el fondo es 217,217,217 y el centro de la camiseta 231,230,235: solo
+ * 26 de distancia. O sea que el umbral tiene que quedar por debajo de 26, no
+ * de 39.
+ *
+ * 18 separa bien: el fondo de esas fotos es muy uniforme (las cuatro esquinas
+ * y los bordes quedan a 0-5 del color de referencia), asi que no hace falta
+ * mas holgura. Subirlo por encima de 25 hace desaparecer la camiseta.
  */
-const TOLERANCIA = 24
+const TOLERANCIA = 18
+
+/**
+ * Cuanto puede cambiar el color entre un pixel y su vecino y seguir siendo
+ * el mismo fondo.
+ *
+ * POR QUE HACE FALTA ADEMAS DE LA TOLERANCIA GLOBAL
+ * -------------------------------------------------
+ * El fondo de una foto de estudio no es un gris plano: tiene un degradado
+ * suave por la iluminacion. Lejos de las esquinas se aleja del color de
+ * referencia mas de TOLERANCIA, el relleno se para, y quedan manchas de fondo
+ * sin borrar. Se vio en dos prendas reales -- el jersey gris y la camiseta
+ * blanca, las de color mas parecido al fondo.
+ *
+ * Comparando tambien con el pixel DESDE EL QUE se llego, el relleno puede
+ * seguir un degradado suave indefinidamente, porque cada paso es pequeno. Y
+ * sigue parandose en el borde de la prenda, donde el salto de color es
+ * brusco. Es la diferencia entre "parecerse al fondo" y "ser continuo con el
+ * fondo", y lo segundo es lo que de verdad define un fondo.
+ */
+const TOLERANCIA_VECINO = 11
+
+/**
+ * Cuanto puede alejarse el relleno del color de fondo original, aunque cada
+ * paso individual sea pequeno.
+ *
+ * SIN ESTE TOPE, LA REGLA DEL VECINO SE COME LAS PRENDAS CLARAS
+ * -------------------------------------------------------------
+ * Con solo la continuidad local, el relleno sube por el borde SUAVE de una
+ * camiseta blanca dando pasitos de menos de 11, y acaba borrandola entera.
+ * Pasó exactamente eso al probarlo con la foto real: la camiseta desaparecio
+ * y salto la salvaguarda.
+ *
+ * 20 permite seguir un degradado de estudio y corta antes de llegar a la
+ * prenda: en la foto real, el punto de la camiseta mas parecido al fondo esta
+ * a 26. Con el tope en 30 que se probo primero, el relleno llegaba hasta el y
+ * se comia la camiseta entera.
+ */
+const DERIVA_MAXIMA = 20
 
 /** Si el fondo ocupa mas que esto, algo salio mal y se descarta el recorte. */
 const MAXIMO_BORRADO = 0.92
@@ -96,33 +145,55 @@ export function removeBackground(imagen: HTMLImageElement): RecorteResultado {
   // Relleno por difusion desde todo el perimetro. Se usa una pila explicita y
   // no recursion: una imagen de 1400x760 desbordaria la pila de llamadas.
   const visitado = new Uint8Array(width * height)
+  // Cada entrada lleva el indice del pixel Y el color desde el que se llego,
+  // para poder aplicar la tolerancia con el vecino.
   const pila: number[] = []
+  const empujar = (idx: number, r: number, g: number, b: number) => {
+    pila.push(idx, r, g, b)
+  }
 
   for (let x = 0; x < width; x++) {
-    pila.push(x, x + (height - 1) * width)
+    empujar(x, fondo[0], fondo[1], fondo[2])
+    empujar(x + (height - 1) * width, fondo[0], fondo[1], fondo[2])
   }
   for (let y = 0; y < height; y++) {
-    pila.push(y * width, width - 1 + y * width)
+    empujar(y * width, fondo[0], fondo[1], fondo[2])
+    empujar(width - 1 + y * width, fondo[0], fondo[1], fondo[2])
   }
 
   let borrados = 0
   while (pila.length > 0) {
+    const previoB = pila.pop() as number
+    const previoG = pila.pop() as number
+    const previoR = pila.pop() as number
     const idx = pila.pop() as number
+
     if (visitado[idx] === 1) continue
     visitado[idx] = 1
 
     const p = idx * 4
-    if (distancia(px[p], px[p + 1], px[p + 2], fondo) > TOLERANCIA) continue
+    const r = px[p]
+    const g = px[p + 1]
+    const b = px[p + 2]
+
+    // Es fondo si se parece al color de referencia O si es continuo con el
+    // pixel del que viene. Lo segundo es lo que permite seguir un degradado.
+    const desviacion = distancia(r, g, b, fondo)
+    const pareceFondo = desviacion <= TOLERANCIA
+    const continuo =
+      distancia(r, g, b, [previoR, previoG, previoB]) <= TOLERANCIA_VECINO &&
+      desviacion <= DERIVA_MAXIMA
+    if (!pareceFondo && !continuo) continue
 
     px[p + 3] = 0 // transparente
     borrados++
 
     const x = idx % width
     const y = (idx - x) / width
-    if (x > 0) pila.push(idx - 1)
-    if (x < width - 1) pila.push(idx + 1)
-    if (y > 0) pila.push(idx - width)
-    if (y < height - 1) pila.push(idx + width)
+    if (x > 0) empujar(idx - 1, r, g, b)
+    if (x < width - 1) empujar(idx + 1, r, g, b)
+    if (y > 0) empujar(idx - width, r, g, b)
+    if (y < height - 1) empujar(idx + width, r, g, b)
   }
 
   // Salvaguarda: si se ha borrado casi todo, es que la prenda tenia un color
@@ -148,7 +219,12 @@ function leerPixel(
   return [px[p], px[p + 1], px[p + 2]]
 }
 
-function distancia(r: number, g: number, b: number, ref: [number, number, number]): number {
+function distancia(
+  r: number,
+  g: number,
+  b: number,
+  ref: readonly [number, number, number],
+): number {
   // Distancia euclidea en RGB. No es perceptualmente exacta —para eso haria
   // falta CIELAB—, pero sobre un fondo liso separa de sobra.
   const dr = r - ref[0]
