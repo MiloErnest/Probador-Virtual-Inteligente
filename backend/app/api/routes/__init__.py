@@ -6,15 +6,12 @@ no necesite conocerlos uno a uno.
 
 from fastapi import APIRouter
 
-from app.api.routes import auth, body, designs, garments, health, try_on, users
+from app.api.routes import auth, garments, health, users
 
 api_router = APIRouter()
 api_router.include_router(health.router)
 api_router.include_router(auth.router)
 api_router.include_router(users.router)
 api_router.include_router(garments.router)
-api_router.include_router(try_on.router)
-api_router.include_router(designs.router)
-api_router.include_router(body.router)
 
 __all__ = ["api_router"]

@@ -1,10 +1,17 @@
-# Probador Virtual Inteligente
+# Probador Virtual
 
-Plataforma de prueba virtual de prendas con IA generativa, visión por computador,
-modelado 3D y realidad aumentada. Proyecto universitario desarrollado por fases.
+Un probador de ropa que funciona con la cámara del navegador. Eliges una prenda
+del catálogo, te pones delante de la cámara y la prenda se coloca sobre tu
+cuerpo, ajustada a tus medidas. Proyecto universitario.
 
-**Estado actual: Etapa 1 — Infraestructura base.**
-Ver [PROJECT_STATUS.md](PROJECT_STATUS.md) para el detalle de lo que funciona y lo que falta.
+**No usa ninguna IA generativa.** La detección del cuerpo es MediaPipe Pose
+compilado a WebAssembly y corre entera en tu navegador: la imagen de la cámara
+no sale de tu equipo. El backend solo sirve el catálogo, las cuentas y las
+fotografías de las prendas.
+
+**Estado actual: funciona de punta a punta.**
+Ver [PROJECT_STATUS.md](PROJECT_STATUS.md) para el detalle de lo que funciona y
+lo que falta.
 
 ---
 
@@ -358,75 +365,6 @@ seguiría siendo válido hasta caducar.
 
 ---
 
-## 6d. Conectar Gemini para la prueba virtual real
-
-Por defecto el probador usa `AI_PROVIDER=local`, que **compone la prenda sobre
-la foto con Pillow y no es IA**. Funciona sin cuenta, sin clave y sin conexion.
-
-Para usar el modelo de verdad hacen falta cuatro pasos. **Los tres primeros son
-tuyos**: implican crear una cuenta y activar un metodo de pago.
-
-### 1. Crear la clave
-
-Entra en <https://aistudio.google.com/apikey> con tu cuenta de Google y crea una
-clave de API. Anotala; solo se muestra una vez.
-
-### 2. Activar la facturacion
-
-**El nivel gratuito de la API de Gemini NO incluye generacion de imagenes.** Sin
-un metodo de pago asociado, las peticiones fallaran con un error de permisos.
-
-En Google AI Studio, la clave pertenece a un proyecto de Google Cloud. Abre ese
-proyecto en <https://console.cloud.google.com/billing> y asociale una cuenta de
-facturacion.
-
-### 3. Ponerle un limite de gasto
-
-Hazlo antes de la primera prueba, no despues. Cada prueba virtual genera una
-imagen y se cobra: del orden de unas centesimas de dolar con los modelos
-`flash`. La aplicacion **no tiene limite de peticiones** (limitacion #8), asi
-que nada impide que alguien lance pruebas en bucle.
-
-En la consola de Google Cloud, dentro de Facturacion, crea un presupuesto con
-alerta. Es la unica red de seguridad real que vas a tener.
-
-### 4. Configurar el proyecto
-
-Edita `backend/.env` (que esta en `.gitignore`, nunca se sube):
-
-```
-AI_PROVIDER=gemini
-GEMINI_API_KEY=la-clave-que-acabas-de-crear
-GEMINI_MODEL=gemini-3.1-flash-image
-```
-
-Reinicia el backend. En los registros vera la revision de la base y, a partir de
-ahi, cada prueba usara el modelo. La columna `provider` de cada prueba guarda
-cual la genero (`gemini:gemini-3.1-flash-image`), asi que el historial distingue
-las hechas con IA de las hechas con la composicion local.
-
-### Volver atras
-
-Si se agota la cuota, el servicio falla o simplemente quieres dejar de gastar:
-
-```
-AI_PROVIDER=local
-```
-
-La aplicacion sigue funcionando de forma degradada en vez de romperse.
-
-### Que esperar
-
-- **Marca de agua.** Google incrusta una marca invisible (SynthID) en todo lo
-  que genera. No se puede desactivar.
-- **Bloqueos.** El modelo puede negarse a procesar ciertas fotografias por sus
-  filtros de seguridad. La prueba quedara en `failed` con un mensaje que lo
-  explica, no colgada.
-- **Calidad.** Depende mucho de la foto: funciona mejor de cuerpo entero, de
-  frente, bien iluminada y con fondo despejado.
-
----
-
 ## 6e. Todo con Docker
 
 Por defecto, `docker compose up -d` levanta **solo PostgreSQL**, como siempre:
@@ -447,8 +385,8 @@ El puerto del frontend es 3000 y no 5173, a proposito: asi se puede tener a la
 vez el servidor de desarrollo de Vite.
 
 El contenedor del backend ejecuta `alembic upgrade head` al arrancar, asi que
-el esquema se crea solo. Los proveedores van en modo simulado (`local` y
-`mock`), o sea que funciona sin ninguna cuenta externa.
+el esquema se crea solo. No hace falta ninguna cuenta externa ni ninguna clave:
+el proyecto no llama a ningun servicio de terceros.
 
 Para parar:
 
@@ -466,33 +404,51 @@ docker compose --profile full down
 
 ## 6f. Que hace cada pantalla
 
-| Ruta | Que hace | Estado del modelo |
+| Ruta | Que hace | Acceso |
 |---|---|---|
-| `/catalogo` | Prendas disponibles, filtro por categoria | Publico, sin IA |
-| `/probador` | Foto + prenda (o diseno) -> resultado | **Simulado**: compone con Pillow |
-| `/disenar` | Describe una prenda, generala, iterala | **Simulado**: siluetas por palabras clave |
-| `/cuerpo` | Medidas a mano o por foto, y tu talla | Analisis **simulado**; el tallaje es real |
-| `/mis-pruebas` | Historial de pruebas | - |
-| `/perfil` | Tu cuenta y estado del sistema | - |
+| `/` | Portada: que hace la aplicacion y hasta donde llega | Publica |
+| `/catalogo` | Prendas disponibles, filtro por categoria | Publica |
+| `/probador` | Camara + prenda superpuesta y ajustada a tu cuerpo | Requiere cuenta |
+| `/entrar`, `/registro` | Acceso y alta | Publicas |
+| `/perfil` | Tu cuenta y estado del sistema | Requiere cuenta |
 
-Las tres pantallas con modelo simulado lo advierten en un aviso visible. No se
-presentan como IA.
+Desde el catalogo, cada prenda enlaza al probador con ella ya elegida
+(`/probador?prenda=12`).
 
-**Endpoints anadidos en las Fases 2 y 3:**
+**La API entera son cuatro recursos:**
 
-| Endpoint | Que hace |
-|---|---|
-| `POST /api/designs` | Genera un diseno desde texto (202 + sondeo) |
-| `POST /api/designs/{id}/refine` | Itera: crea una version nueva, no sobrescribe |
-| `GET /api/designs` | Tus disenos |
-| `GET /api/body-profile` | Tus medidas |
-| `PUT /api/body-profile` | Crear o actualizar medidas (parcial) |
-| `POST /api/body-profile/analyse` | Estimar medidas desde una foto |
-| `DELETE /api/body-profile` | Borrar perfil y foto |
-| `GET /api/body-profile/size-recommendation` | Tu talla, con el porque |
+| Endpoint | Que hace | Acceso |
+|---|---|---|
+| `GET /api/health` | Estado del servicio y de la base de datos | Publico |
+| `GET /api/garments` | Catalogo, con filtro por categoria | Publico |
+| `GET /api/garments/{id}` | Una prenda | Publico |
+| `POST /api/garments` | Alta de prenda | Token |
+| `POST /api/garments/{id}/image` | Subir o reemplazar su fotografia | Token |
+| `POST /api/users` | Registro | Publico |
+| `GET /api/users/{id}` | Tu cuenta (la de otro responde 404) | Token |
+| `POST /api/auth/login` | Iniciar sesion, devuelve un JWT | Publico |
+| `GET /api/auth/me` | Quien soy segun el token | Token |
 
-`POST /api/try-on-sessions` acepta ahora `garment_id` **o** `design_id`, nunca
-los dos: es lo que conecta la Fase 2 con la Fase 1.
+---
+
+## 6g. Como se coloca la prenda
+
+Es la parte con matematica, y vive entera en `frontend/src/probador/`.
+
+1. **MediaPipe Pose** devuelve, por fotograma, 33 puntos del cuerpo y una
+   mascara que dice que pixeles son la persona.
+2. **`cuerpo.ts`** convierte esos puntos en medidas. Aplica la correccion
+   anatomica: los puntos del modelo estan en la ARTICULACION del hombro, por
+   dentro del cuerpo, no en su borde exterior.
+3. **`vestir.ts`** decide donde va la prenda (segun su categoria), cuanto mide
+   de ancho (igualando su franja de ajuste al cuerpo) y como se deforma: se
+   parte en 28 franjas horizontales y cada una sigue el eje del cuerpo.
+4. El **tejido** decide cuanto se cine la prenda al contorno real. Un cuero
+   mantiene su forma; un punto fino se pega.
+
+**Lo que NO hace:** simular la tela. No hay pliegues, ni sombras propias, ni
+peso, ni oclusion (si pones la mano delante del pecho, la prenda te la tapa).
+Es una vista previa de corte y proporcion.
 
 ---
 
@@ -507,8 +463,6 @@ backend/
     schemas/      Contratos de la API (Pydantic)
     repositories/ Acceso a datos
     services/     Lógica de negocio + almacenamiento de archivos
-    ai/           Proveedores de prueba virtual (local y Gemini)
-    vision/       Analisis corporal (protocolo + simulado)
   alembic/        Migraciones de esquema
   scripts/        Utilidades (seed)
   storage/        Imágenes subidas (fuera de git)
@@ -522,6 +476,19 @@ frontend/
     services/     Cliente HTTP y llamadas a la API
     hooks/        Lógica de React reutilizable
     types/        Espejo del contrato de la API
+    probador/     El probador: cámara, medidas del cuerpo y encaje
+```
+
+El probador es el único sitio con algo de complejidad, y está partido en
+cuatro archivos con una responsabilidad cada uno:
+
+```
+probador/
+  usePoseScanner.ts    Cámara + MediaPipe. Devuelve puntos y silueta.
+  cuerpo.ts            Medidas del cuerpo, suavizado y contorno real.
+  vestir.ts            Dónde va la prenda, cuánto mide, cómo se deforma.
+  dibujo.ts            Silueta, esqueleto y máscara de recorte.
+  removeBackground.ts  Recorta el fondo de la foto de producto.
 ```
 
 El flujo de una petición es siempre el mismo:
@@ -531,8 +498,7 @@ Ruta (HTTP) → Servicio (negocio) → Repositorio (SQL) → Modelo
 ```
 
 Las rutas no ejecutan SQL, los repositorios no lanzan errores HTTP y los servicios
-no conocen FastAPI. Esa separación es lo que permitirá extraer más adelante el
-procesamiento de IA sin reescribir el resto.
+no conocen FastAPI.
 
 ---
 

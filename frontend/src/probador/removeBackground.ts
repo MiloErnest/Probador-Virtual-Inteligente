@@ -80,6 +80,64 @@ export interface RecorteResultado {
   canvas: HTMLCanvasElement
   /** Caja que ocupa la prenda ya recortada, en pixeles del canvas. */
   bounds: { x: number; y: number; width: number; height: number }
+  /**
+   * Si el recorte ha salido roto.
+   *
+   * POR QUE HACE FALTA AVISAR
+   * -------------------------
+   * Hay fotos que este metodo NO puede recortar, y no por falta de ajuste.
+   * Medido en la camiseta blanca del catalogo: el fondo es (217,218,212) y hay
+   * zonas de tela en sombra que valen exactamente (217,217,217). Estan a
+   * distancia 6 del fondo, cuando el propio fondo varia 7 a lo largo del
+   * borde. No hay umbral que separe eso, porque no hay informacion que
+   * separar: la tela y el fondo son el mismo color.
+   *
+   * El resultado es una prenda a tiras. Antes se dibujaba igual, y quien la
+   * veia no tenia forma de saber si el fallo era del recorte, del encaje o de
+   * la camara. Avisando, la conclusion es inmediata: esa fotografia hay que
+   * cambiarla.
+   */
+  recorteDudoso: boolean
+}
+
+/**
+ * Decide si el recorte ha salido a tiras.
+ *
+ * Se mide cuanto BORDE tiene la prenda respecto a su superficie. Una prenda
+ * entera es una mancha compacta y casi todo su area es interior; un recorte
+ * roto es confeti, y entonces casi cada pixel toca un agujero.
+ *
+ * Sobre las cinco fotografias del catalogo: las cuatro buenas dan entre 0,011
+ * y 0,020, y la camiseta blanca 0,031. Se exigen las DOS senales —poco relleno
+ * y mucho borde— porque por separado se solapan: un pantalon tiene mucho borde
+ * legitimo, por el hueco entre las perneras.
+ */
+const COBERTURA_MINIMA = 0.65
+const BORDE_MAXIMO = 0.025
+
+function recorteEsDudoso(
+  px: Uint8ClampedArray,
+  width: number,
+  caja: { x: number; y: number; width: number; height: number },
+): boolean {
+  const opaco = (x: number, y: number): boolean => {
+    if (x < 0 || y < 0 || x >= caja.width || y >= caja.height) return false
+    return px[(caja.x + x + (caja.y + y) * width) * 4 + 3] > 24
+  }
+
+  let area = 0
+  let borde = 0
+  for (let y = 0; y < caja.height; y++) {
+    for (let x = 0; x < caja.width; x++) {
+      if (!opaco(x, y)) continue
+      area++
+      if (!opaco(x - 1, y) || !opaco(x + 1, y) || !opaco(x, y - 1) || !opaco(x, y + 1)) borde++
+    }
+  }
+
+  if (area === 0) return true
+  const cobertura = area / (caja.width * caja.height)
+  return cobertura < COBERTURA_MINIMA && borde / area > BORDE_MAXIMO
 }
 
 /**
@@ -96,7 +154,11 @@ export function removeBackground(imagen: HTMLImageElement): RecorteResultado {
 
   const ctx = canvas.getContext('2d', { willReadFrequently: true })
   if (ctx === null) {
-    return { canvas, bounds: { x: 0, y: 0, width: canvas.width, height: canvas.height } }
+    return {
+      canvas,
+      bounds: { x: 0, y: 0, width: canvas.width, height: canvas.height },
+      recorteDudoso: false,
+    }
   }
 
   ctx.drawImage(imagen, 0, 0)
@@ -161,7 +223,7 @@ export function removeBackground(imagen: HTMLImageElement): RecorteResultado {
   if (borrados / (width * height) > MAXIMO_BORRADO) {
     ctx.clearRect(0, 0, width, height)
     ctx.drawImage(imagen, 0, 0)
-    return { canvas, bounds: { x: 0, y: 0, width, height } }
+    return { canvas, bounds: { x: 0, y: 0, width, height }, recorteDudoso: false }
   }
 
   // Limpieza final: quedarse SOLO con la mancha opaca mas grande.
@@ -181,7 +243,8 @@ export function removeBackground(imagen: HTMLImageElement): RecorteResultado {
   borrarRestosSueltos(px, width, height)
 
   ctx.putImageData(datos, 0, 0)
-  return { canvas, bounds: calcularCaja(px, width, height) }
+  const caja = calcularCaja(px, width, height)
+  return { canvas, bounds: caja, recorteDudoso: recorteEsDudoso(px, width, caja) }
 }
 
 /**

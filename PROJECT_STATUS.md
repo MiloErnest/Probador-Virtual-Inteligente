@@ -2,117 +2,189 @@
 
 > Documento vivo. Se actualiza al cerrar cada etapa.
 
-**Etapa actual:** Fases 1, 2 y 3 construidas con proveedores simulados.
-Falta conectar los modelos reales.
-**Última actualización:** 2026-09-06
+**Etapa actual:** probador con cámara, sin IA. Reestructuración completa.
+**Última actualización:** 2026-09-14
 
 ---
 
-## Funcionalidades terminadas
+## Qué pasó el 2026-09-14
+
+Se retiró **toda la IA generativa** y la aplicación se redujo a lo que el
+usuario quería que hiciera: vestir a alguien delante de la cámara.
+
+**Por qué.** Las Fases 1, 2 y 3 estaban construidas de punta a punta, pero con
+proveedores simulados: un probador que pegaba la prenda con Pillow, un
+generador de diseños que dibujaba siluetas según palabras clave, y un análisis
+corporal que estimaba medidas a partir de la altura. Todo funcionaba y nada
+convencía. Y el problema de verdad —que la prenda no encajaba sobre el
+cuerpo— seguía intacto, porque el esfuerzo se repartía entre cinco fases.
+
+**Qué se borró.**
+
+| Se fue | Dónde vivía |
+|---|---|
+| Probador por foto con IA (local y Gemini) | `app/ai/`, `try_on_sessions`, `TryOnPage` |
+| Generador de diseños por texto | `app/ai/design_provider.py`, `designs`, `DesignAIPage` |
+| Análisis corporal y recomendación de talla | `app/vision/`, `body_profiles`, `BodyProfilePage` |
+| Maniquí 3D con Three.js | `frontend/src/ar/avatar3d.ts` |
+| Historial de pruebas | `MyTryOnsPage` |
+| `google-genai`, `three`, `@types/three` | requisitos del backend y del frontend |
+
+La migración `1a61ba91aea8` tira las tres tablas. **Borra datos a propósito**:
+el historial de pruebas y los diseños guardados desaparecen. Su `downgrade`
+reconstruye las tablas vacías — recupera el esquema, no el contenido.
+
+**Qué se ganó.** 217 KB de bundle en lugar de ~800 KB. Un backend con cuatro
+rutas. Y un probador que ya no es el borrador de otra cosa.
+
+---
+
+## Lo que funciona
+
+### El probador (es la aplicación)
+
+- [x] Cámara + MediaPipe Pose en WebAssembly, **entero en el navegador**.
+      Ninguna imagen de la persona llega al servidor: no es que se borre
+      después, es que no se envía.
+- [x] Recorte del fondo de la prenda por relleno desde los bordes, con umbral
+      adaptativo y cierre morfológico (`removeBackground.ts`).
+- [x] **Medidas reales del cuerpo**, con la corrección anatómica entre la
+      articulación que detecta el modelo y el borde exterior del cuerpo.
+- [x] **Contorno real medido sobre la máscara de segmentación**, a 28 alturas
+      a lo largo del tramo que cubre la prenda.
+- [x] **Deformación por franjas**: la prenda se parte en 28 tiras y cada una
+      sigue el eje del cuerpo, con su ancho, su posición y su inclinación.
+      Dobla por la rodilla en un pantalón y gira si te inclinas.
+- [x] Anclaje por categoría: camiseta de hombros a bajo cadera, pantalón de
+      cintura a tobillo, vestido hasta la rodilla, chaqueta algo más larga. Y
+      el tamaño de la prenda sale de ese tramo, no de medir su anchura.
+- [x] Suavizado temporal de las medidas, **por constante de tiempo real**: el
+      comportamiento ya no depende de los fotogramas por segundo.
+- [x] **Inercia**: la prenda va por detrás de ti y rebota al parar, con un
+      muelle amortiguado de paso fijo (1/120 s). El tejido decide cuánto.
+- [x] **Orientación 3D**: la tela rueda alrededor del cuerpo al girarte y se
+      desvanece cuando ya no queda frente que enseñar. De espaldas no se
+      dibuja, porque del reverso no hay fotografía.
+- [x] Recorte opcional contra la silueta engordada, para que la prenda no
+      flote sobre el fondo sin perder la holgura.
+- [x] Guías de detección (silueta + esqueleto) conmutables.
+- [x] Ajuste fino manual de ancho, largo y altura, para lo que una categoría
+      no distingue (una chaqueta y un abrigo largo son ambos «abrigos»).
+- [x] **Aviso cuando el recorte de una fotografía sale roto**, en vez de
+      dibujar la prenda a tiras sin decir nada.
+- [x] Entrada directa desde el catálogo con `/probador?prenda=12`.
+
+### Tejido de la prenda
+
+- [x] Columna `fabric` en `garments`, nullable, con ocho valores.
+- [x] Cada tejido define **ceñido** (cuánto adopta la forma del cuerpo) y
+      **holgura** (cuánto más ancho cae). El cuero mantiene su forma; el punto
+      se pega.
+- [x] Y desde la inercia, también **masa**: frecuencia propia, amortiguación y
+      vuelo. Medido sobre un salto de 100 px — cuero: 0 px de rebote, asentado
+      en 0,30 s; seda: 36,7 px de rebote y 1,03 s. Sigue sin ser simulación de
+      tela: es un muelle por prenda, no una malla con hilos.
+- [x] Se puede cambiar en vivo desde el probador para comparar.
+- [x] Una prenda sin tejido registrado dice que no lo tiene. No se inventa un
+      valor por defecto, y hay una prueba que lo fija.
 
 ### Backend
-- [x] Aplicación FastAPI con CORS configurado por entorno.
-- [x] Configuración por variables de entorno (`pydantic-settings`), sin secretos en el código.
-- [x] Conexión a PostgreSQL con SQLAlchemy 2.0 (síncrono).
-- [x] Endpoint `GET /api/health` que informa también del estado de la base de datos.
-- [x] Modelos `User`, `Garment`, `TryOnSession` con sus relaciones.
-- [x] Creación automática de tablas al arrancar.
-- [x] Registro de usuarios con contraseña cifrada (bcrypt) — `POST /api/users`.
-- [x] Catálogo de prendas: listar, filtrar por categoría, obtener, crear.
-- [x] Subida de imagen de prenda con validación de tipo y tamaño.
-- [x] Costura de almacenamiento (`Storage`) con implementación en disco local.
-- [x] Servido de archivos estáticos en `/media`.
-- [x] Historial de pruebas (solo lectura) — `GET /api/try-on-sessions`.
-- [x] Script de datos de ejemplo (`python -m scripts.seed`), idempotente.
-- [x] 22 pruebas automatizadas sobre SQLite en memoria — **ejecutadas y en verde**.
 
-### Etapa 2 — Migraciones y autenticación
-- [x] Alembic instalado y configurado; la URL sale de `DATABASE_URL`, no del `.ini`.
-- [x] Migración inicial que reproduce el esquema de la Etapa 1, generada contra
-      una base vacía desechable y verificada en las dos direcciones.
-- [x] La base `vfit` de desarrollo marcada con `alembic stamp head`, con sus datos intactos.
-- [x] `create_all` retirado del arranque: el esquema lo gobierna Alembic.
-      La aplicación informa de la revisión aplicada al arrancar.
-- [x] `POST /api/auth/login` con JWT (PyJWT, HS256) y `GET /api/auth/me`.
-- [x] Dependencia `get_current_user`: único punto que convierte token en usuario.
-- [x] Endpoints protegidos; `GET /api/users` eliminado y `?user_id=` retirado del historial.
-- [x] Sin enumeración de cuentas: mismo 401 y mismo tiempo de respuesta, y 404 (no 403)
-      en recursos ajenos.
-- [x] La aplicación se niega a arrancar en producción con la `SECRET_KEY` de ejemplo.
-- [x] Sesión en el frontend: `AuthContext`, formularios de acceso y registro,
-      rutas protegidas y retirada del campo manual "ID de usuario".
-- [x] 54 pruebas automatizadas — **ejecutadas y en verde**.
-
-### Fase 1 — Probador virtual
-- [x] `POST /api/try-on-sessions` (multipart: foto + `garment_id`), responde 202 con `pending`.
-- [x] Procesamiento en segundo plano con `BackgroundTasks`; el ciclo
-      `pending -> processing -> completed | failed` funciona de punta a punta.
-- [x] `app/ai/` con el `Protocol` `TryOnProvider` y una implementación real,
-      `LocalPreviewProvider` (composición con Pillow, **no es IA**).
-- [x] Validación de imágenes por CONTENIDO con Pillow, no por la cabecera
-      `Content-Type` — cierra la limitación #6, también en el catálogo.
-- [x] `Storage.read()` añadido a la costura de almacenamiento.
-- [x] Pantalla del probador completa: elegir prenda, subir foto, sondeo del
-      estado y comparación foto/resultado.
-- [x] `python -m scripts.seed --with-images` genera siluetas de ejemplo, para
-      que el probador se pueda usar sin subir fotografías a mano.
-- [x] 70 pruebas automatizadas — **ejecutadas y en verde** (antes 54).
-- [x] **Proveedor de Gemini («Nano Banana») escrito y probado.** `AI_PROVIDER=gemini`.
-      Traduce respuestas y errores del SDK a mensajes presentables, con 12 pruebas
-      sobre un cliente simulado.
-- [ ] **Sin verificar contra la API real**: requiere clave y facturación activada,
-      que aporta el usuario. Ver README §6d.
-
-### Fase 2 — Diseñar con IA
-- [x] `Design` con `parent_id`: iterar crea una versión nueva, nunca sobrescribe.
-- [x] `DesignProvider` (Protocol) + `MockDesignProvider` (siluetas con Pillow).
-- [x] `POST /designs`, `POST /designs/{id}/refine`, `GET /designs`, `GET /designs/{id}`.
-- [x] Pantalla completa: describir, ejemplos de un clic, generar, sondear, iterar, historial.
-- [x] **Puente Diseño → Try-On**: `try_on_sessions` admite `garment_id` O `design_id`,
-      con CHECK en la base de datos. Botón «Probarme este diseño».
-- [ ] Falta el generador de imágenes real.
-
-### Fase 3 — Cuerpo y talla
-- [x] `BodyProfile`, uno por usuario, con medidas todas opcionales.
-- [x] `BodyAnalysisProvider` (Protocol) + `MockBodyAnalysisProvider`.
-- [x] **Recomendación de talla real, no simulada**: tablas por medida según
-      categoría, se toma la talla mayor cuando discrepan, y devuelve el porqué.
-- [x] `GET/PUT/DELETE /body-profile`, `POST /body-profile/analyse`,
-      `GET /body-profile/size-recommendation`.
-- [x] Pantalla «Mi cuerpo»: medidas a mano, estimación por foto y talla por categoría.
-- [ ] Falta MediaPipe o el analizador real.
-
-### Infraestructura
-- [x] `docker compose up -d` levanta solo PostgreSQL (modo desarrollo, sin cambios).
-- [x] `docker compose --profile full up -d --build` levanta la aplicación entera.
-- [x] 138 pruebas automatizadas — **ejecutadas y en verde**.
+- [x] FastAPI con CORS por entorno y configuración por variables de entorno.
+- [x] PostgreSQL con SQLAlchemy 2.0 síncrono. Esquema gobernado por Alembic.
+- [x] `GET /api/health` que informa también del estado de la base de datos.
+- [x] Registro con bcrypt, login JWT, `GET /api/auth/me`.
+- [x] Catálogo: listar con filtro por categoría, obtener, crear, subir imagen.
+- [x] Validación de imágenes por CONTENIDO con Pillow, no por `Content-Type`.
+- [x] Costura `Storage` con implementación en disco local y servido en `/media`.
+- [x] Semilla idempotente, con las cinco fotografías reales del repositorio.
+- [x] **53 pruebas automatizadas, ejecutadas y en verde.**
 
 ### Frontend
-- [x] React 18 + TypeScript + Vite + Tailwind, configurados a mano y con alias `@/`.
-- [x] Rutas y layout con las 6 secciones del producto.
-- [x] Cliente HTTP único con manejo de errores de FastAPI y de red.
-- [x] Hook `useApi` con estados de carga, error y recarga.
-- [x] Indicador de salud del backend en la barra superior.
-- [x] Catálogo consumiendo datos reales, con filtro por categoría.
-- [x] Historial de pruebas consumiendo el endpoint real.
-- [x] Páginas de fases futuras con aviso explicativo en vez de enlaces muertos.
-- [x] Diseño responsive (móvil, tablet, escritorio).
+
+- [x] React 18 + TypeScript + Vite + Tailwind. Build de producción verificado.
+- [x] Sesión con `AuthContext`, formularios de acceso y registro, rutas
+      protegidas.
+- [x] Cinco pantallas: portada, catálogo, probador, acceso/registro, perfil.
+- [x] Rediseño completo en blanco y negro (ver más abajo).
 
 ---
 
-## Funcionalidades pendientes
+## Verificación hecha el 2026-09-14
 
-### Fase 1 del MVP (probador funcional) — siguiente
-- [ ] Elegir proveedor de Virtual Try-On y definir el `Protocol` en `app/ai/`.
-- [ ] `POST /api/try-on-sessions`: subir foto, invocar IA, guardar resultado.
-- [ ] Procesamiento en segundo plano (empezar con `BackgroundTasks`, no con Celery).
-- [ ] Pantalla del probador con subida de foto y selección de prenda.
+**Backend.** `pytest` → 53 en verde. `alembic upgrade head` aplicado sobre la
+base real. `alembic check` → "No new upgrade operations detected". Arranque con
+uvicorn correcto, `/api/garments` devuelve las 13 prendas con su tejido.
 
-### Fases 2–5
-- [ ] Generación de diseños con lenguaje natural (Fase 2).
-- [ ] Análisis corporal con MediaPipe y recomendación de talla (Fase 3).
-- [ ] Visor 3D con Three.js / R3F, materiales PBR y telas (Fase 4).
-- [ ] Realidad aumentada con cámara en vivo (Fase 5).
+**Frontend.** `tsc --noEmit` limpio. `npm run build` correcto (217 KB).
+Consola del navegador sin errores. Archivos de MediaPipe servidos: el modelo
+(5,6 MB) y el wasm (11,5 MB) responden 200.
+
+**El encaje, sin cámara.** Se importó `vestir.ts` desde la consola del
+navegador, se construyó un cuerpo sintético con proporciones antropométricas
+reales y se pasaron por él las cinco fotografías del catálogo, recortadas por
+el mismo código que usa la aplicación. Se midieron los píxeles pintados.
+
+Cuerpo de referencia: hombros en y=200, caderas en y=420 (torso 220 px),
+rodillas 616, tobillos 812. Ancho real de hombros 214 px, de caderas 182 px.
+
+| Prenda | Ancho | Acaba en | Lectura |
+|---|---|---|---|
+| Jersey gris (top, punto) | 249 px · 1,16× hombros | 66 px bajo la cadera | ✅ |
+| Camiseta blanca (top, algodón) | 233 px · 1,09× | 66 px bajo la cadera | ✅ colocación; ❌ recorte |
+| Camisa marrón (top, algodón) | 225 px · 1,05× | 66 px bajo la cadera | ✅ |
+| Chaqueta de cuero (abrigo) | 328 px · 1,53× | 88 px bajo la cadera | ✅ |
+| Vaquero (inferior, denim) | 180 px ≈ ancho de cadera | exactamente en el tobillo | ✅ |
+
+Sin ver las piernas, el vaquero acaba 26 px por debajo del tobillo real: la
+proporción media de reserva se equivoca en un 3% del largo de la pierna.
+
+Con el cuerpo inclinado, el centro de la prenda sigue al del cuerpo con 7–11 px
+de desvío sobre un torso de 220 px. Con las piernas quebradas, el centro del
+pantalón se desplaza hacia la rodilla y vuelve hacia el tobillo.
+
+El contorno medido sobre una máscara sintética detecta el pellizco de la
+cintura en la fila exacta donde se puso, y a la altura de las rodillas mide las
+dos perneras pese al hueco que hay entre ellas.
+
+**Tres errores encontrados así, antes de tocar la cámara.** Los tres habrían
+pasado por buenos a ojo:
+
+1. El camino del pantalón se pasaba 148 px del tobillo, porque el final
+   teórico se añadía aunque el modelo ya hubiera visto el tobillo. Y el del
+   vestido se saltaba la rodilla por lo mismo al revés. Ahora manda el punto
+   que el modelo ve, y la distancia teórica es solo el plan B.
+2. Cada franja leía el ancho del cuerpo por su número de fila, no por la
+   altura a la que caía. Una camiseta no cubre el tramo entero que se le
+   reserva, así que su bajo se ajustaba a un ancho medido más abajo.
+3. **El tamaño se calculaba igualando el ancho de la prenda al del cuerpo, y
+   esa medida no es de fiar.** Ver la decisión correspondiente más abajo. Es
+   el cambio de fondo de esta etapa.
+
+**La cámara arranca.** Verificado por el usuario en Chrome, sobre
+`localhost:5173`, después de arreglar el fallo de abajo. Lo que sigue sin
+comprobarse es la CALIDAD del encaje sobre una persona real (limitación #24).
+
+**Un cuarto error, este encontrado al usarlo.** Al pulsar «Encender» la
+pantalla volvía al mismo botón sin decir nada, pasara lo que pasara. El
+`catch` del arranque hacía `setStatus('error')` y a continuación `stop()`, que
+acaba en `setStatus('idle')`: React agrupa los cambios de estado y gana el
+último, así que **el estado de error se perdía siempre**. Ni mensaje dentro del
+recuadro, ni botón de reintentar.
+
+Arreglado separando la limpieza (`soltarTodo`) del cambio de estado. Y de paso,
+tres cosas más que salieron al mirarlo:
+
+- **La cámara se pide ahora ANTES de cargar el modelo.** Antes esperabas ~28 MB
+  de descarga antes de que el navegador te preguntara siquiera por el permiso,
+  y ese silencio se parecía mucho a «el botón no hace nada».
+- **Si la GPU falla, se reintenta en CPU.** Medido en este equipo: GPU 3,2 s,
+  CPU 0,7 s, las dos correctas — pero hay equipos sin aceleración por hardware
+  donde solo funciona la segunda, y antes ahí no arrancaba.
+- El motivo del fallo se repite **dentro del recuadro negro**, que es donde
+  está la mirada cuando la cámara no tira, y los mensajes distinguen permiso
+  bloqueado, cámara ocupada por otro programa, equipo sin cámara y dirección no
+  permitida (abrirlo por la IP de la red local, no por `localhost`).
 
 ---
 
@@ -120,240 +192,90 @@ Falta conectar los modelos reales.
 
 | # | Descripción | Impacto | Plan |
 |---|---|---|---|
-| 1 | ~~Nada se ha ejecutado todavía.~~ **Backend verificado**: 22 pruebas en verde con Python 3.12.10. Falta ejecutar el frontend y la base de datos. | Medio | Pasos 6–8 de la verificación. |
-| 1b | ~~El README encadenaba comandos con `&&`, que no existe en Windows PowerShell 5.1.~~ **Corregido**: un comando por bloque. | — | Resuelto. Entorno de referencia: Windows 11 + PowerShell 5.1. |
-| 1c | ~~`CORS_ORIGINS` reventaba el arranque: pydantic-settings decodifica los campos complejos como JSON antes de los validadores.~~ **Corregido** con `NoDecode` + 5 pruebas de regresión. | — | Resuelto. |
-| 2 | ~~No hay autenticación. Todos los endpoints son públicos.~~ **Resuelto en la Etapa 2**: JWT, `get_current_user` y reparto de acceso verificado con 54 pruebas. | — | Resuelto. |
-| 3 | ~~Sin migraciones.~~ **Resuelto en la Etapa 2**: Alembic gobierna el esquema; `create_all` ya no corre al arrancar. | — | Resuelto. |
+| 24 | **El encaje no se ha probado con una cámara y una persona de verdad.** La cámara ya arranca y se ve la imagen; lo que falta es juzgar si la prenda queda bien puesta. La geometría está verificada con cuerpos sintéticos, que no tiemblan, no se giran y tienen una máscara perfecta. | Alto | Es lo primero que hay que hacer. Si algo baila, el sitio es `suavizarCuerpo`; si la talla no cuadra, `TRAMOS[categoria].referencia`. |
+| 25 | **No hay oclusión.** Si pones la mano delante del pecho, la prenda te tapa la mano. El navegador sabe qué píxeles son persona, pero no cuáles están delante. | Medio | Se puede aproximar recortando los antebrazos cuando cruzan el torso. No es gratis y aún no se ha intentado. |
+| 26 | **No hay simulación de tela.** Ni pliegues, ni sombras propias, ni peso. Una camisa no ondea. La interfaz lo dice en la portada y en el probador. | Medio | Es la Fase 3D. Necesita motor y materiales; el campo `fabric` ya está puesto para cuando llegue. |
+| 27 | **La camiseta blanca del catálogo NO se puede recortar, y no es cuestión de ajustar nada.** Medido: el fondo es (217,218,212) y hay zonas de tela en sombra que valen exactamente (217,217,217) — distancia 6, cuando el propio fondo varía 7 a lo largo del borde. La tela y el fondo son el mismo color. Se dibuja a tiras. | Alto | **La aplicación lo detecta y avisa** (`recorteDudoso`), así que no se confunde con un fallo del encaje. La solución es una fotografía sobre fondo que contraste. Un recorte de calidad real es trabajo de un modelo de segmentación. |
+| 28 | **Las ocho prendas de la semilla son siluetas planas de colores**, dibujadas con Pillow. En el catálogo, al lado de las cinco fotografías reales, se ven mal. | Bajo | Retirarlas con `active = false`, o subirles fotos reales. Es decisión del usuario: son sus datos. |
+| 29 | **Hace falta salir de cabeza a cadera en el encuadre.** Con un portátil sobre la mesa no siempre se consigue, y sin los cuatro puntos clave no se dibuja nada. | Medio | La pantalla lo avisa. Un aviso más concreto ("acércate", "apártate") sería fácil de añadir. |
 | 4 | Los tests usan SQLite, no PostgreSQL. No validan comportamiento específico de PG. | Medio | Aceptable mientras el esquema sea portable. |
-| 5 | **El proyecto está dentro de OneDrive.** `node_modules` y `.venv` provocan sincronización constante, builds lentos y bloqueos de archivo. | Medio | Mover a `C:\dev\` o excluir esas carpetas de OneDrive. |
-| 6 | ~~El tipo de imagen se valida por la cabecera `Content-Type`.~~ **Resuelto en la Fase 1**: `app/services/images.py` abre el archivo con Pillow y usa el formato detectado. Con prueba de regresión (un texto declarado como `image/png` se rechaza). | — | Resuelto. |
-| 15 | **`BackgroundTasks` no sobrevive a un reinicio.** Si el proceso se para mientras una prueba está en `processing`, esa prueba se queda ahí para siempre: no hay reintentos ni recuperación. | Bajo | Con un proceso y un usuario es asumible. `status` ya está modelado, así que una cola encaja sin rehacer la tabla. |
-| 20 | **Las imágenes de Docker nunca se han construido.** El demonio de Docker no estaba en marcha al escribirlas; solo se validó la sintaxis del compose y los perfiles. Los `Dockerfile` están sin probar. | Medio | `docker compose --profile full up -d --build` con Docker Desktop arrancado. Es lo primero que hay que probar de esto. |
-| 21 | **El generador de diseños no es IA.** `MockDesignProvider` dibuja siluetas según palabras que reconoce (prenda y color). La interfaz lo advierte. | Alto | Conectar un modelo de texto→imagen. |
-| 22 | **El análisis corporal no es visión por computador.** `MockBodyAnalysisProvider` deriva medidas de proporciones medias sobre la altura; no detecta a la persona. Declara confianza 0.15–0.35 a propósito. | Alto | MediaPipe, en `requirements-vision.txt` aparte. |
-| 23 | **Las tablas de tallaje son genéricas**, no de ninguna marca. Cada fabricante talla distinto. | Bajo | Tabla propia por prenda cuando el catálogo sea real. |
-| 16 | **El proveedor por defecto sigue siendo el local, que no es IA.** `LocalPreviewProvider` superpone la prenda: no detecta pose ni cuerpo. La interfaz lo advierte. El de Gemini ya está escrito; se activa con `AI_PROVIDER=gemini`. | Alto | Poner la clave y activar facturación (README §6d). |
-| 17 | **El camino de Gemini no se ha ejecutado nunca contra la API real.** Las 12 pruebas usan un cliente simulado: verifican cómo se traducen respuestas y errores, no que la petición sea la correcta ni que el modelo devuelva algo útil. | Alto | Primera prueba real cuando el usuario tenga clave y facturación. Es lo primero que hay que hacer al retomar. |
-| 18 | **Cada prueba virtual con Gemini cuesta dinero y no hay límite de peticiones.** Unas centésimas de dólar por imagen; nada impide lanzarlas en bucle. | Alto | Presupuesto con alerta en Google Cloud ANTES de la primera prueba (README §6d). Y limitación #8: límite de peticiones antes de exponer la aplicación. |
-| 19 | **Todo lo que genere Gemini lleva marca de agua invisible (SynthID).** No se puede desactivar. | Bajo | Es correcto —el resultado es sintético—, pero conviene saberlo si el proyecto se presenta como trabajo académico. |
+| 5 | **El proyecto está dentro de OneDrive.** `node_modules` y `.venv` provocan sincronización constante. | Medio | Mover a `C:\dev\` o excluir esas carpetas de OneDrive. |
+| 20 | **Las imágenes de Docker nunca se han construido.** Solo se validó la sintaxis del compose. | Medio | `docker compose --profile full up -d --build` con Docker Desktop arrancado. |
 | 7 | Las imágenes se sirven desde el proceso de FastAPI. | Bajo | Delegar en Nginx/CDN cuando haya despliegue real. |
-| 8 | Sin límite de peticiones ni de tamaño total de subida por usuario. **Incluye el login**: nada impide probar contraseñas en bucle. | Medio | Antes de exponer la aplicación públicamente. `slowapi` o un límite en el proxy. |
-| 9 | **Sin refresh token ni lista de revocación.** Cerrar sesión descarta el token en el navegador, pero seguiría siendo válido hasta caducar (12 h). Cambiar `SECRET_KEY` es hoy la única forma de invalidar todas las sesiones. | Bajo | Solo si aparece la necesidad real de expulsar a alguien al momento. |
-| 10 | **El token se guarda en `localStorage`.** Un fallo de XSS permitiría leerlo; una cookie `httpOnly` no. Se aceptó a cambio de que recargar no cierre la sesión, y porque la alternativa exige manejar CSRF y cookies entre orígenes. | Medio | Primer punto a revisar antes de un despliegue público. |
+| 8 | Sin límite de peticiones. **Incluye el login**: nada impide probar contraseñas en bucle. | Medio | Antes de exponer la aplicación públicamente. `slowapi` o un límite en el proxy. |
+| 9 | **Sin refresh token ni lista de revocación.** Cerrar sesión descarta el token en el navegador, pero seguiría siendo válido hasta caducar (12 h). | Bajo | Solo si aparece la necesidad real de expulsar a alguien al momento. |
+| 10 | **El token se guarda en `localStorage`.** Un fallo de XSS permitiría leerlo. Se aceptó a cambio de que recargar no cierre la sesión. | Medio | Primer punto a revisar antes de un despliegue público. |
 | 11 | **Cualquier usuario registrado puede dar de alta prendas.** No existe la distinción usuario/administrador. | Bajo | Columna `is_admin` cuando haya un panel que la justifique. |
-| 12 | **Las migraciones no se ejecutan en los tests**, que siguen creando el esquema desde los modelos con SQLite. Los tests validan los modelos, no las migraciones. | Medio | Se contrastan a mano con `alembic check` (ver verificación de la Etapa 2). Una base PostgreSQL de test cuando el esquema se complique. |
-| 14 | **El registro no verifica que el buzón exista.** Cualquier correo con forma válida crea una cuenta: no hay correo de confirmación ni columna `is_verified`. Se comprobó el 2026-09-06: el login SÍ rechaza correos inexistentes y contraseñas erróneas (401 en ambos); el agujero está solo en el alta. | Medio | Se resolverá con el acceso mediante Google, que garantiza el buzón de paso. Ver «Próximo paso». |
-| 13 | La suite tarda ~15 s (antes 1,4 s). Es bcrypt, que es lento a propósito, multiplicado por los registros e inicios de sesión de las pruebas. | Bajo | Aceptable. Si molesta, bajar el coste de bcrypt solo en el entorno de test. |
+| 12 | **Las migraciones no se ejecutan en los tests**, que crean el esquema desde los modelos con SQLite. | Medio | Se contrastan a mano con `alembic check`. |
+| 14 | **El registro no verifica que el buzón exista.** No hay correo de confirmación. | Medio | Se resolverá con el acceso mediante Google. |
+| 13 | La suite tarda ~24 s. Es bcrypt, que es lento a propósito. | Bajo | Aceptable. Si molesta, bajar el coste de bcrypt solo en el entorno de test. |
 
 ---
 
 ## Decisiones técnicas
 
+### De la reestructuración (2026-09-14)
+
 | Decisión | Alternativa descartada | Motivo |
 |---|---|---|
-| Monolito modular por capas | Microservicios | Con un dominio aún poco conocido, los límites de servicio se pondrían mal. Se extraerá el worker de IA cuando la lentitud lo justifique. |
-| SQLAlchemy síncrono | `AsyncSession` | Consultas triviales; el modo síncrono es más simple de depurar y testear. FastAPI ya lo ejecuta en threadpool. |
-| `create_all` en Etapa 1 | Alembic desde el inicio | Menos piezas para arrancar. Alembic entró en la Etapa 2, antes de que existieran datos irrecuperables. |
-| Migración inicial generada contra una base vacía desechable | Autogenerar contra `vfit` | Autogenerate compara los modelos con la base apuntada. Contra `vfit`, que ya tenía las tablas, habría producido una migración VACÍA y nos habríamos quedado sin migración fundacional. |
-| `alembic stamp head` sobre `vfit` | Borrar y recrear la base | Había datos reales (8 prendas). Y una migración que solo funciona sobre una base vacía no sirve para lo que se creó. |
-| `create_all` fuera del arranque | Dejarlo "por si acaso" | Dos fuentes de verdad para el esquema divergen en silencio: es exactamente el fallo que motivó poner Alembic antes que JWT. |
-| `compare_type` y `compare_server_default` activos | Los valores por defecto de Alembic | Sin ellos, autogenerate se pierde los cambios de tipo, que son los más habituales. Tienen fama de falsos positivos, así que se comprobó contra el esquema real: `alembic check` sale limpio con ambos. |
-| `PyJWT` | `python-jose` | Es lo que usa la documentación antigua de FastAPI, pero tiene mantenimiento irregular e historial de CVEs. PyJWT es Python puro y sin dependencias pesadas. |
-| HS256 fijado en código | Algoritmo configurable por entorno | Un algoritmo elegido por configuración se puede degradar a `none`, y entonces cualquier token sin firma se acepta. |
-| Login con JSON | `OAuth2PasswordRequestForm` | El formulario regala el botón Authorize de `/docs`, pero obliga a enviar un campo `username` que en realidad contiene un email, y a que el frontend trate el login como caso especial. Con `HTTPBearer` el botón sigue estando, pegando el token. |
-| Token en `localStorage` | Solo en memoria; cookie `httpOnly` | En memoria, cada recarga cierra la sesión. La cookie es más segura pero exige CSRF y cookies entre orígenes. Riesgo asumido y anotado como limitación #10. |
+| **Retirar la IA en lugar de seguir mejorándola** | Conectar Gemini de verdad | Los proveedores simulados ya no aportaban, y los reales cuestan dinero por imagen. Pero el motivo de fondo es otro: mientras el probador fuera el borrador que se enviaba al modelo, no había presión para que la superposición estuviera bien hecha. Quitando el modelo, la superposición es el producto. |
+| **Borrar las tablas en vez de dejarlas** | Mantenerlas "por si acaso" | Ya no hay código que sepa leerlas. Quedarían datos huérfanos que nadie miraría y que aparecerían en cada `alembic check`. |
+| **Borrar también el maniquí 3D** | Desengancharlo del perfil corporal y conservarlo | Decisión del usuario. Dependía de las medidas del perfil corporal, que se iba, y un maniquí con una textura plana encima tampoco vestía bien. Los 600 KB de Three.js volverán cuando haya telas de verdad que simular. |
+| **El login se queda delante del probador** | Abrirlo, ya que no envía nada al servidor | Decisión del usuario: quiere controlar el flujo de usuarios y más adelante entrar con Google. |
+| **El tamaño de la prenda sale de su ALTO** | Igualar su ANCHO al del cuerpo | Es el cambio de fondo de esta etapa, y se llegó a él descartando lo otro con medidas. Escalar por el ancho respeta la proporción de la foto, que suena mejor; con las fotos reales da resultados incoherentes, porque el ancho de una foto de producto depende de cómo esté colocada la prenda y de qué tal haya salido el recorte. La camiseta blanca, con un agujero en el torso, se medía un 35% estrecha y se dibujaba a mitad del muslo; la camisa marrón, con las mangas tocando el torso, medía la prenda entera en la fila del pecho y salía por encima de la cadera. Se probaron tres formas de medir ese ancho —de borde a borde, solo la mancha central, y por franjas según la categoría— y ninguna aguanta las cinco fotos. El alto no tiene ese problema: una camiseta empieza en el hombro y acaba en el bajo, y eso es cierto en todas las fotos. |
+| **Un control manual de largo** | Deducir el largo de la proporción de la foto | Al anclar por alto, la categoría decide el largo, y una categoría mete en el mismo saco una chaqueta biker y un abrigo hasta la rodilla. La foto ya no puede desempatar —por lo de arriba—, así que la salida es un control. Son tres líneas y resuelve un caso conocido. |
+| **Avisar cuando el recorte sale roto** | Dibujarlo igual | Antes se pintaba la camiseta a tiras sin decir nada, y quien la veía no podía saber si el fallo era del recorte, del encaje o de la cámara. La métrica (borde respecto a superficie, más cobertura) separa las cuatro fotos buenas —0,011 a 0,020— de la rota, 0,031. |
+| **Corrección anatómica en los puntos de MediaPipe** | Un multiplicador ajustable a ojo | El `1.9` anterior había que reajustarlo por cada foto y cada persona porque mezclaba dos correcciones distintas: la anatómica (constante para todos) y el encuadre de la foto (propio de cada una). Separadas, la primera es un factor fijo y la segunda sale del recorte. |
+| **Franjas horizontales** | Malla de triángulos | `drawImage` solo hace transformaciones afines sobre rectángulos. Una malla obliga a recortar triángulo a triángulo: más código, más coste y costuras dentadas. Veintiocho trapecios describen la misma curva. |
+| **La máscara corrige, no decide** | Confiar en el contorno medido | Con los brazos pegados al cuerpo, el barrido los incluye y la prenda saldría ancha; con un fondo complicado, la segmentación se rompe. Limitando la corrección, un fallo deforma un poco en lugar de arruinarlo todo. |
+| **El barrido guarda el punto más lejano, no el primer hueco** | Parar en el primer píxel de fondo | Un pantalón cubre dos piernas y entre ellas hay fondo. Parando en el primer hueco, a la altura de las rodillas mediría cero. |
+| **Dibujar en un lienzo aparte y volcarlo** | Pintar las franjas directamente | Las franjas se solapan un píxel para que no se vea la costura. Con transparencia, ese píxel se pintaría dos veces y cada unión saldría como una raya oscura. |
+| **Recorte contra la silueta ENGORDADA** | Contra la silueta exacta | Recortar por el borde del cuerpo convertiría la ropa en pintura corporal: una chaqueta holgada tiene que sobresalir. Lo que molesta es verla flotar sobre el fondo. |
+| **Suavizado exponencial con salto detectado** | Suavizar siempre | El modelo reestima la pose en cada fotograma y los puntos bailan. Pero suavizar un salto grande —la persona se movió de verdad— dejaría la prenda arrastrándose por la pantalla. |
+| **`fabric` nullable sin valor por defecto** | Poner "algodón" a lo existente | Del tejido depende el encaje. Rellenarlo con un valor inventado se vería en pantalla y nadie sabría de dónde salió. |
+| **Blanco y negro sin color de acento** | Añadir más color | El usuario dijo que se veía "pálido". El problema no era la falta de color sino el contraste bajo en toda la página. Los extremos lo arreglan, y a un catálogo de ropa le va mejor. |
+| **Los estados no se distinguen por color** | Semáforo verde/ámbar/rojo | En una página sin color, tres puntos coloreados serían lo único llamativo, y el tema de la página no es el estado del servidor. Por forma y por palabra funciona además para quien no distingue el rojo del verde. |
+
+### Anteriores, todavía vigentes
+
+| Decisión | Alternativa descartada | Motivo |
+|---|---|---|
+| Monolito modular por capas | Microservicios | Con un dominio aún poco conocido, los límites de servicio se pondrían mal. |
+| SQLAlchemy síncrono | `AsyncSession` | Consultas triviales; el modo síncrono es más simple de depurar y testear. |
+| Migración inicial generada contra una base vacía desechable | Autogenerar contra `vfit` | Contra una base que ya tenía las tablas habría producido una migración VACÍA. |
+| `create_all` fuera del arranque | Dejarlo "por si acaso" | Dos fuentes de verdad para el esquema divergen en silencio. |
+| `compare_type` y `compare_server_default` activos | Los valores por defecto de Alembic | Sin ellos, autogenerate se pierde los cambios de tipo, que son los más habituales. |
+| `PyJWT` | `python-jose` | python-jose tiene mantenimiento irregular e historial de CVEs. |
+| HS256 fijado en código | Algoritmo configurable por entorno | Un algoritmo elegido por configuración se puede degradar a `none`. |
+| Login con JSON | `OAuth2PasswordRequestForm` | El formulario obliga a enviar un campo `username` que en realidad contiene un email. |
+| Token en `localStorage` | Solo en memoria; cookie `httpOnly` | En memoria, cada recarga cierra la sesión. La cookie exige CSRF y cookies entre orígenes. |
 | Validar el token guardado contra `/auth/me` al arrancar | Confiar en él | Un token caducado pintaría la interfaz como "sesión iniciada" con todas las peticiones fallando. |
-| Releer el usuario en cada petición | Confiar en los datos del token | Es una consulta por clave primaria, y a cambio desactivar una cuenta corta el acceso al momento sin esperar a que caduque el token. |
-| 404 en recursos ajenos | 403 | Un 403 confirma que el recurso existe: recorrer identificadores permitiría contar cuentas y pruebas. |
-| Sin `POST /auth/logout` | Endpoint de cierre de sesión | Sin lista de revocación no podría invalidar nada: sería un endpoint que finge trabajar. |
-| `GET /api/users` eliminado | Protegerlo con token | Devolvía todos los usuarios con sus correos, no tenía consumidor y no existe la figura de administrador que lo justifique. |
-| **Seguir siendo aplicación web** | Empaquetar en un `.exe`/instalador | Se planteó el 2026-09-06 y **el usuario lo descartó: no es necesario**. Queda anotado porque la alternativa tenía consecuencias grandes: un instalador obliga a abandonar PostgreSQL (es un servicio aparte, no se empaqueta) y expondría cualquier clave de API dentro del ejecutable. Al descartarlo, PostgreSQL se queda y la arquitectura actual no necesita ningún cambio. **No reabrir sin que el usuario lo pida.** |
-| Empezar por un proveedor local que no es IA | Esperar a tener el proveedor real | Elegir proveedor de IA cuesta dinero y exige una cuenta del usuario. Sin una implementación local, esa decisión bloqueaba TODA la Fase 1; con ella, bloquea una sola clase. Además queda como modo degradado si el servicio de IA se cae o se agota la cuota. |
-| El `Protocol` de `app/ai/` se escribió AHORA | Seguir esperando | CLAUDE.md prohibía inventarlo sin implementación. Ya hay una real, así que nace de algo que funciona. Sigue siendo joven: solo lo cumple una clase, y se dará por bueno cuando lo cumpla la segunda. |
-| `BackgroundTasks` | Celery, RQ, Redis | Regla 10. Una cola son tres piezas más (broker, worker, supervisión) para un problema que hoy no existe. Su limitación está anotada como #15. |
-| Sondeo cada 2 s desde el frontend | WebSockets / SSE | Una conexión persistente para un usuario y una prueba a la vez es infraestructura sin uso. El sondeo son diez líneas y se comporta bien ante cortes de red. |
-| 202 al crear una prueba | 201 | 201 significa "creado y listo". Aquí el recurso existe pero aún no tiene resultado, que es justo lo que 202 comunica. |
-| Gemini («Nano Banana») como proveedor de IA | Cloudflare Workers AI | Se descartó tras revisar su catálogo: **no tiene ningún modelo que acepte dos imágenes**. Solo texto→imagen, img2img e inpainting, todos con una sola imagen más texto. Con eso se puede inventar una prenda a partir de una descripción, no vestir a alguien con la prenda del catálogo. Los modelos Gemini de imagen sí aceptan varias imágenes de referencia. |
-| Un cliente HTTP dentro de `app/ai/` | Un servidor MCP | Un MCP da herramientas al asistente dentro de una conversación. La aplicación necesita llamar a Gemini ella misma, en tiempo de ejecución, para sus usuarios. Con un MCP, el probador solo funcionaría con un chat abierto. |
-| El proveedor local sigue siendo el DEFECTO | Poner `gemini` por defecto | `gemini` cobra por imagen. Que el valor por defecto de un repositorio empiece a gastar dinero en cuanto alguien lo clona es una trampa. Se activa a conciencia. |
-| Sin reintentos automáticos | Reintentar los fallos | Reintentar algo que se cobra por uso, sin control de gasto, vacía una cuenta deprisa. El usuario puede relanzar la prueba a mano. |
-| `AI_PROVIDER` desconocido hace fallar | Caer al proveedor local | Creer que usas el modelo de pago cuando en realidad estás pegando imágenes con Pillow sería el peor error posible. Con prueba que lo cubre. |
-| Sin `is_admin` para dar de alta prendas | Añadir roles ya | Regla 10: infraestructura solo cuando haya necesidad demostrada. Anotado como limitación #11. |
-| `image_key` en BD, `image_url` en la API | Guardar la URL completa | Migrar a S3/R2 no obliga a reescribir filas ya almacenadas. |
-| Enums como `VARCHAR` **sin CHECK** | `ENUM` nativo de PostgreSQL | Añadir un valor a un ENUM nativo exige `ALTER TYPE`; estas listas van a crecer. **Corrección de la Etapa 2:** este documento decía "VARCHAR + CHECK". Era falso: desde SQLAlchemy 1.4, `Enum(native_enum=False)` tiene `create_constraint=False` por defecto, y se comprobó que no existe ninguna CHECK ni en la base ni en el DDL generado. Se deja así a propósito: una CHECK devolvería el mismo coste de migración que se quería evitar. Los valores los valida Pydantic en la entrada. |
+| 404 en recursos ajenos | 403 | Un 403 confirma que el recurso existe. |
+| Sin `POST /auth/logout` | Endpoint de cierre de sesión | Sin lista de revocación no podría invalidar nada: fingiría trabajar. |
+| **Seguir siendo aplicación web** | Empaquetar en un `.exe` | Lo descartó el usuario el 2026-09-06. Un instalador obliga a abandonar PostgreSQL. **No reabrir sin que lo pida.** |
+| `image_key` en BD, `image_url` en la API | Guardar la URL completa | Migrar a S3/R2 no obliga a reescribir filas. |
+| Enums como `VARCHAR` sin CHECK | `ENUM` nativo de PostgreSQL | Añadir un valor a un ENUM nativo exige `ALTER TYPE`; estas listas crecen. Los valores los valida Pydantic. |
 | `bcrypt` directo | `passlib[bcrypt]` | passlib 1.7.4 falla con bcrypt ≥ 4.1 y no tiene mantenimiento activo. |
-| `max_length=72` en la contraseña | Sin límite | bcrypt trunca en silencio a 72 bytes; sin el límite, dos contraseñas distintas serían equivalentes. |
-| `ondelete=RESTRICT` en `garment_id` | `CASCADE` | Borrar una prenda no debe destruir el historial del usuario. Se retira con `active = false`. |
-| `fetch` nativo | axios | No aporta nada que necesitemos; una dependencia menos. |
-| Hook `useApi` propio | TanStack Query | Aún no hay caché ni revalidación que gestionar. Se adoptará cuando exista la necesidad. |
-| React 18 | React 19 | Todo el ecosistema (incluido React Three Fiber, que llega en Fase 4) es compatible sin fricción. |
+| `max_length=72` en la contraseña | Sin límite | bcrypt trunca en silencio a 72 bytes. |
+| `fetch` nativo | axios | No aporta nada que necesitemos. |
+| Hook `useApi` propio | TanStack Query | Aún no hay caché ni revalidación que gestionar. |
+| React 18 | React 19 | Todo el ecosistema es compatible sin fricción. |
 | Tailwind v3 | Tailwind v4 | v4 cambia a configuración CSS-first; casi toda la documentación existente es de v3. |
-| Un solo `tsconfig.json` | *Project references* (`tsconfig.node.json`) | Las referencias exigen `composite: true`, incompatible con `noEmit`. Su ventaja son las compilaciones incrementales en monorepos; aquí solo añadían una configuración rota. |
-| PostgreSQL nativo con rol `vfit` dedicado | Usar el superusuario `postgres` | La aplicación no debe correr como superusuario, y así el `DATABASE_URL` es idéntico con instalación nativa o con Docker. |
-| Docker solo para PostgreSQL | Dockerizar toda la aplicación | El hot-reload nativo es más rápido y más fácil de depurar en desarrollo. |
-| `app/ai/` vacío, sin `Protocol` | Definir la interfaz ya | Una interfaz escrita antes de tener una implementación real casi siempre es la equivocada. |
+| PostgreSQL nativo con rol `vfit` dedicado | Usar el superusuario `postgres` | La aplicación no debe correr como superusuario. |
+| Docker solo para PostgreSQL | Dockerizar toda la aplicación | El hot-reload nativo es más rápido de depurar en desarrollo. |
 
 ---
 
-## Verificación de la Etapa 1
+## Próximos pasos
 
-Ejecutar en orden, **un comando por vez** (PowerShell 5.1 no admite `&&`).
-Los pasos 1–4 no necesitan base de datos. La etapa está cerrada cuando los 9 pasan.
-
-| # | Comprobación | Esperado | Estado |
-|---|---|---|---|
-| 1 | `python --version` | 3.12.x | ✅ 3.12.10 |
-| 2 | venv activo (`python -c "import sys; print(sys.prefix)"`) | termina en `\backend\.venv` | ✅ |
-| 3 | `pip install -r requirements-dev.txt` | sin errores | ✅ |
-| 4 | `pytest` | 22 pruebas en verde | ✅ |
-| 5 | PostgreSQL escuchando en 5432 | servicio activo | ✅ 16.15-3 |
-| 6 | `python -m scripts.seed` | `Prendas creadas: 8` | ✅ 3 tablas, 8 filas |
-| 7 | La app arranca contra PostgreSQL | sin excepciones | ✅ |
-| 8 | `/api/health` | `"status":"ok"`, `"database":"up"` | ✅ |
-| 9 | <http://localhost:5173/catalogo> | 8 prendas y el indicador dice **En línea** | ✅ |
-
-**ETAPA 1 CERRADA.** Los 9 puntos verificados el 2026-09-06. El recorrido completo
-React → `fetch` → FastAPI → SQLAlchemy → PostgreSQL funciona, incluido el filtro
-por categoría. `npm run build` compila sin errores con TypeScript en modo estricto.
-
-## Verificación de la Etapa 2
-
-Ejecutada el 2026-09-06. Todos los puntos comprobados de verdad, no por lectura
-del código.
-
-### Migraciones
-
-| # | Comprobación | Resultado |
-|---|---|---|
-| 1 | Base vacía → `alembic upgrade head` | ✅ esquema creado |
-| 2 | Esquema migrado vs. el que producía `create_all` | ✅ idénticos: 25 columnas, 9 índices, 5 constraints |
-| 3 | `alembic check` tras migrar | ✅ «No new upgrade operations detected» |
-| 4 | `alembic downgrade base` | ✅ limpio, solo queda `alembic_version` |
-| 5 | `alembic stamp head` sobre `vfit` | ✅ revisión `d49edc91e56b`, 8 prendas intactas |
-| 6 | `alembic check` sobre `vfit` | ✅ sin cambios pendientes |
-| 7 | `python -m scripts.seed` tras migrar | ✅ `creadas: 0 | ya existentes: 8` |
-| 8 | Arranque de la aplicación | ✅ registra «Base de datos en la revisión d49edc91e56b» |
-
-### Autenticación (backend)
-
-| # | Comprobación | Resultado |
-|---|---|---|
-| 9 | `pytest` | ✅ 54 pruebas en verde (antes 22) |
-| 10 | Registro y login contra PostgreSQL real | ✅ token con `expires_in` = 43200 s |
-| 11 | Contraseña incorrecta y email inexistente | ✅ mismo 401 y mismo mensaje |
-| 12 | Login con el email en mayúsculas | ✅ 200 |
-| 13 | Los 6 endpoints protegidos sin token | ✅ 401 en todos |
-| 14 | Cuenta ajena / prueba ajena | ✅ 404, no 403 |
-| 15 | `GET /api/users` | ✅ ya no existe (405) |
-| 16 | Catálogo y `/api/health` sin token | ✅ públicos, 8 prendas |
-| 17 | Token caducado, manipulado, de otro tipo o de usuario borrado | ✅ 401 en todos los casos |
-| 18 | Cuenta desactivada con token todavía válido | ✅ pierde el acceso al momento |
-| 19 | `ENVIRONMENT=production` con la `SECRET_KEY` de ejemplo | ✅ la aplicación no arranca |
-
-### Sesión (frontend, en el navegador)
-
-| # | Comprobación | Resultado |
-|---|---|---|
-| 20 | Catálogo sin cuenta | ✅ visible; «Mis pruebas» y «Perfil» ocultos |
-| 21 | `/mis-pruebas` sin sesión | ✅ redirige a `/entrar` |
-| 22 | Login con contraseña incorrecta | ✅ muestra el error genérico del backend |
-| 23 | Login correcto | ✅ lleva a la página que se intentaba abrir |
-| 24 | Recargar la página | ✅ la sesión sobrevive (`localStorage` + validación con `/auth/me`) |
-| 25 | Token manipulado en `localStorage` | ✅ se descarta, se borra y vuelve al formulario |
-| 26 | Registro desde la interfaz | ✅ crea la cuenta e inicia sesión |
-| 27 | Cerrar sesión | ✅ borra el token y vuelve a la portada |
-| 28 | Campo manual «ID de usuario» | ✅ eliminado |
-| 29 | Móvil (375 px) | ✅ formularios y menú correctos |
-| 30 | `npm run build` | ✅ compila con TypeScript estricto |
-
-**ETAPA 2 CERRADA.**
-
----
-
-## Entorno local verificado
-
-| Componente | Versión | Notas |
-|---|---|---|
-| Windows | 11 Pro | PowerShell 5.1 — **no admite `&&`** |
-| Python | 3.12.10 | venv en `backend\.venv` |
-| Node / npm | 24.19.0 / 11.17.0 | |
-| PostgreSQL | 16.15-3 | Instalado con winget en modo silencioso |
-
-**Base de datos local:** base `vfit`, rol `vfit` con contraseña `vfit_dev_password`
-(las mismas credenciales que `docker-compose.yml`, para que el `DATABASE_URL` sea
-idéntico con instalación nativa o con Docker).
-
-> ⚠️ El superusuario `postgres` quedó con la contraseña por defecto `postgres`,
-> que puso la instalación silenciosa de winget. Es aceptable en una base local
-> que solo escucha en `localhost`, pero **cámbiala si este equipo llega a estar
-> en una red compartida**:
-> `ALTER USER postgres WITH PASSWORD 'otra-contrasena';`
-
----
-
-## Próximo paso
-
-**Conectar los modelos reales.** Todo lo demás está construido: los tres flujos
-—probador, diseños y cuerpo— funcionan de punta a punta con proveedores
-simulados, y cada uno tiene su `Protocol`. Conectar un modelo real es escribir
-una clase y añadir una rama en el selector correspondiente:
-
-| Fase | Contrato | Selector | Simulado actual |
-|---|---|---|---|
-| 1 · Probador | `app/ai/provider.py` | `get_try_on_provider()` | `LocalPreviewProvider` |
-| 2 · Diseños | `app/ai/design_provider.py` | `get_design_provider()` | `MockDesignProvider` |
-| 3 · Cuerpo | `app/vision/analysis_provider.py` | `get_body_analysis_provider()` | `MockBodyAnalysisProvider` |
-
-Ni las rutas, ni los servicios, ni la base de datos, ni el frontend cambian.
-
-**Antes de eso, dos cosas que no dependen de ninguna API:**
-
-1. Construir las imágenes de Docker por primera vez (limitación #20).
-2. Verificación del correo o acceso con Google (limitación #14).
-
----
-
-**Primera llamada real a Gemini.** El código está escrito y probado contra un
-cliente simulado, pero **nunca se ha ejecutado contra la API de verdad**. Eso lo
-tiene que hacer el usuario, porque exige clave y facturación activada.
-
-Pasos, en orden (detalle en README §6d):
-
-1. Crear la clave en <https://aistudio.google.com/apikey>.
-2. Activar facturación en el proyecto de Google Cloud asociado. **El nivel
-   gratuito no incluye generación de imágenes.**
-3. **Poner un presupuesto con alerta ANTES de la primera prueba.** Cada prueba
-   cuesta dinero y no hay límite de peticiones.
-4. En `backend/.env`: `AI_PROVIDER=gemini` y `GEMINI_API_KEY=...`.
-5. Lanzar una prueba desde el probador y mirar el resultado y los registros.
-
-Qué vigilar en esa primera prueba:
-
-- **Que devuelva imagen y no texto.** Si el modelo contesta explicando por qué
-  no puede, el proveedor lo convierte en un mensaje presentable, pero habrá que
-  ajustar `TRY_ON_PROMPT` en `app/ai/gemini.py`.
-- **Cuánto tarda.** Si se acerca a los 100 s de `GEMINI_TIMEOUT_SECONDS`, hay
-  que subir ese valor Y el corte del sondeo del navegador (120 s en
-  `TryOnPage.tsx`), en ese orden: el del navegador debe ser el mayor.
-- **Qué calidad da.** Si respeta la cara y el fondo. Si no, el prompt es lo
-  primero que hay que tocar.
-- **Cuánto costó.** Contrastarlo con la facturación real antes de dejarlo
-  abierto a más gente.
-
-Después de eso, la Fase 1 se puede dar por cerrada.
-
-### Después de la Fase 1
-
-**Acceso con Google (OAuth).** Aplazado a propósito, no olvidado. Es aditivo, no
-toca el núcleo, y resuelve de paso la limitación #14: Google ya garantiza que el
-buzón existe y es de quien dice. Al haber descartado el instalador, el flujo es
-el sencillo (redirección web), no el de escritorio.
-
-Alternativa si Google se complica: verificación por correo con token de
-confirmación e `is_verified`. Más piezas, y necesita una cuenta de correo
-saliente.
-
-> **Nota de continuidad:** cada etapa se desarrolla en una conversación nueva.
-> Este documento y [CLAUDE.md](CLAUDE.md) son el único puente entre sesiones —
-> mantenlos al día al cerrar cada etapa.
+1. **Probarlo con una cámara y una persona.** Es lo único que falta para dar
+   el encaje por bueno. Todo lo demás está medido.
+2. **Decidir qué hacer con las ocho prendas de silueta** del catálogo:
+   retirarlas o darles fotografías reales.
+3. **Ajustar los tramos con lo que se vea.** `TRAMOS` en `vestir.ts` tiene los
+   números de dónde empieza y acaba cada categoría, y están comentados uno a
+   uno. Cambiarlos es cambiar un número, no reescribir nada.
+4. **Acceso con Google**, que el usuario ya ha pedido. De paso resuelve la
+   limitación #14: garantiza que el buzón existe.
+5. Oclusión de los brazos cuando cruzan el torso (limitación #25), si molesta
+   al usarlo de verdad.

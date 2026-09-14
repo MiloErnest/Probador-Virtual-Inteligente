@@ -27,8 +27,7 @@ async def lifespan(_: FastAPI):
     if isinstance(storage, LocalStorage):
         storage.ensure_directories()
 
-    # Desde la Etapa 2 el esquema lo gobierna Alembic: la aplicación NO crea
-    # tablas al arrancar. Solo informa de en qué revisión está la base, para
+    # El esquema lo gobierna Alembic: la aplicación NO crea tablas al arrancar. Solo informa de en qué revisión está la base, para
     # que "falta migrar" no se confunda con "la base está caída".
     #
     # La aplicación arranca igualmente aunque PostgreSQL no esté disponible.
@@ -58,8 +57,9 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     description=(
-        "API del Probador Virtual Inteligente. "
-        "Etapa 1: catálogo, usuarios y almacenamiento de imágenes."
+        "API del Probador Virtual. Sirve el catálogo de prendas, las cuentas "
+        "de usuario y las imágenes. El probador en sí corre entero en el "
+        "navegador: ninguna imagen de la persona llega hasta aquí."
     ),
     lifespan=lifespan,
     docs_url="/docs",

@@ -5,49 +5,107 @@
 @layer base {
   html {
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* El ancla de una sección no queda tapada por la barra superior fija. */
+    scroll-padding-top: 5rem;
   }
 
   body {
-    @apply bg-canvas text-ink font-sans antialiased;
+    @apply bg-paper font-sans text-ink antialiased;
   }
 
+  /* Un solo estilo de foco en toda la aplicación, y bien visible: en un
+     sistema sin color de acento, el foco tiene que verse por forma. */
   :focus-visible {
-    @apply outline-none ring-2 ring-accent ring-offset-2 ring-offset-canvas;
+    @apply outline-none ring-2 ring-ink ring-offset-2 ring-offset-paper;
+  }
+
+  /* Sobre fondo negro el anillo tiene que invertirse o desaparece. */
+  .sobre-negro :focus-visible {
+    @apply ring-paper ring-offset-ink;
+  }
+
+  ::selection {
+    @apply bg-ink text-paper;
+  }
+
+  /* Los controles deslizantes del probador son parte de la interfaz, no un
+     apaño del navegador: se les da el mismo blanco y negro que al resto. */
+  input[type='range'] {
+    @apply h-1 w-full cursor-pointer appearance-none rounded-full bg-ink-10;
+  }
+
+  input[type='range']::-webkit-slider-thumb {
+    @apply h-4 w-4 appearance-none rounded-full border-2 border-paper bg-ink;
+    box-shadow: 0 0 0 1px theme('colors.ink.20');
+  }
+
+  input[type='range']::-moz-range-thumb {
+    @apply h-4 w-4 rounded-full border-2 border-paper bg-ink;
+    box-shadow: 0 0 0 1px theme('colors.ink.20');
   }
 }
 
 @layer components {
-  .container-page {
-    @apply mx-auto w-full max-w-6xl px-5 sm:px-8;
+  .wrap {
+    @apply mx-auto w-full max-w-[1220px] px-5 sm:px-8;
+  }
+
+  /* Rótulo de sección: mayúsculas pequeñas muy espaciadas. Es lo que ordena
+     la página sin necesidad de una línea de color. */
+  .rotulo {
+    @apply text-[11px] font-semibold uppercase tracking-rotulo text-ink-60;
   }
 
   .card {
-    @apply rounded-xl2 border border-black/[0.07] bg-white;
+    @apply rounded border border-ink-10 bg-paper;
   }
 
   /* Las variantes de botón repiten las utilidades base en lugar de hacer
      `@apply btn`: encadenar clases de componente dentro del mismo @layer es
      frágil y depende del orden de compilación. */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5
-           text-sm font-medium transition-colors disabled:cursor-not-allowed
-           disabled:opacity-50;
+    @apply inline-flex select-none items-center justify-center gap-2 rounded-full px-5 py-2.5
+           text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-40;
   }
 
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5
-           text-sm font-medium transition-colors disabled:cursor-not-allowed
-           disabled:opacity-50 bg-ink text-white hover:bg-ink-soft;
+    @apply inline-flex select-none items-center justify-center gap-2 rounded-full bg-ink px-5
+           py-2.5 text-sm font-medium text-paper transition hover:bg-ink-80
+           disabled:cursor-not-allowed disabled:opacity-40;
   }
 
   .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5
-           text-sm font-medium transition-colors disabled:cursor-not-allowed
-           disabled:opacity-50 border border-black/10 text-ink hover:bg-black/[0.04];
+    @apply inline-flex select-none items-center justify-center gap-2 rounded-full border
+           border-ink-20 px-5 py-2.5 text-sm font-medium text-ink transition
+           hover:border-ink hover:bg-ink hover:text-paper
+           disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  /* Botón sobre fondo negro: los colores se invierten enteros. */
+  .btn-inverso {
+    @apply inline-flex select-none items-center justify-center gap-2 rounded-full bg-paper px-5
+           py-2.5 text-sm font-medium text-ink transition hover:bg-ink-10
+           disabled:cursor-not-allowed disabled:opacity-40;
   }
 
   .pill {
-    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px]
-           font-medium tracking-wide;
+    @apply inline-flex items-center gap-1.5 rounded-full border border-ink-10 px-2.5 py-1
+           text-[11px] font-medium text-ink-60;
+  }
+
+  .pill-solida {
+    @apply inline-flex items-center gap-1.5 rounded-full bg-ink px-2.5 py-1 text-[11px]
+           font-medium text-paper;
+  }
+
+  .campo {
+    @apply w-full rounded border border-ink-20 bg-paper px-3.5 py-2.5 text-sm text-ink
+           transition placeholder:text-ink-40 hover:border-ink-40 focus:border-ink;
+  }
+
+  /* Enlace de texto: el subrayado se despega de la letra para que se lea. */
+  .enlace {
+    @apply underline decoration-ink-20 underline-offset-4 transition hover:decoration-ink;
   }
 }

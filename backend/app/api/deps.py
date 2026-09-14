@@ -5,7 +5,6 @@ Las rutas solo declaran qué servicio necesitan; no saben cómo se arma.
 Esto también permite sustituir cualquier pieza en los tests.
 """
 
-from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
@@ -14,21 +13,13 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_session
 from app.models.user import User
-from app.repositories.body_profile import BodyProfileRepository
-from app.repositories.design import DesignRepository
 from app.repositories.garment import GarmentRepository
-from app.repositories.try_on_session import TryOnSessionRepository
 from app.repositories.user import UserRepository
 from app.services.auth import AuthService
-from app.services.body_profile import BodyProfileService
-from app.services.design import DesignService
 from app.services.exceptions import AuthenticationError
 from app.services.garment import GarmentService
 from app.services.storage import Storage, get_storage
-from app.services.try_on_jobs import run_design_job, run_try_on_job
-from app.services.try_on_session import TryOnSessionService
 from app.services.user import UserService
-from app.vision import BodyAnalysisProvider, get_body_analysis_provider
 
 SessionDep = Annotated[Session, Depends(get_session)]
 StorageDep = Annotated[Storage, Depends(get_storage)]
@@ -55,56 +46,9 @@ def get_garment_service(session: SessionDep, storage: StorageDep) -> GarmentServ
     return GarmentService(GarmentRepository(session), storage)
 
 
-def get_try_on_service(session: SessionDep, storage: StorageDep) -> TryOnSessionService:
-    return TryOnSessionService(
-        TryOnSessionRepository(session),
-        GarmentRepository(session),
-        DesignRepository(session),
-        storage,
-    )
-
-
-def get_design_service(session: SessionDep, storage: StorageDep) -> DesignService:
-    return DesignService(DesignRepository(session), storage)
-
-
-def get_body_profile_service(
-    session: SessionDep, storage: StorageDep
-) -> BodyProfileService:
-    return BodyProfileService(
-        BodyProfileRepository(session), GarmentRepository(session), storage
-    )
-
-
-def get_design_runner() -> Callable[[int], None]:
-    """Igual que `get_try_on_runner`: inyectada para poder sustituirla en los
-    tests, donde `SessionLocal` apuntaria a la base de desarrollo."""
-    return run_design_job
-
-
-def get_try_on_runner() -> Callable[[int], None]:
-    """Funcion que procesa una prueba en segundo plano.
-
-    Se inyecta en lugar de llamar a `run_try_on_job` directamente desde la
-    ruta por una razon concreta: esa funcion abre su PROPIA sesion de base de
-    datos con `SessionLocal`, que en los tests apunta a PostgreSQL y no a la
-    base SQLite de prueba. Pasando por una dependencia, `conftest.py` puede
-    sustituirla por una que use la sesion del test.
-    """
-    return run_try_on_job
-
-
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 GarmentServiceDep = Annotated[GarmentService, Depends(get_garment_service)]
-TryOnServiceDep = Annotated[TryOnSessionService, Depends(get_try_on_service)]
-TryOnRunnerDep = Annotated[Callable[[int], None], Depends(get_try_on_runner)]
-DesignServiceDep = Annotated[DesignService, Depends(get_design_service)]
-DesignRunnerDep = Annotated[Callable[[int], None], Depends(get_design_runner)]
-BodyProfileServiceDep = Annotated[BodyProfileService, Depends(get_body_profile_service)]
-BodyAnalysisProviderDep = Annotated[
-    BodyAnalysisProvider, Depends(get_body_analysis_provider)
-]
 
 
 def get_current_user(

@@ -1,7 +1,7 @@
 """Almacenamiento de imágenes.
 
-ESTRATEGIA (punto 13 de la Etapa 1)
------------------------------------
+ESTRATEGIA
+----------
 La aplicación nunca escribe rutas de disco directamente. Todo pasa por la
 interfaz `Storage`, que maneja *claves* opacas del tipo
 `"garments/3f9a1c2b.jpg"`. La base de datos guarda esa clave; la URL pública
@@ -12,7 +12,7 @@ backend consiste en escribir una nueva clase que cumpla el protocolo y
 cambiar `get_storage()`. Ni los modelos, ni las rutas, ni los datos ya
 almacenados necesitan cambiar.
 
-Etapa 1 usa `LocalStorage`, que escribe bajo `backend/storage/` y expone los
+Hoy se usa `LocalStorage`, que escribe bajo `backend/storage/` y expone los
 archivos mediante el montaje estático `/media` de FastAPI. Es suficiente para
 un despliegue en un solo servidor; deja de serlo en cuanto haya más de una
 instancia de la aplicación (entonces tocará el backend remoto).
@@ -24,7 +24,7 @@ from typing import Protocol
 
 from app.core.config import settings
 
-# Solo formatos que los navegadores y los modelos de try-on manejan bien.
+# Solo formatos que todos los navegadores saben pintar.
 ALLOWED_IMAGE_TYPES: dict[str, str] = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
@@ -32,11 +32,11 @@ ALLOWED_IMAGE_TYPES: dict[str, str] = {
 }
 
 # Carpetas lógicas dentro del almacén.
+#
+# Solo queda una. Las de fotos de usuario, resultados generados y diseños se
+# retiraron al quitar la IA: el probador corre entero en el navegador y no
+# sube ninguna imagen de la persona al servidor.
 FOLDER_GARMENTS = "garments"  # fotos de catálogo
-FOLDER_UPLOADS = "uploads"    # fotos que sube el usuario (Fase 1 MVP)
-FOLDER_RESULTS = "results"    # salidas del modelo de try-on (Fase 1)
-FOLDER_DESIGNS = "designs"    # disenos generados por texto (Fase 2)
-FOLDER_BODY = "body"          # fotos de analisis corporal (Fase 3)
 
 
 class Storage(Protocol):
@@ -68,13 +68,7 @@ class LocalStorage:
         self.public_base_url = public_base_url.rstrip("/")
 
     def ensure_directories(self) -> None:
-        for folder in (
-            FOLDER_GARMENTS,
-            FOLDER_UPLOADS,
-            FOLDER_RESULTS,
-            FOLDER_DESIGNS,
-            FOLDER_BODY,
-        ):
+        for folder in (FOLDER_GARMENTS,):
             (self.root / folder).mkdir(parents=True, exist_ok=True)
 
     def save(self, data: bytes, *, folder: str, extension: str) -> str:
@@ -88,9 +82,8 @@ class LocalStorage:
         return f"{folder}/{filename}"
 
     def read(self, key: str) -> bytes:
-        # Añadido en la Fase 1: el proveedor de try-on necesita recuperar la
-        # foto y la prenda que se guardaron antes. Pasa por `_resolve`, así
-        # que una clave manipulada del tipo "../../.env" no sale del almacén.
+        # Pasa por `_resolve`, así que una clave manipulada del tipo
+        # "../../.env" no sale del almacén.
         path = self._resolve(key)
         if path is None or not path.is_file():
             raise FileNotFoundError(f"No existe el archivo {key!r} en el almacén.")

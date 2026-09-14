@@ -1,40 +1,62 @@
-import { CATEGORY_LABELS, type Garment } from '@/types'
+import { Link } from 'react-router-dom'
+
+import { CATEGORY_LABELS, FABRIC_LABELS, type Garment } from '@/types'
 
 interface Props {
   garment: Garment
+  /** Enlaza al probador con la prenda ya elegida. */
+  probable?: boolean
 }
 
-export default function GarmentCard({ garment }: Props) {
-  return (
-    <article className="card group overflow-hidden">
-      <div className="relative aspect-[3/4] overflow-hidden bg-gradient-to-br from-accent-soft to-canvas">
+export default function GarmentCard({ garment, probable = false }: Props) {
+  const contenido = (
+    <>
+      <div className="relative aspect-[3/4] overflow-hidden bg-bone">
         {garment.image_url ? (
           <img
             src={garment.image_url}
             alt={garment.name}
             loading="lazy"
-            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+            className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.04]"
           />
         ) : (
-          // El catálogo inicial se siembra sin fotos: el marcador evita huecos
+          // El catálogo puede sembrarse sin fotos: el marcador evita huecos
           // rotos y comunica que falta subir la imagen.
           <div className="flex h-full w-full items-center justify-center">
-            <span className="font-display text-3xl text-ink-muted/40">
+            <span className="font-display text-5xl text-ink-20">
               {garment.name.charAt(0).toUpperCase()}
             </span>
           </div>
         )}
-        <span className="pill absolute left-3 top-3 bg-white/85 text-ink-soft backdrop-blur">
-          {CATEGORY_LABELS[garment.category]}
-        </span>
-      </div>
 
-      <div className="space-y-1 p-4">
-        <h3 className="font-display text-base leading-snug">{garment.name}</h3>
-        {garment.description && (
-          <p className="line-clamp-2 text-sm text-ink-muted">{garment.description}</p>
+        {probable && (
+          // Aparece al pasar por encima. En un móvil no hay "encima", así que
+          // en pantallas táctiles se muestra siempre.
+          <span className="pointer-events-none absolute inset-x-3 bottom-3 flex items-center justify-center rounded-full bg-ink px-4 py-2 text-xs font-medium text-paper opacity-100 transition-all duration-300 sm:translate-y-2 sm:opacity-0 sm:group-hover:translate-y-0 sm:group-hover:opacity-100">
+            Probármela
+          </span>
         )}
       </div>
-    </article>
+
+      <div className="flex items-start justify-between gap-3 px-1 pt-3">
+        <div className="min-w-0">
+          <h3 className="truncate text-sm font-medium">{garment.name}</h3>
+          <p className="mt-0.5 text-xs text-ink-60">
+            {CATEGORY_LABELS[garment.category]}
+            {garment.fabric && ` · ${FABRIC_LABELS[garment.fabric]}`}
+          </p>
+        </div>
+      </div>
+    </>
+  )
+
+  if (!probable) {
+    return <article className="group">{contenido}</article>
+  }
+
+  return (
+    <Link to={`/probador?prenda=${garment.id}`} className="group block">
+      {contenido}
+    </Link>
   )
 }

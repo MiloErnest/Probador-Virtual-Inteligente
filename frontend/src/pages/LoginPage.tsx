@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '@/auth/AuthContext'
+import AuthLayout from '@/components/AuthLayout'
 import { ErrorBlock } from '@/components/StateBlocks'
 
 export default function LoginPage() {
@@ -13,45 +14,48 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [submitting, setSubmitting] = useState(false)
+  const [enviando, setEnviando] = useState(false)
 
-  // A donde volver tras identificarse: la pagina que intentaba abrirse, o
-  // "Mis pruebas" si se llego aqui directamente.
-  const destination = (location.state as { from?: string } | null)?.from ?? '/mis-pruebas'
+  // A dónde volver tras identificarse: la página que intentaba abrirse, o el
+  // probador, que es a lo que se viene.
+  const destino = (location.state as { from?: string } | null)?.from ?? '/probador'
 
   if (!initialising && isAuthenticated) {
-    return <Navigate to={destination} replace />
+    return <Navigate to={destino} replace />
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
-    setSubmitting(true)
+    setEnviando(true)
     try {
       await login(email, password)
-      navigate(destination, { replace: true })
+      navigate(destino, { replace: true })
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'No se pudo iniciar sesion.')
+      setError(cause instanceof Error ? cause.message : 'No se pudo iniciar sesión.')
     } finally {
-      setSubmitting(false)
+      setEnviando(false)
     }
   }
 
   return (
-    <div className="mx-auto max-w-md space-y-8">
-      <header>
-        <h1 className="font-display text-3xl">Entrar</h1>
-        <p className="mt-1.5 text-sm text-ink-muted">
-          Accede para ver tu historial de pruebas.
-        </p>
-      </header>
+    <AuthLayout
+      titulo="Entrar"
+      lema="Tu cuenta solo guarda quién eres. Ni una foto, ni una medida, ni lo que te has probado."
+    >
+      <h1 className="font-display text-titulo">Entrar</h1>
+      <p className="mt-2 text-sm text-ink-60">Para abrir el probador con la cámara.</p>
 
-      {error && <ErrorBlock title="No se pudo iniciar sesion" detail={error} />}
+      {error && (
+        <div className="mt-6">
+          <ErrorBlock title="No se pudo iniciar sesión" detail={error} />
+        </div>
+      )}
 
-      <form onSubmit={handleSubmit} className="card space-y-5 p-6" noValidate>
+      <form onSubmit={handleSubmit} className="mt-8 space-y-5" noValidate>
         <div className="space-y-1.5">
           <label htmlFor="email" className="block text-sm font-medium">
-            Correo electronico
+            Correo electrónico
           </label>
           <input
             id="email"
@@ -60,13 +64,13 @@ export default function LoginPage() {
             autoComplete="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className="w-full rounded-lg border border-black/10 bg-white px-3.5 py-2.5 text-sm"
+            className="campo"
           />
         </div>
 
         <div className="space-y-1.5">
           <label htmlFor="password" className="block text-sm font-medium">
-            Contrasena
+            Contraseña
           </label>
           <input
             id="password"
@@ -75,21 +79,21 @@ export default function LoginPage() {
             autoComplete="current-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            className="w-full rounded-lg border border-black/10 bg-white px-3.5 py-2.5 text-sm"
+            className="campo"
           />
         </div>
 
-        <button type="submit" className="btn-primary w-full" disabled={submitting}>
-          {submitting ? 'Entrando…' : 'Entrar'}
+        <button type="submit" className="btn-primary w-full" disabled={enviando}>
+          {enviando ? 'Entrando…' : 'Entrar'}
         </button>
       </form>
 
-      <p className="text-center text-sm text-ink-muted">
-        ¿Todavia no tienes cuenta?{' '}
-        <Link to="/registro" className="font-medium text-ink underline underline-offset-4">
+      <p className="mt-6 text-sm text-ink-60">
+        ¿Todavía no tienes cuenta?{' '}
+        <Link to="/registro" className="enlace font-medium text-ink">
           Crear una
         </Link>
       </p>
-    </div>
+    </AuthLayout>
   )
 }

@@ -65,46 +65,6 @@ class Settings(BaseSettings):
     PUBLIC_BASE_URL: str = "http://localhost:8000"
     MAX_UPLOAD_MB: int = 8
 
-    # --- Proveedor de prueba virtual (Fase 1) ---
-    # "local"  = composicion con Pillow, sin IA, sin cuenta ni conexion.
-    # "gemini" = modelos de imagen de Google ("Nano Banana"). SE COBRA POR
-    #            IMAGEN y exige facturacion activada. Ver app/ai/gemini.py.
-    AI_PROVIDER: str = "local"
-
-    # Clave de la API de Gemini. Solo hace falta con AI_PROVIDER=gemini.
-    # Se obtiene en https://aistudio.google.com/apikey
-    GEMINI_API_KEY: str = ""
-
-    # Modelo de imagen. Los "flash" son mas baratos y rapidos; el "pro" da
-    # mejor calidad y cuesta bastante mas. Configurable para poder cambiarlo
-    # sin tocar codigo: este catalogo se mueve deprisa.
-    GEMINI_MODEL: str = "gemini-3.1-flash-image"
-
-    # Conservar la FOTO DE LA PERSONA despues de generar el resultado.
-    #
-    # Por defecto NO. Una foto del cuerpo de alguien es el dato mas
-    # sensible que maneja esta aplicacion, y una vez generado el
-    # resultado ya no hace falta para nada. Guardarla "por si acaso" es
-    # justo la decision que crea un problema donde no lo habia.
-    #
-    # Ponerlo a true solo si se quiere la comparacion antes/despues.
-    KEEP_INPUT_PHOTOS: bool = False
-
-    # --- Generador de disenos (Fase 2) ---
-    # "mock" = siluetas dibujadas con Pillow a partir de palabras clave. NO es
-    # IA. Existe para que la Fase 2 funcione sin cuenta de pago.
-    DESIGN_PROVIDER: str = "mock"
-
-    # --- Analisis corporal (Fase 3) ---
-    # "mock" = medidas estimadas de forma determinista a partir de la foto.
-    # NO es vision por computador. Ver app/vision/.
-    BODY_ANALYSIS_PROVIDER: str = "mock"
-
-    # Corte de la llamada al modelo. Debe ser MENOR que el corte del sondeo
-    # del frontend (2 minutos en TryOnPage.tsx); si no, el navegador se rinde
-    # antes de que la prueba termine y el usuario no ve el resultado.
-    GEMINI_TIMEOUT_SECONDS: int = 100
-
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:

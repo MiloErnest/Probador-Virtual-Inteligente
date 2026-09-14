@@ -71,15 +71,11 @@ services:
       # El navegador pide las imagenes al puerto publicado en el host, no al
       # nombre interno del contenedor.
       PUBLIC_BASE_URL: http://localhost:8000
-      # Proveedores simulados: funcionan sin ninguna cuenta externa.
-      AI_PROVIDER: local
-      DESIGN_PROVIDER: mock
-      BODY_ANALYSIS_PROVIDER: mock
     ports:
       - "8000:8000"
     volumes:
-      # Las imagenes subidas sobreviven a recrear el contenedor. Sin esto,
-      # cada `down` se llevaria por delante las fotos y los disenos.
+      # Las fotos de las prendas sobreviven a recrear el contenedor. Sin
+      # esto, cada `down` se llevaria por delante el catalogo entero.
       - backend_storage:/app/storage
     depends_on:
       db:

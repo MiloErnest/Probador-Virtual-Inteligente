@@ -3,14 +3,21 @@
 Léeme antes de tocar nada. Recoge decisiones y restricciones que no son
 evidentes leyendo el código, y evita repetir errores ya cometidos.
 
-**Qué es:** plataforma de prueba virtual de prendas con IA generativa, visión por
-computador, 3D y realidad aumentada. Proyecto universitario, desarrollo por fases.
+**Qué es:** un probador de ropa que funciona con la cámara del navegador.
+Eliges una prenda del catálogo, te pones delante de la cámara y la prenda se
+coloca sobre tu cuerpo, ajustada a tus medidas. Proyecto universitario.
 
-**Estado:** Etapas 1 y 2 cerradas. **Fases 1, 2 y 3 construidas de punta a punta
-con proveedores SIMULADOS**: probador virtual, diseños por texto con iteración, y
-perfil corporal con recomendación de talla. Todo funciona hoy sin ninguna API
-externa. Lo que falta es conectar los modelos reales, y cada uno entra por su
-propio `Protocol` sin tocar nada más.
+**Estado:** funciona de punta a punta y **no usa ninguna IA generativa**. La
+detección del cuerpo es MediaPipe Pose corriendo en WebAssembly dentro del
+navegador; el backend solo sirve el catálogo, las cuentas y las imágenes.
+
+**El 2026-09-14 se retiró toda la IA generativa del proyecto.** Fuera el
+probador por foto con Gemini, el generador de diseños por texto y el análisis
+corporal, con sus tablas, sus rutas y sus pantallas. Estaba construido y
+funcionaba, pero con proveedores simulados: producía vistas previas que no
+convencían, y el problema real —que la prenda no encajaba bien sobre el
+cuerpo— seguía sin resolverse porque el esfuerzo se repartía entre cinco
+fases. Ahora el proyecto hace una cosa.
 
 Ver [PROJECT_STATUS.md](PROJECT_STATUS.md) para el detalle vivo: qué funciona,
 qué falta, errores conocidos, decisiones técnicas y próximos pasos.
@@ -44,6 +51,12 @@ ruta absoluta, o los scripts de arranque.
 `node_modules` y `.venv` provocan sincronización. No ha dado problemas todavía,
 pero es sospechoso número uno ante builds lentos o bloqueos de archivo.
 
+**Nota para el asistente:** los heredocs de Bash con archivos largos (más de
+unos pocos KB) se rompen en este entorno con `unexpected EOF while looking for
+matching quote`, y el archivo no llega a crearse. Para archivos grandes, usa la
+herramienta de escritura directa. Los heredocs cortos sí funcionan, y el UTF-8
+sobrevive: los acentos van bien.
+
 ### Arrancar el proyecto
 
 ```powershell
@@ -70,7 +83,7 @@ con PostgreSQL nativo o con Docker. El superusuario `postgres` quedó con la
 contraseña por defecto `postgres` (instalación silenciosa de winget).
 
 Ejecutar pruebas: `pytest` desde `backend/` con el venv activo. Usan SQLite en
-memoria — **no necesitan PostgreSQL levantado**. Son 54 y tardan unos 15 s;
+memoria — **no necesitan PostgreSQL levantado**. Son 53 y tardan unos 24 s;
 la lentitud es bcrypt, que es lento a propósito.
 
 **El esquema lo gobierna Alembic, no `create_all`.** La aplicación ya no crea
@@ -98,6 +111,12 @@ conservar los datos.
 
 Cuenta de desarrollo ya creada en la base local: `dev@example.com` /
 `vfit-dev-1234`.
+
+Cargar el catálogo de ejemplo con las fotografías reales del repositorio:
+
+```powershell
+python -m scripts.seed --con-prendas-reales
+```
 
 ---
 
@@ -139,10 +158,17 @@ día: son el único puente entre sesiones.
 11. **No añadir infraestructura "por si acaso"** (Redis, Celery, Kubernetes,
     microservicios, S3, pgvector, GPU serverless). Solo cuando exista una
     necesidad concreta y demostrada.
+12. **No reintroducir IA generativa** sin que el usuario lo pida. Se retiró a
+    conciencia el 2026-09-14. Si vuelve, vuelve como decisión suya.
 
 **Verificar antes de afirmar.** Nada se da por funcionando hasta ejecutarlo. En
 la Etapa 1, tres bugs (`CORS_ORIGINS`, `tsconfig` con project references, y el
 `.gitignore` de `storage/`) solo aparecieron al ejecutar de verdad.
+
+**Nunca escribir contraseñas en un formulario, ni siquiera las de desarrollo.**
+Para revisar una pantalla protegida, el asistente abre la ruta temporalmente
+fuera de `RequireAuth`, hace la captura y la devuelve a su sitio comprobándolo
+después. Así se verifica el diseño sin tocar credenciales.
 
 ---
 
@@ -164,59 +190,76 @@ Ruta (HTTP) → Servicio (negocio) → Repositorio (SQL) → Modelo
 - `app/services/storage.py` — protocolo `Storage`. La BD guarda `image_key`
   (clave opaca), la API expone `image_url`. Migrar a S3/R2 no obliga a reescribir
   datos.
-- `app/ai/` — `TryOnProvider` (protocolo) con dos implementaciones:
-  `LocalPreviewProvider` (composicion con Pillow, **no es IA**, por defecto) y
-  `GeminiTryOnProvider` (modelos de imagen de Google, **se cobra por imagen**).
-  Se elige con `AI_PROVIDER` en el `.env`.
-
-  **Gemini no se ha probado nunca contra la API real**: sus 12 pruebas usan un
-  cliente simulado. Requiere clave y facturacion, que aporta el usuario.
-
-  Descartado: Cloudflare Workers AI. No tiene ningun modelo que acepte dos
-  imagenes, y una prueba virtual necesita foto + prenda.
 - `app/api/deps.py::get_current_user` — **único** punto que convierte un token en
   un usuario. Declararlo en una ruta es lo que la protege. Ninguna ruta debe
   decodificar un token por su cuenta.
-- `app/vision/` — `BodyAnalysisProvider` (protocolo) y `MockBodyAnalysisProvider`,
-  que deriva medidas de proporciones medias y **no es visión por computador**.
-  MediaPipe entra cumpliendo ese mismo contrato, y sus dependencias irán en un
-  `requirements-vision.txt` aparte para no inflar la instalación base.
 
-**Los tres proveedores externos son intercambiables.** Cada uno tiene su
-`Protocol` y su selector; ninguno se toca desde las rutas ni desde el frontend:
+### El probador vive entero en el navegador
 
-| Qué | Contrato | Selector | Variable |
-|---|---|---|---|
-| Probador | `app/ai/provider.py` | `get_try_on_provider()` | `AI_PROVIDER` |
-| Diseños | `app/ai/design_provider.py` | `get_design_provider()` | `DESIGN_PROVIDER` |
-| Cuerpo | `app/vision/analysis_provider.py` | `get_body_analysis_provider()` | `BODY_ANALYSIS_PROVIDER` |
+`frontend/src/probador/`, cuatro módulos con una responsabilidad cada uno:
 
-Un valor desconocido en cualquiera de esas variables **hace fallar el procesado**,
-nunca cae al simulado en silencio: creer que estás usando el modelo real cuando
-no lo estás es el peor error posible aquí.
+| Archivo | Qué hace |
+|---|---|
+| `usePoseScanner.ts` | Abre la cámara y ejecuta MediaPipe Pose. Devuelve 33 puntos del cuerpo y la máscara de silueta, por fotograma. |
+| `cuerpo.ts` | Convierte esos puntos en medidas de pantalla, las suaviza entre fotogramas y mide el contorno real sobre la máscara. |
+| `vestir.ts` | Decide dónde va la prenda, cuánto mide y cómo se deforma. Es donde está la matemática del encaje. |
+| `dibujo.ts` | Silueta, esqueleto y la máscara engordada con la que se recorta la prenda. |
+
+**Las tres decisiones que gobiernan el encaje**, y el orden importa:
+
+1. **Dónde empieza y acaba la prenda** — lo dice su categoría (`TRAMOS` en
+   `vestir.ts`). Una camiseta cuelga de los hombros; un pantalón, de la cintura.
+2. **Dónde se mide para escalarla** — la franja donde esa prenda *ajusta*
+   (`referencia`). Fue el primer error de esta versión: escalando por el punto
+   más ancho, el tamaño de una camiseta lo decidían las mangas, y salía pequeña
+   y corta. Un pantalón ajusta en la cadera, un vestido en el cuerpo, una
+   camiseta en el torso por debajo de las mangas.
+3. **Cuánto manda el cuerpo frente a la forma de la prenda** — lo dice el
+   tejido (`TEJIDOS`). Es el único efecto que tiene hoy el campo `fabric`.
+
+Dos límites que hay que respetar al tocar esto:
+
+- **Los puntos de MediaPipe NO son el borde del cuerpo.** Están en la
+  articulación, por dentro. `cuerpo.ts` aplica la corrección anatómica
+  (`HOMBROS_A_ANCHO_REAL`, `CADERAS_A_ANCHO_REAL`). Sin ella, la prenda sale
+  estrecha y aparece la tentación de compensarlo con un número a ojo, que es
+  exactamente lo que hacía la versión anterior con un `1.9` que había que
+  reajustar por cada foto y cada persona.
+- **La máscara corrige la silueta, no decide el tamaño.** Con los brazos
+  pegados al cuerpo, el barrido los incluye; con un fondo complicado, se rompe.
+  Por eso la corrección está limitada (`CORRECCION_MINIMA` / `CORRECCION_MAXIMA`).
+
+**Cómo verificar el encaje sin cámara:** en la consola del navegador se importa
+`/src/probador/vestir.ts` con Vite, se construye una prenda sintética y un
+cuerpo sintético, y se miden los píxeles que pinta. Es como se comprobó que una
+camiseta acaba justo por debajo de la cadera y un pantalón llega al tobillo.
+Está en PROJECT_STATUS.md con los números.
 
 ---
 
-## Fases del proyecto
+## Estado por partes
 
-| Fase | Contenido | Estado |
-|---|---|---|
-| Etapa 1 | Infraestructura: catálogo, usuarios, almacenamiento | ✅ cerrada |
-| Etapa 2 | Alembic + autenticación JWT | ✅ cerrada |
-| Fase 1 | Virtual Try-On con IA (foto + prenda -> resultado) | 🟡 flujo listo, falta el modelo |
-| Fase 2 | Generacion de disenos por lenguaje natural | 🟡 flujo listo, falta el modelo |
-| Fase 3 | Analisis corporal, pose, medidas, talla | 🟡 flujo y tallaje listos, falta MediaPipe |
-| Fase 4 | 3D, Three.js / R3F, materiales PBR, telas | ⬜ |
-| Fase 5 | Realidad aumentada, cámara en vivo, oclusión | ⬜ |
+| Parte | Estado |
+|---|---|
+| Infraestructura: catálogo, usuarios, almacenamiento | ✅ |
+| Alembic + autenticación JWT | ✅ |
+| Probador con cámara: pose, medidas y encaje | ✅ |
+| Tejido de la prenda (`fabric`) como ajuste de silueta | ✅ básico |
+| Simulación real de telas y caída (3D) | ⬜ futuro |
+| Acceso con Google | ⬜ futuro, lo pidió el usuario |
 
 **Alembic fue antes que JWT** por una razón concreta: ya había datos reales en
 PostgreSQL, y `create_all` no aplica cambios a tablas existentes — falla en
 silencio y parece que funcionó.
 
-### Reparto de acceso vigente (Etapa 2)
+### Reparto de acceso vigente
 
 Públicos: `/api/health`, el catálogo en lectura, `POST /api/users` (registro) y
 `POST /api/auth/login`. Todo lo demás exige `Authorization: Bearer <token>`.
+
+El probador exige sesión aunque no envíe nada al servidor. **Es una decisión
+del usuario, tomada el 2026-09-14**: quiere controlar el flujo de usuarios, y
+más adelante entrar con Google. No abrirlo sin que lo pida.
 
 Tres reglas que hay que mantener al añadir endpoints:
 
@@ -226,3 +269,23 @@ Tres reglas que hay que mantener al añadir endpoints:
 3. **Los fallos de identificación son indistinguibles entre sí**: mismo 401,
    mismo mensaje, y mismo tiempo de respuesta (por eso se verifica contra un
    hash señuelo cuando el email no existe).
+
+---
+
+## Diseño de la interfaz
+
+Blanco y negro, sin color de acento. **No es una preferencia estética, es un
+arreglo:** la versión anterior tenía violeta sobre fondo crema y el usuario la
+describió como "muy pálida". El problema no era la falta de color, era el
+contraste bajo en toda la página —fondo crema, texto gris— que dejaba todo a
+media luz. La solución fue usar los extremos.
+
+- Los grises son opacidades de la tinta (`ink-80`, `ink-60`…), nunca colores
+  nuevos: así ninguno se desvía hacia el azul o el verde por accidente.
+- **Los estados no se distinguen por color.** Un error usa peso y estructura;
+  el indicador de salud usa forma (punto lleno, hueco, latiendo) y la palabra.
+  Es lo único que funciona para quien no distingue el rojo del verde.
+- Tipografía fluida con `clamp()`: un titular no cambia de tamaño de golpe al
+  girar el móvil.
+- El menú móvil ocupa la pantalla entera. Cuatro enlaces apretados contra el
+  borde superior son cuatro objetivos pequeños.

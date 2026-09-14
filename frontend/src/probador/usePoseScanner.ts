@@ -1,5 +1,5 @@
 /**
- * Escaner de personas con la camara (Fase 5, realidad aumentada).
+ * Escaner de personas con la camara.
  *
  * QUE HACE
  * --------
@@ -15,9 +15,8 @@
  * --------------------------
  * El modelo es WebAssembly y se ejecuta en la maquina del usuario. La imagen
  * de la camara NO sale de su equipo: no hay peticion al servidor, no hay
- * llamada a ninguna API, y no cuesta dinero. Solo se envia una fotografia
- * cuando la persona pulsa el boton de capturar, y entonces va al probador de
- * siempre.
+ * llamada a ninguna API, y no cuesta dinero. Ni siquiera hay un boton que
+ * pueda enviarla: la unica salida que tiene el video es el canvas de al lado.
  *
  * Eso no es solo una ventaja tecnica: enviar video continuo del cuerpo de
  * alguien a un servidor seria una decision de privacidad que hay que tomar a
@@ -81,7 +80,20 @@ export function usePoseScanner() {
   const [error, setError] = useState<string | null>(null)
   const [frame, setFrame] = useState<PoseFrame | null>(null)
 
-  const stop = useCallback(() => {
+  /**
+   * Suelta la camara y el modelo, SIN tocar el estado visible.
+   *
+   * Esta separado de `stop` por un fallo concreto y muy desconcertante: al
+   * fallar el arranque se hacia `setStatus('error')` y despues `stop()`, que
+   * acababa en `setStatus('idle')`. React agrupa los cambios de estado y gana
+   * el ultimo, asi que el estado de error se perdia SIEMPRE: pulsabas
+   * "Encender", algo fallaba, y la pantalla volvia al mismo boton como si no
+   * hubiera pasado nada. Ni aparecia "Reintentar".
+   *
+   * Separando la limpieza del cambio de estado, cada camino decide en que
+   * estado quiere quedarse y no hay orden que memorizar.
+   */
+  const soltarTodo = useCallback(() => {
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current)
       rafRef.current = null
@@ -96,33 +108,31 @@ export function usePoseScanner() {
     landmarkerRef.current = null
     lastTimestampRef.current = -1
     setFrame(null)
-    setStatus('idle')
   }, [])
+
+  const stop = useCallback(() => {
+    soltarTodo()
+    setStatus('idle')
+  }, [soltarTodo])
 
   const start = useCallback(async () => {
     setError(null)
-    setStatus('loading')
+    setStatus('requesting-camera')
 
     try {
-      // Import dinamico: son ~1 MB de JavaScript que no tiene sentido cargar
-      // en quien nunca abra esta pantalla.
-      const { FilesetResolver, PoseLandmarker } = await import('@mediapipe/tasks-vision')
+      // LA CAMARA PRIMERO, EL MODELO DESPUES
+      // ------------------------------------
+      // Antes era al reves, y se notaba: pulsabas "Encender" y pasaban varios
+      // segundos cargando 28 MB de modelo ANTES de que el navegador enseñara
+      // siquiera la peticion de permiso. Sin nada que responder, parecia que
+      // el boton no hacia nada.
+      //
+      // Pidiendo la camara primero, el dialogo del navegador sale al instante.
+      // Y si el permiso se deniega, nos ahorramos la descarga entera.
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
+        throw new Error('SIN_MEDIA_DEVICES')
+      }
 
-      const fileset = await FilesetResolver.forVisionTasks(WASM_PATH)
-      const landmarker = await PoseLandmarker.createFromOptions(fileset, {
-        baseOptions: {
-          modelAssetPath: MODEL_PATH,
-          // GPU cuando se puede: en CPU esto va a trompicones.
-          delegate: 'GPU',
-        },
-        runningMode: 'VIDEO',
-        numPoses: 1,
-        // Da la silueta ademas de los puntos, en la misma pasada.
-        outputSegmentationMasks: true,
-      })
-      landmarkerRef.current = landmarker
-
-      setStatus('requesting-camera')
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: 'user',
@@ -136,7 +146,40 @@ export function usePoseScanner() {
       const video = videoRef.current
       if (video === null) throw new Error('No hay elemento de video donde pintar la camara.')
       video.srcObject = stream
-      await video.play()
+      // `play()` puede rechazar porque el elemento todavia esta oculto
+      // (`display:none` hasta que el estado pasa a "scanning"). No es motivo
+      // para abortar: el elemento lleva `autoPlay`, y el bucle de deteccion
+      // solo trabaja cuando `readyState` dice que ya hay imagen.
+      await video.play().catch(() => undefined)
+
+      setStatus('loading')
+
+      // Import dinamico: son ~1 MB de JavaScript que no tiene sentido cargar
+      // en quien nunca abra esta pantalla.
+      const { FilesetResolver, PoseLandmarker } = await import('@mediapipe/tasks-vision')
+      const fileset = await FilesetResolver.forVisionTasks(WASM_PATH)
+
+      const crearModelo = (delegate: 'GPU' | 'CPU') =>
+        PoseLandmarker.createFromOptions(fileset, {
+          baseOptions: { modelAssetPath: MODEL_PATH, delegate },
+          runningMode: 'VIDEO',
+          numPoses: 1,
+          // Da la silueta ademas de los puntos, en la misma pasada.
+          outputSegmentationMasks: true,
+        })
+
+      // GPU cuando se puede: en CPU esto va a trompicones. Pero fallar del
+      // todo es peor que ir lento, y la GPU no siempre esta disponible — hay
+      // equipos sin aceleracion por hardware, y navegadores que la traen
+      // desactivada. Sin este segundo intento, ahi el probador no arrancaba y
+      // el error que salia hablaba de WebGL, que no le dice nada a nadie.
+      let landmarker: PoseLandmarkerType
+      try {
+        landmarker = await crearModelo('GPU')
+      } catch {
+        landmarker = await crearModelo('CPU')
+      }
+      landmarkerRef.current = landmarker
 
       setStatus('scanning')
 
@@ -179,11 +222,14 @@ export function usePoseScanner() {
       }
       rafRef.current = requestAnimationFrame(bucle)
     } catch (causa) {
-      setStatus('error')
+      // `soltarTodo` y no `stop`: hay que soltar la camara, pero el estado
+      // tiene que quedarse en "error" para que se vea el motivo y el boton de
+      // reintentar. Ver el comentario de `soltarTodo`.
+      soltarTodo()
       setError(mensajeDeError(causa))
-      stop()
+      setStatus('error')
     }
-  }, [stop])
+  }, [soltarTodo])
 
   // Soltar la camara si el componente se desmonta con el escaner en marcha.
   useEffect(() => stop, [stop])
@@ -199,26 +245,49 @@ export function usePoseScanner() {
  */
 function mensajeDeError(causa: unknown): string {
   const nombre = causa instanceof DOMException ? causa.name : ''
+  const donde = typeof location === 'undefined' ? '' : ` (estas en ${location.origin})`
+
+  // Causa muy habitual y nada evidente: el navegador solo da acceso a la
+  // camara en un origen seguro. localhost cuenta como seguro; 127.0.0.1
+  // tambien, pero la IP de la red local NO, y ahi `navigator.mediaDevices` ni
+  // siquiera existe. Es lo que pasa al abrir la aplicacion desde el movil
+  // apuntando al ordenador.
+  if (causa instanceof Error && causa.message === 'SIN_MEDIA_DEVICES') {
+    return (
+      'El navegador no deja usar la camara en esta direccion' +
+      donde +
+      '. Solo la permite en localhost o por HTTPS. Abre http://localhost:5173 ' +
+      'en el mismo ordenador donde corre el servidor.'
+    )
+  }
 
   if (nombre === 'NotAllowedError' || nombre === 'SecurityError') {
     return (
-      'No diste permiso para usar la camara. Pulsa el icono de la camara en la ' +
-      'barra de direcciones del navegador y permite el acceso.'
+      'El navegador ha bloqueado la camara' +
+      donde +
+      '. Pulsa el icono de la camara —o el candado— en la barra de direcciones ' +
+      'y permite el acceso; despues recarga la pagina. Si nunca te ha ' +
+      'preguntado, es que el permiso quedo denegado de una vez anterior.'
     )
   }
   if (nombre === 'NotFoundError' || nombre === 'DevicesNotFoundError') {
-    return 'No se encontro ninguna camara conectada.'
+    return 'No se encontro ninguna camara conectada a este equipo.'
   }
-  if (nombre === 'NotReadableError') {
-    return 'La camara esta siendo usada por otro programa. Cierralo e intentalo de nuevo.'
-  }
-  if (typeof navigator !== 'undefined' && !navigator.mediaDevices) {
-    // Causa muy habitual y nada evidente: fuera de localhost, el navegador
-    // solo da acceso a la camara por HTTPS.
+  if (nombre === 'NotReadableError' || nombre === 'TrackStartError') {
     return (
-      'El navegador no permite usar la camara en esta direccion. Hace falta ' +
-      'HTTPS, o abrir la aplicacion en localhost.'
+      'La camara esta ocupada por otro programa (Teams, Zoom, Meet, la app ' +
+      'Camara de Windows...). Cierralo del todo e intentalo de nuevo.'
     )
   }
-  return causa instanceof Error ? causa.message : 'No se pudo iniciar la camara.'
+  if (nombre === 'OverconstrainedError') {
+    return 'Tu camara no admite la resolucion que se le pide. Avisame y la bajo.'
+  }
+  if (nombre === 'AbortError') {
+    return 'El navegador corto el acceso a la camara a mitad. Vuelve a intentarlo.'
+  }
+
+  // Lo que quede aqui casi siempre es el modelo, no la camara: WebAssembly
+  // bloqueado, los archivos de MediaPipe sin servir, o un fallo al crearlo.
+  const detalle = causa instanceof Error ? causa.message : String(causa)
+  return `No se pudo iniciar el probador. El navegador dice: "${detalle}".`
 }

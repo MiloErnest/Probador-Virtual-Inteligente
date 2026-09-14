@@ -4,13 +4,14 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.garment import GarmentCategory
+from app.models.garment import GarmentCategory, GarmentFabric
 
 
 class GarmentCreate(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     description: str | None = None
     category: GarmentCategory = GarmentCategory.OTHER
+    fabric: GarmentFabric | None = None
     active: bool = True
 
 
@@ -18,6 +19,7 @@ class GarmentUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=160)
     description: str | None = None
     category: GarmentCategory | None = None
+    fabric: GarmentFabric | None = None
     active: bool | None = None
 
 
@@ -35,6 +37,7 @@ class GarmentRead(BaseModel):
     name: str
     description: str | None
     category: GarmentCategory
+    fabric: GarmentFabric | None = None
     active: bool
     image_url: str | None = None
     created_at: datetime

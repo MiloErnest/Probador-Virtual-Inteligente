@@ -3,7 +3,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.garment import Garment, GarmentCategory
+from app.models.garment import Garment, GarmentCategory, GarmentFabric
 
 
 class GarmentRepository:
@@ -36,12 +36,14 @@ class GarmentRepository:
         name: str,
         description: str | None,
         category: GarmentCategory,
+        fabric: GarmentFabric | None,
         active: bool,
     ) -> Garment:
         garment = Garment(
             name=name,
             description=description,
             category=category,
+            fabric=fabric,
             active=active,
         )
         self.session.add(garment)

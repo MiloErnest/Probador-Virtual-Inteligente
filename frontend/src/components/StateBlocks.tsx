@@ -1,4 +1,12 @@
-/** Bloques reutilizables de estado: carga, error, vacío y aviso de fase. */
+/**
+ * Bloques reutilizables de estado: carga, error, vacío y aviso.
+ *
+ * Sin color, un error tiene que distinguirse por otra cosa. Aquí lo hace por
+ * peso y por estructura: una barra negra a la izquierda, el rótulo en
+ * mayúsculas y el título en negrita. Se ve antes que un recuadro rojo claro,
+ * y no obliga a introducir una paleta entera para un caso que, con suerte,
+ * casi nunca aparece.
+ */
 
 import type { ReactNode } from 'react'
 
@@ -10,8 +18,11 @@ interface MessageProps {
 
 export function LoadingBlock({ label = 'Cargando…' }: { label?: string }) {
   return (
-    <div className="flex items-center justify-center gap-3 py-16 text-sm text-ink-muted">
-      <span className="h-3 w-3 animate-spin rounded-full border-2 border-ink-muted/30 border-t-ink-muted" />
+    <div className="flex items-center justify-center gap-3 py-16 text-sm text-ink-60">
+      <span
+        className="h-3 w-3 animate-spin rounded-full border border-ink-20 border-t-ink"
+        aria-hidden
+      />
       {label}
     </div>
   )
@@ -19,40 +30,39 @@ export function LoadingBlock({ label = 'Cargando…' }: { label?: string }) {
 
 export function ErrorBlock({ title, detail, action }: MessageProps) {
   return (
-    <div className="card border-red-200 bg-red-50/60 p-6">
-      <h3 className="text-sm font-medium text-red-900">{title}</h3>
-      {detail && <p className="mt-1 text-sm text-red-800/80">{detail}</p>}
-      {action && <div className="mt-4">{action}</div>}
+    <div role="alert" className="flex gap-4 rounded border border-ink-10 bg-bone p-5 sm:p-6">
+      <span className="w-1 shrink-0 rounded-full bg-ink" aria-hidden />
+      <div className="min-w-0">
+        <p className="rotulo text-ink">Error</p>
+        <h3 className="mt-1.5 font-medium">{title}</h3>
+        {detail && <p className="mt-1 break-words text-sm leading-relaxed text-ink-60">{detail}</p>}
+        {action && <div className="mt-4">{action}</div>}
+      </div>
     </div>
   )
 }
 
 export function EmptyBlock({ title, detail, action }: MessageProps) {
   return (
-    <div className="card p-10 text-center">
-      <h3 className="font-display text-lg">{title}</h3>
-      {detail && <p className="mx-auto mt-2 max-w-md text-sm text-ink-muted">{detail}</p>}
-      {action && <div className="mt-5">{action}</div>}
+    <div className="rounded border border-dashed border-ink-20 px-6 py-16 text-center">
+      <h3 className="font-display text-2xl">{title}</h3>
+      {detail && (
+        <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-ink-60">{detail}</p>
+      )}
+      {action && <div className="mt-6">{action}</div>}
     </div>
   )
 }
 
-export function PhaseNotice({
-  phase,
-  title,
-  children,
-}: {
-  phase: number
-  title: string
-  children: ReactNode
-}) {
+/**
+ * Aviso informativo. Se usa para lo que el probador tiene que dejar claro:
+ * qué hace con tu cámara, y hasta dónde llega la vista previa.
+ */
+export function Notice({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="card overflow-hidden">
-      <div className="border-b border-black/[0.07] bg-accent-soft/60 px-6 py-4">
-        <span className="pill bg-white text-accent">Fase {phase}</span>
-        <h2 className="mt-2 font-display text-xl">{title}</h2>
-      </div>
-      <div className="space-y-3 px-6 py-6 text-sm leading-relaxed text-ink-soft">{children}</div>
-    </section>
+    <div className="rounded border border-ink-10 bg-bone p-5">
+      <p className="rotulo">{title}</p>
+      <div className="mt-2 space-y-2 text-sm leading-relaxed text-ink-80">{children}</div>
+    </div>
   )
 }

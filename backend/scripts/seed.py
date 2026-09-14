@@ -22,48 +22,56 @@ from PIL import Image, ImageDraw
 from sqlalchemy import select
 
 from app.core.database import SessionLocal, get_schema_revision
-from app.models.garment import Garment, GarmentCategory
+from app.models.garment import Garment, GarmentCategory, GarmentFabric
 from app.core.config import BACKEND_DIR
 from app.services.storage import FOLDER_GARMENTS, get_storage
 
 SAMPLE_GARMENTS: list[dict] = [
     {
         "name": "Vestido largo de gala",
+        "fabric": GarmentFabric.SILK,
         "description": "Vestido de gala con falda amplia y escote en V.",
         "category": GarmentCategory.DRESS,
     },
     {
         "name": "Vestido midi plisado",
+        "fabric": GarmentFabric.SYNTHETIC,
         "description": "Corte midi con plisado vertical y cintura marcada.",
         "category": GarmentCategory.DRESS,
     },
     {
         "name": "Camisa de lino",
+        "fabric": GarmentFabric.LINEN,
         "description": "Camisa holgada de lino con cuello clásico.",
         "category": GarmentCategory.TOP,
     },
     {
         "name": "Blusa de seda",
+        "fabric": GarmentFabric.SILK,
         "description": "Blusa fluida de seda con caída marcada.",
         "category": GarmentCategory.TOP,
     },
     {
         "name": "Pantalón wide leg",
+        "fabric": GarmentFabric.WOOL,
         "description": "Pantalón de pierna ancha y tiro alto.",
         "category": GarmentCategory.BOTTOM,
     },
     {
         "name": "Falda plisada",
+        "fabric": GarmentFabric.SYNTHETIC,
         "description": "Falda plisada a media pierna.",
         "category": GarmentCategory.BOTTOM,
     },
     {
         "name": "Blazer estructurado",
+        "fabric": GarmentFabric.WOOL,
         "description": "Blazer de hombro estructurado y solapa ancha.",
         "category": GarmentCategory.OUTERWEAR,
     },
     {
         "name": "Abrigo largo de lana",
+        "fabric": GarmentFabric.WOOL,
         "description": "Abrigo recto de lana, largo por debajo de la rodilla.",
         "category": GarmentCategory.OUTERWEAR,
     },
@@ -160,6 +168,10 @@ def main() -> None:
                 created += 1
             else:
                 skipped += 1
+                # Las prendas sembradas antes de que existiera la columna se
+                # quedarian sin tejido para siempre: aqui se completan.
+                if garment.fabric is None:
+                    garment.fabric = data["fabric"]
 
             # Solo se genera si falta: así el script sigue siendo idempotente
             # y no pisa una fotografía real que se hubiera subido antes.
@@ -188,17 +200,17 @@ def main() -> None:
 # Fotografias de producto del repositorio, con la categoria que les toca.
 # Viven en assets/ y no en storage/ porque son material de partida del
 # proyecto, no algo que la aplicacion haya escrito.
-PRENDAS_REALES: list[tuple[str, str, GarmentCategory, str]] = [
+PRENDAS_REALES: list[tuple[str, str, GarmentCategory, GarmentFabric, str]] = [
     ("camisa-marron.jpg", "Camisa marron de hombre", GarmentCategory.TOP,
-     "Camisa de manga larga con bolsillos de parche."),
+     GarmentFabric.COTTON, "Camisa de manga larga con bolsillos de parche."),
     ("camiseta-blanca.jpg", "Camiseta blanca", GarmentCategory.TOP,
-     "Camiseta basica de cuello redondo."),
+     GarmentFabric.COTTON, "Camiseta basica de cuello redondo."),
     ("chaqueta-cuero-negra.jpg", "Chaqueta de cuero negra", GarmentCategory.OUTERWEAR,
-     "Chaqueta biker de cuero con cremalleras."),
+     GarmentFabric.LEATHER, "Chaqueta biker de cuero con cremalleras."),
     ("vaquero-hombre.jpg", "Vaquero de hombre", GarmentCategory.BOTTOM,
-     "Pantalon vaquero de corte recto."),
+     GarmentFabric.DENIM, "Pantalon vaquero de corte recto."),
     ("jersey-gris-mujer.jpg", "Jersey gris de mujer", GarmentCategory.TOP,
-     "Jersey de punto fino con cuello redondo."),
+     GarmentFabric.KNIT, "Jersey de punto fino con cuello redondo."),
 ]
 
 CARPETA_PRENDAS = BACKEND_DIR.parent / "assets" / "prendas-de-ejemplo"
@@ -216,7 +228,7 @@ def cargar_prendas_reales(storage) -> None:
 
     cargadas = 0
     with SessionLocal() as session:
-        for archivo, nombre, categoria, descripcion in PRENDAS_REALES:
+        for archivo, nombre, categoria, tejido, descripcion in PRENDAS_REALES:
             ruta = CARPETA_PRENDAS / archivo
             if not ruta.exists():
                 print(f"  falta {archivo}")
@@ -227,9 +239,19 @@ def cargar_prendas_reales(storage) -> None:
             ).scalar_one_or_none()
 
             if garment is None:
-                garment = Garment(name=nombre, description=descripcion, category=categoria)
+                garment = Garment(
+                    name=nombre,
+                    description=descripcion,
+                    category=categoria,
+                    fabric=tejido,
+                )
                 session.add(garment)
                 session.flush()
+
+            # El tejido se rellena también en las prendas sembradas antes de
+            # que existiera la columna: si no, quedarían para siempre sin ficha.
+            if garment.fabric is None:
+                garment.fabric = tejido
 
             if not garment.image_key:
                 garment.image_key = storage.save(

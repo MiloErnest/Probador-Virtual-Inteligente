@@ -6,11 +6,11 @@ Los tests usan SQLite en memoria en lugar de PostgreSQL. Ventaja: `pytest`
 funciona sin levantar Docker, cada test parte de una base limpia y la suite
 tarda menos de un segundo.
 
-Limitación conocida y aceptada en esta etapa: SQLite no es PostgreSQL. No se
-validan tipos específicos de PG, constraints avanzadas ni comportamiento
-concurrente. Es asumible mientras el esquema sea simple y portable (por eso
-los enums se declaran con `native_enum=False`). Cuando aparezcan consultas
-dependientes de PostgreSQL habrá que añadir una base de pruebas real.
+Limitación conocida y aceptada: SQLite no es PostgreSQL. No se validan tipos
+específicos de PG, constraints avanzadas ni comportamiento concurrente. Es
+asumible mientras el esquema sea simple y portable (por eso los enums se
+declaran con `native_enum=False`). Cuando aparezcan consultas dependientes de
+PostgreSQL habrá que añadir una base de pruebas real.
 
 El almacenamiento también se sustituye por un directorio temporal, de modo
 que ningún test escriba en `backend/storage/`.
@@ -25,17 +25,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.ai import get_design_provider, get_try_on_provider
-from app.api.deps import get_design_runner, get_try_on_runner
 from app.core.database import get_session
 from app.main import app
 from app.models import Base
-from app.repositories.design import DesignRepository
-from app.repositories.garment import GarmentRepository
-from app.repositories.try_on_session import TryOnSessionRepository
-from app.services.design import DesignService
 from app.services.storage import LocalStorage, Storage, get_storage
-from app.services.try_on_session import TryOnSessionService
 
 
 @pytest.fixture
@@ -75,41 +68,16 @@ def client(db_session: Session, storage: Storage) -> Generator[TestClient, None,
     app.dependency_overrides[get_session] = lambda: db_session
     app.dependency_overrides[get_storage] = lambda: storage
 
-    # La tarea de fondo real (`run_try_on_job`) abre su PROPIA sesion con
-    # `SessionLocal`, que apunta a PostgreSQL. Sin esta sustitucion, crear una
-    # prueba en un test escribiria en la base de desarrollo. Aqui se ejecuta
-    # el mismo servicio, pero contra la base SQLite del test.
-    #
-    # TestClient ejecuta las tareas de fondo de forma SINCRONA al terminar la
-    # peticion, asi que al volver de `client.post(...)` la prueba ya esta
-    # procesada. Comodo para testear, distinto de produccion: eso lo cubre la
-    # verificacion manual contra el servidor real.
-    def runner_de_prueba(session_id: int) -> None:
-        service = TryOnSessionService(
-            TryOnSessionRepository(db_session),
-            GarmentRepository(db_session),
-            DesignRepository(db_session),
-            storage,
-        )
-        service.process(session_id, provider=get_try_on_provider())
-
-    def runner_disenos(design_id: int) -> None:
-        service = DesignService(DesignRepository(db_session), storage)
-        service.process(design_id, provider=get_design_provider())
-
-    app.dependency_overrides[get_try_on_runner] = lambda: runner_de_prueba
-    app.dependency_overrides[get_design_runner] = lambda: runner_disenos
-
     with TestClient(app) as test_client:
         yield test_client
 
     app.dependency_overrides.clear()
 
 
-# --- Autenticación (Etapa 2) -------------------------------------------------
+# --- Autenticación -----------------------------------------------------------
 #
-# Casi todos los endpoints exigen ahora un token. Estas utilidades evitan que
-# cada prueba repita el registro y el login.
+# Casi todos los endpoints de escritura exigen un token. Estas utilidades
+# evitan que cada prueba repita el registro y el login.
 
 REGISTERED_USER = {
     "name": "Ana Torres",
@@ -163,7 +131,7 @@ def auth_client(client: TestClient, user_token: tuple[dict[str, object], str]) -
     return client
 
 
-# --- Imágenes de prueba (Fase 1) ---------------------------------------------
+# --- Imágenes de prueba ------------------------------------------------------
 #
 # Se generan con Pillow en vez de incrustar bytes en base64: así son imágenes
 # de verdad, con el tamaño que cada prueba necesita, y se ve de un vistazo qué
@@ -185,7 +153,7 @@ def make_image_bytes(
 
 @pytest.fixture
 def garment_with_image(auth_client: TestClient) -> dict:
-    """Prenda del catálogo con su imagen ya subida, lista para probarse."""
+    """Prenda del catálogo con su imagen ya subida."""
     created = auth_client.post(
         "/api/garments", json={"name": "Camisa de prueba", "category": "top"}
     )

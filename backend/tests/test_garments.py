@@ -95,9 +95,37 @@ def test_upload_to_unknown_garment_returns_not_found(auth_client: TestClient) ->
     assert response.status_code == 404
 
 
-def test_try_on_history_is_empty_for_a_new_user(auth_client: TestClient) -> None:
-    # Ya no se pasa `?user_id=`: el usuario sale del token.
-    response = auth_client.get("/api/try-on-sessions")
+def test_fabric_is_optional_and_round_trips(auth_client: TestClient) -> None:
+    """El tejido se guarda y vuelve tal cual, y ausente sigue siendo ausente.
 
-    assert response.status_code == 200
-    assert response.json() == []
+    Es un campo nuevo y nullable: la prueba fija que NO se inventa un valor
+    por defecto. Una prenda sin tejido registrado debe decir que no lo tiene,
+    no fingir que es de algodón.
+    """
+    con_tejido = auth_client.post(
+        "/api/garments",
+        json={"name": "Vaquero recto", "category": "bottom", "fabric": "denim"},
+    )
+    assert con_tejido.status_code == 201, con_tejido.text
+    assert con_tejido.json()["fabric"] == "denim"
+
+    sin_tejido = auth_client.post(
+        "/api/garments", json={"name": "Prenda sin ficha", "category": "other"}
+    )
+    assert sin_tejido.status_code == 201, sin_tejido.text
+    assert sin_tejido.json()["fabric"] is None
+
+
+def test_unknown_fabric_is_rejected(auth_client: TestClient) -> None:
+    """Un tejido inventado no entra en el catálogo.
+
+    El probador decide cuánto se ciñe la prenda a partir de este valor; uno
+    desconocido dejaría la decisión en manos del frontend sin que nadie lo
+    note.
+    """
+    response = auth_client.post(
+        "/api/garments",
+        json={"name": "Prenda rara", "category": "top", "fabric": "adamantium"},
+    )
+
+    assert response.status_code == 422

@@ -1,7 +1,9 @@
-# Dependencias de ejecución - Etapa 1
+# Dependencias de ejecución.
 # Versiones fijadas para que el entorno sea reproducible entre máquinas.
-# NO se incluye PyTorch, MediaPipe ni ningún modelo de IA: entran en Fase 2/3
-# en su propio archivo de requisitos para no inflar la instalación base.
+#
+# NO hay ninguna librería de IA. El probador corre entero en el navegador
+# (MediaPipe Pose compilado a WebAssembly); el backend solo sirve el catálogo,
+# las cuentas y las imágenes de las prendas.
 
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
@@ -16,24 +18,16 @@ psycopg[binary]==3.2.3
 python-multipart==0.0.20
 bcrypt==4.2.1
 
-# --- Etapa 2 ---
 # Migraciones de esquema. Sustituye a `create_all`, que solo crea tablas
 # nuevas y no aplica cambios a las que ya tienen datos.
 alembic==1.19.2
 
-# Tokens JWT. Se elige PyJWT sobre `python-jose` (el de la documentacion
+# Tokens JWT. Se elige PyJWT sobre `python-jose` (el de la documentación
 # antigua de FastAPI): python-jose tiene mantenimiento irregular e historial
-# de CVEs. PyJWT es Python puro, sin compilacion ni dependencias pesadas.
+# de CVEs. PyJWT es Python puro, sin compilación ni dependencias pesadas.
 PyJWT==2.13.0
 
-# --- Fase 1 ---
-# Tratamiento de imagenes. Se gana el sitio dos veces:
-#   1. Valida que un archivo subido sea REALMENTE una imagen, abriendolo, en
-#      vez de fiarse de la cabecera Content-Type que envia el cliente.
-#   2. Compone la prenda sobre la foto en el proveedor local de vista previa.
+# Tratamiento de imágenes. Valida que un archivo subido sea REALMENTE una
+# imagen, abriéndolo, en vez de fiarse de la cabecera Content-Type que envía
+# el cliente. También dibuja las siluetas del catálogo de ejemplo.
 Pillow==12.3.0
-
-# Cliente oficial de la API de Gemini. Solo se usa con AI_PROVIDER=gemini,
-# pero se instala siempre para que el import no dependa de la configuracion.
-# Genera imagenes de pago: el nivel gratuito NO incluye generacion de imagen.
-google-genai==2.22.0

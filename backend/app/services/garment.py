@@ -46,6 +46,7 @@ class GarmentService:
             name=data.name.strip(),
             description=data.description,
             category=data.category,
+            fabric=data.fabric,
             active=data.active,
         )
         return self.to_read(garment)
@@ -53,9 +54,9 @@ class GarmentService:
     def set_image(self, garment_id: int, *, content: bytes, max_bytes: int) -> GarmentRead:
         garment = self._get_or_fail(garment_id)
 
-        # Fase 1: la validación pasó a mirar el CONTENIDO del archivo en vez
-        # de la cabecera `Content-Type`, que la escribe quien sube el archivo
-        # y por tanto no prueba nada. Ver app/services/images.py.
+        # La validación mira el CONTENIDO del archivo en vez de la cabecera
+        # `Content-Type`, que la escribe quien sube el archivo y por tanto no
+        # prueba nada. Ver app/services/images.py.
         extension = validate_image(content, max_bytes=max_bytes)
 
         previous_key = garment.image_key
@@ -79,6 +80,7 @@ class GarmentService:
             name=garment.name,
             description=garment.description,
             category=garment.category,
+            fabric=garment.fabric,
             active=garment.active,
             image_url=self.storage.public_url(garment.image_key),
             created_at=garment.created_at,

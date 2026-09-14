@@ -199,9 +199,6 @@ def test_a_deactivated_user_loses_access_with_a_still_valid_token(
     [
         ("GET", "/api/auth/me"),
         ("GET", "/api/users/1"),
-        ("GET", "/api/try-on-sessions"),
-        ("GET", "/api/try-on-sessions/1"),
-        ("POST", "/api/try-on-sessions"),
         ("POST", "/api/garments"),
         ("POST", "/api/garments/1/image"),
     ],
@@ -268,22 +265,17 @@ def test_a_user_can_read_their_own_account(
     assert response.json()["id"] == user["id"]
 
 
-def test_the_history_belongs_to_the_token_not_to_a_query_parameter(
+def test_another_users_account_is_not_readable(
     client: TestClient, user_token: tuple[dict, str]
 ) -> None:
-    """El parámetro `?user_id=` era un agujero: se ha eliminado.
+    """Un recurso ajeno responde 404, nunca 403.
 
-    Aunque se envíe, debe ignorarse; el historial que se devuelve es el del
-    dueño del token.
+    Un 403 confirmaría que la cuenta existe, y recorriendo identificadores se
+    podrían contar los usuarios registrados.
     """
     _, token = user_token
     other, _ = register_and_login(client, email="otro@example.com")
 
-    response = client.get(
-        "/api/try-on-sessions",
-        params={"user_id": other["id"]},
-        headers=auth_headers(token),
-    )
+    response = client.get(f"/api/users/{other['id']}", headers=auth_headers(token))
 
-    assert response.status_code == 200
-    assert all(s["user_id"] != other["id"] for s in response.json())
+    assert response.status_code == 404
