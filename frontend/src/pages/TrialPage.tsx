@@ -37,6 +37,7 @@ import {
   TRIAL_METHOD_LABELS,
   type Fabric,
   type Trial,
+  type TrialMethod,
 } from '@/types'
 
 /** Cada cuánto se pregunta por una prueba en marcha. */
@@ -54,10 +55,12 @@ export default function TrialPage() {
   )
   const { data: prenda, loading, error } = useApi(prendaFetcher, [prendaId])
 
-  const telasFetcher = useCallback(
-    (signal: AbortSignal) => fetchFabrics({ onlyProbable: true, signal }),
-    [],
-  )
+  // Se piden TODAS y se filtran aquí abajo. El retexturizado estampa el
+  // mosaico de la tela y sin mosaico no puede hacer nada; la IA trabaja con la
+  // descripción de la ficha, así que le sirve una tela que aún no esté
+  // fotografiada. Filtrar en el servidor dejaría fuera telas que sí se pueden
+  // probar por el otro camino.
+  const telasFetcher = useCallback((signal: AbortSignal) => fetchFabrics({ signal }), [])
   const { data: telas } = useApi(telasFetcher)
 
   const pruebasFetcher = useCallback(
@@ -69,6 +72,11 @@ export default function TrialPage() {
   const [pruebas, setPruebas] = useState<Trial[]>([])
   const [fallo, setFallo] = useState<string | null>(null)
   const [lanzando, setLanzando] = useState<number | null>(null)
+
+  // Arranca en el determinista, y no por preferencia: está medido. La IA
+  // devuelve una prenda distinta de la que se le manda, y encima se cobra.
+  // Quien la quiera, que la pida.
+  const [motor, setMotor] = useState<TrialMethod>('retexture')
 
   useEffect(() => {
     if (pruebasIniciales) setPruebas(pruebasIniciales)
@@ -117,7 +125,11 @@ export default function TrialPage() {
     setFallo(null)
     setLanzando(tela.id)
     try {
-      const prueba = await createTrial({ garmentUploadId: prendaId, fabricId: tela.id })
+      const prueba = await createTrial({
+        garmentUploadId: prendaId,
+        fabricId: tela.id,
+        method: motor,
+      })
       setPruebas((actuales) => [prueba, ...actuales])
     } catch (causa) {
       setFallo(causa instanceof Error ? causa.message : 'No se pudo lanzar la prueba.')
@@ -138,6 +150,11 @@ export default function TrialPage() {
   const porId = useMemo(
     () => new Map((telas ?? []).map((t) => [t.id, t] as const)),
     [telas],
+  )
+
+  const telasVisibles = useMemo(
+    () => (motor === 'retexture' ? (telas ?? []).filter((t) => t.texture_url) : (telas ?? [])),
+    [telas, motor],
   )
 
   if (loading) return <LoadingBlock label="Cargando la prenda…" />
@@ -169,7 +186,7 @@ export default function TrialPage() {
             <h1 className="font-display text-titulo">{prenda.name}</h1>
             <p className="mt-2 text-sm text-ink-60">
               {GARMENT_KIND_LABELS[prenda.kind]}
-              {prenda.kind === 'sketch' && ' · las pruebas se generan con IA'}
+              {prenda.kind === 'sketch' && ' · se rellena conservando el trazo'}
             </p>
           </div>
           <p className="text-sm text-ink-60">
@@ -187,17 +204,27 @@ export default function TrialPage() {
       )}
 
       <section className="space-y-4">
-        <h2 className="rotulo">Elige una tela</h2>
+        <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
+          <h2 className="rotulo">Elige una tela</h2>
+          <SelectorDeMotor valor={motor} onCambiar={setMotor} />
+        </div>
+
+        {motor === 'ai' && <AvisoDeIA />}
+
         {telas === null ? (
           <LoadingBlock label="Cargando telas…" />
-        ) : telas.length === 0 ? (
+        ) : telasVisibles.length === 0 ? (
           <EmptyBlock
             title="No hay telas que se puedan probar"
-            detail="Una tela necesita su mosaico cargado para poder estamparse sobre una prenda."
+            detail={
+              motor === 'retexture'
+                ? 'El retexturizado estampa el mosaico de la tela, y ninguna lo tiene cargado. Súbelo desde el catálogo, o cambia a IA generativa.'
+                : 'El catálogo de telas está vacío.'
+            }
           />
         ) : (
           <ul className="grid grid-cols-3 gap-3 sm:grid-cols-5 lg:grid-cols-8">
-            {telas.map((tela) => (
+            {telasVisibles.map((tela) => (
               <li key={tela.id}>
                 <button
                   type="button"
@@ -340,5 +367,80 @@ function ResultadoDePrueba({
         </button>
       </figcaption>
     </figure>
+  )
+}
+
+/**
+ * Con qué motor se prueba.
+ *
+ * NO SE DISTINGUE SOLO POR EL RELLENO
+ * -----------------------------------
+ * El botón elegido va en negro, pero debajo hay una frase que dice qué cuesta
+ * el motor seleccionado. Quien no distinga el contraste lee la frase, y el
+ * lector de pantalla oye el `aria-pressed`. Es la misma regla que sigue el
+ * resto de la interfaz: los estados se dicen con palabras, no con color.
+ */
+function SelectorDeMotor({
+  valor,
+  onCambiar,
+}: {
+  valor: TrialMethod
+  onCambiar: (motor: TrialMethod) => void
+}) {
+  return (
+    <div className="flex flex-col gap-1.5 sm:items-end">
+      <div
+        role="group"
+        aria-label="Motor de la prueba"
+        className="inline-flex self-start rounded border border-ink p-0.5 sm:self-auto"
+      >
+        {(['retexture', 'ai'] as const).map((opcion) => (
+          <button
+            key={opcion}
+            type="button"
+            aria-pressed={valor === opcion}
+            onClick={() => onCambiar(opcion)}
+            className={`rounded-sm px-3 py-1.5 text-xs font-medium transition ${
+              valor === opcion ? 'bg-ink text-paper' : 'text-ink-60 hover:text-ink'
+            }`}
+          >
+            {TRIAL_METHOD_LABELS[opcion]}
+          </button>
+        ))}
+      </div>
+      <p className="text-[11px] text-ink-60">
+        {valor === 'retexture'
+          ? 'Instantáneo, gratis, y siempre el mismo resultado.'
+          : 'Unos 45 s, y consume tokens de OpenAI.'}
+      </p>
+    </div>
+  )
+}
+
+/**
+ * Lo que va a pasar, dicho ANTES de que cueste dinero.
+ *
+ * No es un descargo de responsabilidad de relleno. Está medido contra la API
+ * real, y lo que dice es incómodo: el motor generativo devuelve una prenda
+ * parecida, no la tuya. Para una herramienta que promete «mira TU diseño con
+ * otra tela», eso es justo el resultado equivocado — y se cobra. Quien lo pulse
+ * tiene derecho a saberlo antes, no a descubrirlo en la factura.
+ */
+function AvisoDeIA() {
+  return (
+    <Notice title="La IA vuelve a dibujar la prenda; no le cambia la tela">
+      <p>
+        Probado contra la API real con un boceto de camisa que tenía cartera de
+        botones, cinco botones, bolsillo de pecho y cuello camisero: volvió
+        convertido en una túnica lisa. Las dos veces, también con la fidelidad
+        alta y con el modelo grande.
+      </p>
+      <p>
+        Sirve para ver un boceto <strong>como fotografía</strong>, que es algo
+        que el otro motor no sabe hacer. Para comparar telas sobre tu diseño sin
+        que el diseño cambie, usa el retexturizado.
+      </p>
+      <p>Tarda unos 45 s, gasta tokens de tu cuenta, y el tope son 20 pruebas cada 24 h.</p>
+    </Notice>
   )
 }

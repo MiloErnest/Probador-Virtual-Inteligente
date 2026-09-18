@@ -229,7 +229,12 @@ que queda se traslada a la tela nueva.
    y la cobertura no se mueve ni una milésima.
 4. **El cierre morfológico sella el túnel pero deja la cavidad.** Hace falta un
    segundo paso que rellene los huecos ya desconectados del borde.
-5. **La máscara de OpenAI va al revés que la nuestra.** Ahí lo TRANSPARENTE es
+5. **En un croquis de moda, la máscara se come a la modelo.** El recorte es
+   «todo lo que no es fondo», y en un figurín eso incluye la cara, el pelo y los
+   brazos: salen pintados de la tela. Con una foto de prenda sola no ocurre, así
+   que no se ve hasta que alguien sube un dibujo de verdad. Es la limitación #34
+   y es el caso de uso central.
+6. **La máscara de OpenAI va al revés que la nuestra.** Ahí lo TRANSPARENTE es
    lo que se edita. Mandarla sin invertir da una imagen plausible y equivocada.
 
 ### Los parámetros están medidos, no elegidos a ojo
@@ -281,8 +286,13 @@ algo que la otra vía no puede dar, y se elige a sabiendas.
    `AI_PROVIDER=openai` en el `.env` haría que la suite entera —71 tests,
    decenas de veces al día— generara imágenes facturadas.
 
+La IA **se pide desde la pantalla de pruebas**, con un selector de motor. Antes
+estaba integrada y era inalcanzable: el cliente aceptaba `method` y la pantalla
+nunca lo mandaba, así que todo salía por el camino determinista.
+
 **Sin reintentos automáticos**, con UNA excepción documentada: si la API rechaza
-`input_fidelity` con un 400, se reintenta sin ese parámetro. Un 400 se rechaza
+`input_fidelity` con un 400, se reintenta sin ese parámetro. Verificado contra
+la API real: la petición que antes moría con ese 400 ahora sale adelante. Un 400 se rechaza
 antes de generar imagen, así que no ha costado nada, y la alternativa —una lista
 de qué modelo admite qué— caducaría con el siguiente modelo.
 

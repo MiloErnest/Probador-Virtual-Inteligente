@@ -115,8 +115,10 @@ export type TrialStatus = 'pending' | 'processing' | 'completed' | 'failed'
 /**
  * Con qué motor se generó.
  *
- * `retexture` reutiliza la luz de la fotografía: gratis, instantáneo y
- * determinista. `ai` genera la imagen, y es la única vía para un boceto.
+ * `retexture` reutiliza la luz de la fotografía —y en un boceto rellena el
+ * dibujo conservando el trazo—: gratis, instantáneo y determinista. `ai` dibuja
+ * la imagen entera: cuesta dinero, tarda, y reinterpreta el diseño. Se pide a
+ * conciencia, nunca por defecto.
  */
 export type TrialMethod = 'retexture' | 'ai'
 

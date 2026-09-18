@@ -70,6 +70,10 @@ siendo el catálogo del probador con cámara.
 - [x] Catálogo de telas con ficha técnica completa y filtro por dibujo.
 - [x] Taller: subir prenda o boceto, con la diferencia explicada.
 - [x] Comparación lado a lado, con el original como referencia, y sondeo.
+- [x] **Selector de motor en la pantalla de pruebas.** Hasta hoy la IA
+      estaba integrada y era **inalcanzable desde la interfaz**: el cliente
+      aceptaba `method` y la pantalla nunca lo mandaba. Al elegir IA sale
+      antes lo que va a pasar y lo que cuesta.
 - [x] Probador con cámara, intacto.
 - [x] Build de producción verificado: 236 KB.
 
@@ -103,13 +107,36 @@ túnica lisa de cuello barco.
 
 **El camino determinista de boceto conserva todo**, en 320 ms y gratis.
 
+### La cuarta llamada, ya con el selector puesto
+
+Se lanzó por el HTTP real —token firmado, `POST /api/trials` con
+`method: "ai"`, sondeo hasta `completed`— sobre el **boceto del propio
+usuario**, un croquis de vestido de noche, con tafetán de seda burdeos:
+
+| | Tiempo | Coste | Resultado |
+|---|---|---|---|
+| IA generativa | 32 s | 3.225 tokens | Vestido fotorrealista, **con otro diseño** |
+| Retexturizado | 1,7 s | gratis | Silueta exacta, **pero pinta también a la modelo** |
+
+Dos cosas que solo se ven con un dibujo real:
+
+1. **El reintento de `input_fidelity` funciona.** Había una prueba fallida en la
+   base, de código anterior al arreglo, con el 400 del mini. Con el código de
+   ahora la misma petición sale adelante.
+2. **La IA vuelve a cambiar el diseño, y esta vez es más engañoso**: el croquis
+   es palabra de honor, sin mangas, con drapeado cruzado en el pecho; volvió con
+   cuello redondo cerrado y manga larga. La imagen es preciosa, y por eso
+   engaña: no se ve que está mal si no tienes el boceto al lado. La comparación
+   lado a lado deja de ser un adorno.
+
 ---
 
 ## Errores conocidos y limitaciones
 
 | # | Descripción | Impacto | Plan |
 |---|---|---|---|
-| 30 | **El camino generativo no conserva el diseño.** Medido con dos modelos e `input_fidelity=high`. Es una limitación del modelo, no de la integración. | Alto | Por eso la IA es opt-in y el camino por defecto es determinista. La interfaz lo advierte. Si aparece un modelo que sí lo conserve, es cambiar `OPENAI_IMAGE_MODEL`. |
+| 30 | **El camino generativo no conserva el diseño.** Medido cuatro veces: dos modelos, `input_fidelity=high`, una camisa y un vestido. Es una limitación del modelo, no de la integración. | Alto | Por eso la IA es opt-in y el camino por defecto es determinista. La interfaz lo advierte. Si aparece un modelo que sí lo conserve, es cambiar `OPENAI_IMAGE_MODEL`. |
+| 34 | **En un croquis de moda, el recorte pinta también a la modelo.** La máscara es «todo lo que no es fondo», y en un dibujo de figurín eso incluye la cara, el pelo y los brazos, que salen del color de la tela. Se vio con el boceto del usuario. | **Alto** | Es el caso de uso central —un diseñador dibuja sobre figurín—, así que toca resolverlo: separar piel y pelo del vestido dentro de la máscara. En una foto de prenda sola no pasa. |
 | 31 | **El retexturizado no cambia cómo CAE la tela.** Si la foto es de un vestido fluido, una lona rígida caerá como el vestido: los pliegues son los de la foto. | Medio | Es el límite de la técnica. Simular el tejido es otro problema y bastante mayor. Se dice en la portada. |
 | 32 | **Los mosaicos del catálogo son generados, no fotografías de tela real.** Son creíbles y seamless por construcción, pero no son telas de verdad. | Medio | Para el producto real, la tienda aliada fotografía sus rollos y se recorta un cuadrado limpio. Sale mejor y es gratis. |
 | 33 | **El volumen de un boceto es inventado.** Sale de la distancia al borde, no de información del dibujo. | Bajo | Es honesto y se avisa. No hay forma de deducir volumen de un dibujo de líneas. |
@@ -176,14 +203,17 @@ túnica lisa de cuello barco.
 
 ## Próximos pasos
 
-1. **Fotografiar telas reales.** Los mosaicos generados funcionan, pero la
+1. **Separar la figura de la prenda en un croquis** (limitación #34). Es lo
+   más urgente: el usuario central de este producto dibuja sobre figurín, y hoy
+   la tela le pinta la cara. Sube al primer puesto por delante de todo lo demás.
+2. **Fotografiar telas reales.** Los mosaicos generados funcionan, pero la
    tienda aliada tiene los rollos. Un cuadrado limpio de cada uno mejora el
    resultado más que cualquier ajuste del motor, y es gratis.
-2. **Probar con prendas y bocetos reales de un taller.** Lo que hay está
+3. **Probar con prendas y bocetos reales de un taller.** Lo que hay está
    medido contra cinco fotografías de catálogo y un boceto sintético.
-3. **La conversión prueba→compra.** El Vision Board la pone como métrica y hoy
+4. **La conversión prueba→compra.** El Vision Board la pone como métrica y hoy
    no se mide nada. Un botón de «pedir esta tela» con su referencia sería el
    primer paso, y cierra el círculo del producto.
-4. **Terminar de verificar el probador con cámara** (limitación #24), que quedó
+5. **Terminar de verificar el probador con cámara** (limitación #24), que quedó
    pendiente de la etapa anterior.
-5. **Acceso con Google**, que el usuario ya pidió. De paso resuelve la #14.
+6. **Acceso con Google**, que el usuario ya pidió. De paso resuelve la #14.
