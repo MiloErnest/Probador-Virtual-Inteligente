@@ -1,20 +1,43 @@
 """Motor generativo con la API de OpenAI.
 
-CUÁNDO ES LA HERRAMIENTA CORRECTA
----------------------------------
-Con un BOCETO. Un dibujo de líneas no tiene sombras, así que no hay luz que
-reutilizar: el volumen, la caída y el brillo de la tela hay que inventarlos, y
-eso es exactamente lo que un modelo generativo sabe hacer.
+QUÉ SE LE MANDA AL MODELO, Y POR QUÉ ES LA DECISIÓN QUE MÁS PESA
+----------------------------------------------------------------
+No el original: **el retexturizado**. Es decir, una imagen que ya tiene el
+diseño del usuario y ya tiene la tela puesta, y al modelo solo se le pide que
+la haga fotográfica.
 
-Con una FOTOGRAFÍA es la opción peor casi siempre, y conviene saber por qué
-antes de usarla: cuesta dinero, tarda segundos en vez de milisegundos, y **no
-es determinista**. Dos llamadas idénticas dan dos imágenes distintas. En un
-producto cuya promesa es «compara cuatro telas sobre TU diseño», un motor que
-redibuja el diseño en cada llamada está haciendo lo contrario de lo que se le
-pide.
+La primera versión mandaba el boceto crudo y pedía «un vestido de tafetán». A
+eso el modelo solo puede responder inventándose un vestido, y se lo inventa: el
+usuario lo describió exactamente así —«devuelve un vestido, sí, pero totalmente
+diferente, hasta le pone botones a las prendas que no llevan»—. No era un fallo
+del modelo. Era la pregunta equivocada.
 
-`input_fidelity="high"` existe justo para esto y ayuda mucho, pero ayuda: no
-garantiza. La foto tiene su propia luz y reutilizarla es gratis y exacto.
+Mandarle la tela ya puesta cambia la tarea de *inventar* a *pulir*, que es
+mucho más pequeña, y lo que se le pide deja de competir con lo que el usuario
+dibujó.
+
+**Ayuda, y no basta.** Medido con el vestido de noche: con `gpt-image-1-mini`
+(3.276 tokens, 24 s) y con `gpt-image-1` + `input_fidelity="high"` (12.987
+tokens, 52 s), partiendo de un retexturizado correcto, los dos devolvieron el
+vestido con manga larga y cuello barco donde el boceto tiene palabra de honor y
+drapeado cruzado. La seda está espléndida; el vestido no es el suyo.
+
+Lo que SÍ garantiza esto es todo lo de fuera de la prenda —fondo, cara, pelo—,
+que viene del original y no lo ha tocado nadie.
+
+Y ADEMÁS SE COMPONE A TRAVÉS DE LA MÁSCARA
+------------------------------------------
+`images.edit` **no** es un parcheo: regenera la imagen entera, también lo que
+cae fuera de la máscara. Por eso cambiaba el fondo aunque la máscara estuviera
+bien. La salida se recompone contra el original usando nuestra máscara, así que
+todo lo que no es prenda queda idéntico al original, píxel a píxel. No es un
+apaño: es lo único que garantiza que el modelo no pueda tocar lo que no se le
+ha pedido.
+
+`input_fidelity="high"` ayuda con lo de dentro, pero ayuda: no garantiza. Con
+una FOTOGRAFÍA el camino determinista sigue siendo mejor casi siempre —es
+gratis, instantáneo y **determinista**, y comparar cuatro telas solo significa
+algo si lo único que cambia entre las cuatro es la tela.
 
 LA MÁSCARA VA AL REVÉS QUE LA NUESTRA
 -------------------------------------
@@ -66,11 +89,13 @@ class MotorOpenAI:
         import openai
         from openai import OpenAI
 
+        partida, desde_retexturizado = _punto_de_partida(peticion)
+
         tamano = _tamano_para(peticion.prenda.size)
         ancho, alto = (int(v) for v in tamano.split("x"))
 
         # La imagen y la máscara tienen que medir lo mismo y salir en PNG.
-        prenda = peticion.prenda.convert("RGB").resize((ancho, alto), Image.Resampling.LANCZOS)
+        prenda = partida.convert("RGB").resize((ancho, alto), Image.Resampling.LANCZOS)
         mascara = _mascara_invertida(peticion.mascara, (ancho, alto))
 
         cliente = OpenAI(
@@ -86,7 +111,7 @@ class MotorOpenAI:
             "model": settings.OPENAI_IMAGE_MODEL,
             "image": ("prenda.png", _a_png(prenda), "image/png"),
             "mask": ("mascara.png", _a_png(mascara), "image/png"),
-            "prompt": _instruccion(peticion),
+            "prompt": _instruccion(peticion, desde_retexturizado),
             "size": tamano,
             "n": 1,
         }
@@ -154,11 +179,66 @@ class MotorOpenAI:
         if imagen.size != peticion.prenda.size:
             imagen = imagen.resize(peticion.prenda.size, Image.Resampling.LANCZOS)
 
+        imagen = _componer_con_el_original(imagen, peticion.prenda, peticion.mascara)
+
         tokens = respuesta.usage.total_tokens if respuesta.usage else None
-        return ResultadoDeTela(imagen=imagen, proveedor=self.nombre, tokens=tokens)
+        aviso = (
+            "Fuera de la prenda no se ha tocado nada: el fondo y la figura son tu "
+            "imagen original. Dentro, el modelo reinterpreta el diseño aunque se le "
+            "dé ya hecho — está medido cinco veces, con los dos modelos y con "
+            "fidelidad alta. Úsalo para ver la tela como fotografía, y compara "
+            "siempre con el original de al lado."
+            if desde_retexturizado
+            else "Esta tela no tiene mosaico, así que el modelo ha partido de tu "
+            "imagen y ha tenido que inventarse la tela entera. Es el caso en el "
+            "que más se desvía del diseño."
+        )
+        return ResultadoDeTela(
+            imagen=imagen, proveedor=self.nombre, tokens=tokens, aviso=aviso
+        )
 
 
-def _instruccion(peticion: PeticionDeTela) -> str:
+def _punto_de_partida(peticion: PeticionDeTela) -> tuple[Image.Image, bool]:
+    """Qué imagen se le manda al modelo, y si ya lleva la tela puesta.
+
+    Es la decisión que más cambia el resultado, y no se ve en ningún parámetro.
+
+    Con el mosaico de la tela se puede construir primero el retexturizado: una
+    imagen que ya tiene el diseño del usuario Y la tela correcta. Al modelo se
+    le pide entonces solo que lo haga fotográfico, que es una tarea pequeña.
+
+    Sin mosaico no hay nada que construir y hay que mandarle el original, con
+    la tela descrita en palabras. Ahí el modelo tiene que inventárselo todo, y
+    se nota: es el caso en el que más se aleja del diseño. Se avisa.
+    """
+    if peticion.mosaico is None:
+        return peticion.prenda, False
+
+    # Import aquí: `provider` importa este módulo de forma perezosa, así que a
+    # la hora de llamar ya está cargado y no hay ciclo.
+    from app.textil.provider import MotorRetexturizado
+
+    return MotorRetexturizado().aplicar(peticion).imagen, True
+
+
+def _componer_con_el_original(
+    generada: Image.Image, original: Image.Image, mascara: Image.Image
+) -> Image.Image:
+    """Devuelve la imagen generada SOLO dentro de la prenda.
+
+    `images.edit` regenera la imagen entera, también lo de fuera de la máscara:
+    la máscara le dice dónde centrarse, no dónde tiene prohibido escribir. Por
+    eso cambiaba el fondo de un boceto aunque la máscara fuera perfecta.
+
+    Recomponer contra el original es lo único que lo garantiza. Y como la
+    máscara lleva su difuminado de borde, el empalme no se ve.
+    """
+    if mascara.size != original.size:
+        mascara = mascara.resize(original.size, Image.Resampling.BILINEAR)
+    return Image.composite(generada, original.convert("RGB"), mascara.convert("L"))
+
+
+def _instruccion(peticion: PeticionDeTela, desde_retexturizado: bool) -> str:
     """El texto que se le da al modelo.
 
     Está en inglés a propósito: estos modelos siguen instrucciones en inglés
@@ -170,6 +250,22 @@ def _instruccion(peticion: PeticionDeTela) -> str:
     Para una modista que quiere ver SU prenda con otra tela, eso lo invalida.
     """
     tela = peticion.descripcion
+
+    if desde_retexturizado:
+        # La tela YA está puesta. Pedirle que la ponga otra vez sería invitarle
+        # a rehacer la prenda, que es justo lo que no queremos.
+        return (
+            f"This image already shows the correct garment with the correct fabric "
+            f"({tela}) applied. Your ONLY task is to make that fabric look like a real "
+            "photograph: realistic weave and thread texture, natural sheen, believable "
+            "soft shadows inside the folds that are already there. "
+            "Keep the garment EXACTLY as it is: every line, seam, edge, hem, neckline, "
+            "silhouette and proportion stays in the same place. "
+            "Do NOT add buttons, pockets, collars, straps, trims or any element that is "
+            "not already visible. Do not remove any. Do not restyle, do not redraw, do "
+            "not change the pose, do not change the background. "
+            "Think of it as photographing this exact garment, not designing one."
+        )
 
     if peticion.tipo.value == "sketch":
         return (

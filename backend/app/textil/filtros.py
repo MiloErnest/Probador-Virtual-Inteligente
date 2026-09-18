@@ -67,6 +67,46 @@ def reescalar(campo: np.ndarray, ancho: int, alto: int) -> np.ndarray:
     )
 
 
+def maximo_local(campo: np.ndarray, radio: int) -> np.ndarray:
+    """Máximo en una ventana cuadrada. Borra lo fino y oscuro, deja lo ancho.
+
+    PARA QUÉ SIRVE AQUÍ
+    -------------------
+    Es la forma de quitar el TRAZO de un dibujo sin tocar el SOMBREADO. Una
+    línea de lápiz es estrecha y más oscura que el papel que la rodea, así que
+    el máximo de una ventana un poco más ancha que la línea devuelve el papel.
+    Una mancha de sombreado es más ancha que la ventana y sobrevive entera.
+
+    Lo que la línea haya restado a esa superficie sin líneas **es** la línea, y
+    esa resta es justo lo que hay que conservar por encima de la tela.
+
+    Se hace por separado en cada eje: el máximo de un cuadrado es el máximo de
+    los máximos de sus filas, así que dos pasadas de una dimensión dan lo mismo
+    que una de dos, y cuestan 2·(2r+1) comparaciones en vez de (2r+1)².
+    """
+    if radio < 1:
+        return campo
+    for eje in (0, 1):
+        campo = _maximo_en_eje(campo, radio, eje)
+    return campo
+
+
+def _maximo_en_eje(campo: np.ndarray, radio: int, eje: int) -> np.ndarray:
+    relleno = [(0, 0), (0, 0)]
+    relleno[eje] = (radio, radio)
+    # Borde replicado: con ceros, el máximo del borde sería el del interior y
+    # daría igual, pero con mínimos la silueta se comería un anillo.
+    extendido = np.pad(campo, relleno, mode="edge")
+
+    n = campo.shape[eje]
+    salida = np.take(extendido, np.arange(n), axis=eje).copy()
+    for desplazamiento in range(1, 2 * radio + 1):
+        salida = np.maximum(
+            salida, np.take(extendido, np.arange(desplazamiento, desplazamiento + n), axis=eje)
+        )
+    return salida
+
+
 def desenfocar(campo: np.ndarray, radio: float) -> np.ndarray:
     """Desenfoque suave, sin pasar por 8 bits.
 

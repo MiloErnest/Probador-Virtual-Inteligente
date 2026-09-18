@@ -47,8 +47,12 @@ siendo el catálogo del probador con cámara.
       la textura según el gradiente del modelado.
 - [x] **Se conservan costuras, botones y bolsillos**, devolviendo una fracción
       del detalle fino después de borrar la trama del tejido viejo.
-- [x] **Retexturizado de boceto**: rellena el interior con la tela y **conserva
-      el trazo intacto**, con volumen insinuado por distancia al borde. ~320 ms.
+- [x] **Retexturizado de boceto**: separa el dibujo en trazo y sombreado. El
+      sombreado del lápiz pasa a ser la luz que multiplica la tela —los pliegues
+      que se ven son los que dibujó el diseñador— y el trazo se conserva intacto
+      por encima. ~500 ms. Si el dibujo no trae tono, cae al volumen inventado.
+- [x] **La figura sale del recorte**: en un figurín, la cara, el pelo y los
+      brazos ya no se pintan de tela.
 - [x] **Motor generativo con OpenAI**, opt-in, con traducción de errores a
       mensajes accionables y registro de tokens.
 - [x] **Aviso cuando el recorte sale dudoso**, antes de que el usuario gaste
@@ -135,8 +139,10 @@ Dos cosas que solo se ven con un dibujo real:
 
 | # | Descripción | Impacto | Plan |
 |---|---|---|---|
-| 30 | **El camino generativo no conserva el diseño.** Medido cuatro veces: dos modelos, `input_fidelity=high`, una camisa y un vestido. Es una limitación del modelo, no de la integración. | Alto | Por eso la IA es opt-in y el camino por defecto es determinista. La interfaz lo advierte. Si aparece un modelo que sí lo conserve, es cambiar `OPENAI_IMAGE_MODEL`. |
-| 34 | **En un croquis de moda, el recorte pinta también a la modelo.** La máscara es «todo lo que no es fondo», y en un dibujo de figurín eso incluye la cara, el pelo y los brazos, que salen del color de la tela. Se vio con el boceto del usuario. | **Alto** | Es el caso de uso central —un diseñador dibuja sobre figurín—, así que toca resolverlo: separar piel y pelo del vestido dentro de la máscara. En una foto de prenda sola no pasa. |
+| 35 | **La sombra proyectada de una prenda entra en el recorte y se pinta.** Visto en la foto de camiseta del usuario: la sombra que cae a su derecha sale estampada. El umbral adaptativo la ve tan distinta del fondo como a la prenda. | **Alto** | Una sombra es el fondo más oscuro, no otro color: separarlas por cromaticidad en vez de por distancia RGB. Con una prenda negra eso solo no basta —también es acromática— así que hace falta combinarlo con el salto de borde. |
+| 36 | **En el croquis, la tela invade el escote y los hombros desnudos.** La exclusión de figura acierta con el pelo, la cara y los brazos, pero el pecho descubierto queda dentro del recorte. | Medio | El sombreado del escote es casi acromático en un dibujo a lápiz. Se arregla cerrando la figura hacia abajo desde el cuello, o dejando que el usuario retoque la máscara. |
+| 30 | **El camino generativo no conserva el diseño.** Medido **cinco** veces: los dos modelos, con `input_fidelity=high`, una camisa y un vestido, y las dos últimas **partiendo del retexturizado ya correcto y pidiendo solo pulir**. Rediseña igual. Es una limitación del modelo, no de la integración. | Alto | Por eso la IA es opt-in y el camino por defecto es determinista. La interfaz lo advierte. Si aparece un modelo que sí lo conserve, es cambiar `OPENAI_IMAGE_MODEL`. |
+| 34 | ~~**En un croquis de moda, el recorte pinta también a la modelo.**~~ **RESUELTO.** La máscara es «todo lo que no es fondo», y en un dibujo de figurín eso incluye la cara, el pelo y los brazos, que salen del color de la tela. Se vio con el boceto del usuario. | — | Se separa por saturación: el lápiz es acromático (0,02) y la figura no (0,10+). Con salvaguarda: si lo detectado pasa del 30% del recorte es una prenda de color, no una persona, y no se quita nada. Medido: el croquis pierde un 4,3%; la fotografía de camiseta, 0,0%. |
 | 31 | **El retexturizado no cambia cómo CAE la tela.** Si la foto es de un vestido fluido, una lona rígida caerá como el vestido: los pliegues son los de la foto. | Medio | Es el límite de la técnica. Simular el tejido es otro problema y bastante mayor. Se dice en la portada. |
 | 32 | **Los mosaicos del catálogo son generados, no fotografías de tela real.** Son creíbles y seamless por construcción, pero no son telas de verdad. | Medio | Para el producto real, la tienda aliada fotografía sus rollos y se recorta un cuadrado limpio. Sale mejor y es gratis. |
 | 33 | **El volumen de un boceto es inventado.** Sale de la distancia al borde, no de información del dibujo. | Bajo | Es honesto y se avisa. No hay forma de deducir volumen de un dibujo de líneas. |
@@ -203,17 +209,18 @@ Dos cosas que solo se ven con un dibujo real:
 
 ## Próximos pasos
 
-1. **Separar la figura de la prenda en un croquis** (limitación #34). Es lo
-   más urgente: el usuario central de este producto dibuja sobre figurín, y hoy
-   la tela le pinta la cara. Sube al primer puesto por delante de todo lo demás.
-2. **Fotografiar telas reales.** Los mosaicos generados funcionan, pero la
+1. **Sacar la sombra proyectada del recorte** (limitación #35). Es lo que más
+   se ve ahora mismo en una fotografía de prenda: la sombra sale estampada de la
+   tela nueva.
+2. **Rematar el escote en el croquis** (limitación #36).
+3. **Fotografiar telas reales.** Los mosaicos generados funcionan, pero la
    tienda aliada tiene los rollos. Un cuadrado limpio de cada uno mejora el
    resultado más que cualquier ajuste del motor, y es gratis.
-3. **Probar con prendas y bocetos reales de un taller.** Lo que hay está
+4. **Probar con prendas y bocetos reales de un taller.** Lo que hay está
    medido contra cinco fotografías de catálogo y un boceto sintético.
-4. **La conversión prueba→compra.** El Vision Board la pone como métrica y hoy
+5. **La conversión prueba→compra.** El Vision Board la pone como métrica y hoy
    no se mide nada. Un botón de «pedir esta tela» con su referencia sería el
    primer paso, y cierra el círculo del producto.
-5. **Terminar de verificar el probador con cámara** (limitación #24), que quedó
+6. **Terminar de verificar el probador con cámara** (limitación #24), que quedó
    pendiente de la etapa anterior.
-6. **Acceso con Google**, que el usuario ya pidió. De paso resuelve la #14.
+7. **Acceso con Google**, que el usuario ya pidió. De paso resuelve la #14.

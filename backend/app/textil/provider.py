@@ -6,9 +6,11 @@ DOS MOTORES, Y NO COMPITEN: SE REPARTEN EL TRABAJO
   y **determinista**: la misma prenda con la misma tela da siempre el mismo
   resultado. Es lo que hace que comparar cuatro telas lado a lado signifique
   algo, porque lo único que cambia entre las cuatro es la tela.
-- `MotorOpenAI` genera la imagen con un modelo. Cuesta dinero por llamada y no
-  es determinista, pero es la única vía para un boceto: un dibujo de líneas no
-  tiene sombras que reutilizar.
+- `MotorOpenAI` pule la tela hasta que parezca fotografía. Cuesta dinero por
+  llamada y no es determinista. **Parte del retexturizado, no del original**,
+  para que su trabajo sea pulir y no inventar; y su salida se recompone contra
+  el original a través de la máscara, así que no puede tocar nada que no sea
+  la prenda.
 
 EL SELECTOR FALLA EN VOZ ALTA
 -----------------------------
@@ -77,6 +79,11 @@ class MotorDeTela(Protocol):
 #: Medido sobre la razón de luz dentro de la máscara.
 CONTRASTE_SOSO = 0.045
 
+#: Relieve a partir del cual el sombreado de un boceto manda sobre el volumen
+#: inventado. Es el punto medio de la mezcla de `vestir_boceto`. Medido: el
+#: croquis de vestido del usuario da 0,13; un plano técnico daría casi 0.
+SOMBREADO_APROVECHABLE = 0.045
+
 
 class MotorRetexturizado:
     """Reutiliza la luz de la fotografía. No es inteligencia artificial."""
@@ -101,15 +108,20 @@ class MotorRetexturizado:
                 repeticiones=peticion.repeticiones,
                 caja=peticion.caja,
             )
+            if salida.contraste >= SOMBREADO_APROVECHABLE:
+                aviso = (
+                    "Los pliegues que ves son los que dibujaste: se ha usado el "
+                    "sombreado de tu propio boceto como luz, y el trazo se conserva "
+                    "por encima. Tu diseño no se ha tocado."
+                )
+            else:
+                aviso = (
+                    "Tu dibujo casi no trae sombreado, así que el volumen es "
+                    "aproximado: sale de la silueta, no del dibujo. Un figurín "
+                    "sombreado a lápiz da un resultado mucho mejor por esta vía."
+                )
             return ResultadoDeTela(
-                imagen=salida.imagen,
-                proveedor=f"{self.nombre}-boceto",
-                aviso=(
-                    "Tu dibujo se conserva tal cual y la tela rellena el interior. El "
-                    "volumen es aproximado: un boceto no tiene sombras de las que "
-                    "deducirlo. Si quieres una imagen fotorrealista, usa el motor de "
-                    "IA — pero ten en cuenta que reinterpreta el diseño."
-                ),
+                imagen=salida.imagen, proveedor=f"{self.nombre}-boceto", aviso=aviso
             )
 
         salida = retexturizar(

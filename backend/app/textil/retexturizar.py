@@ -40,9 +40,23 @@ pones una lona rígida, la lona caerá como seda, porque los pliegues son los de
 la foto. Para eso haría falta simular el tejido, que es otro problema y mucho
 mayor.
 
-Y sobre un boceto no hace nada útil: un dibujo de líneas no tiene sombras, así
-que la razón vale 1 en todas partes y la tela sale plana. Eso no es un fallo,
-es la razón por la que los bocetos van al motor generativo.
+UN BOCETO TAMBIÉN TIENE LUZ, Y ESO SE TARDÓ EN VER
+---------------------------------------------------
+Aquí ponía que un dibujo no tiene sombras y que por eso la tela salía plana.
+Es cierto de un plano técnico —línea limpia, sin tonos— y **falso del dibujo
+que de verdad hace un diseñador**: un figurín va sombreado a lápiz, y ese
+sombreado es exactamente dónde caen los pliegues, cómo se pliega la cola, dónde
+la tela se aleja de la luz. Es la misma información que trae una fotografía,
+dibujada a mano.
+
+Ignorarla y sustituirla por un degradado desde el borde daba lo que el usuario
+describió de una sola frase: **parecía que le hubieran echado pintura a la
+prenda**. Y tenía razón — era relleno plano más viñeta.
+
+Lo que hay que separar en un dibujo no es «forma contra color», es **trazo
+contra sombreado**: la línea es estrecha y define el diseño, y hay que dejarla
+encima intacta; la mancha es ancha y es luz, y va debajo multiplicando la tela.
+Ver `_separar_trazo_de_sombreado`.
 """
 
 from __future__ import annotations
@@ -52,7 +66,11 @@ from dataclasses import dataclass
 import numpy as np
 from PIL import Image
 
-from app.textil.filtros import desenfocar as _desenfocar, reescalar
+from app.textil.filtros import desenfocar as _desenfocar, maximo_local, reescalar
+
+#: Pesos de luminancia de la Rec. 709. El ojo no reparte por igual entre los
+#: tres canales, y aquí importa porque lo que se mide es luz, no color.
+LUMINANCIA = np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
 
 #: Hasta dónde se deja llegar la sombra y el brillo.
 #:
@@ -130,7 +148,7 @@ def retexturizar(
         return Retexturizado(imagen=prenda, contraste=0.0)
 
     lineal = _a_luz_lineal(original)
-    brillo = lineal @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+    brillo = lineal @ LUMINANCIA
 
     # El color propio de la prenda: la mediana del brillo dentro de ella. Se
     # usa la mediana y no la media porque un fondo que se haya colado en la
@@ -152,12 +170,51 @@ def retexturizar(
 
 
 #: Cuánto más oscuro queda el borde de un boceto respecto a su centro.
-#: Es el volumen que se le inventa, y es poco a propósito: un boceto no tiene
-#: información de forma, así que pasarse sería mentir con más énfasis.
+#:
+#: Es volumen INVENTADO, y solo se usa cuando el dibujo no trae sombreado
+#: propio: un plano técnico, un contorno a boli. Es poco a propósito, porque
+#: inventar con énfasis es mentir con énfasis.
 VOLUMEN_DEL_BOCETO = 0.38
 
-#: Un píxel más oscuro que esto respecto a la media de la prenda es trazo.
-UMBRAL_DE_TRAZO = 0.62
+#: Grosor máximo de un trazo, como divisor del ancho de la imagen.
+#:
+#: Es el radio del máximo local que borra las líneas para dejar ver el
+#: sombreado que hay debajo. Demasiado pequeño y las líneas gruesas sobreviven
+#: y se cuentan como sombra; demasiado grande y se come el sombreado fino.
+GROSOR_DEL_TRAZO = 260.0
+
+#: Cuánto tiene que hundirse un píxel respecto al papel de al lado para empezar
+#: a contar como trazo, y para contar como trazo entero.
+#:
+#: Son DOS números y no uno, y ese es el punto. Medido sobre un croquis real: la
+#: mitad de los píxeles de la prenda están un 11% por debajo de su entorno y el
+#: 5% está por encima del 73%. Lo primero es el rayado del lápiz —el tono con el
+#: que se sombrea— y lo segundo son las líneas de verdad.
+#:
+#: Con un solo umbral, un tercio de la prenda se conservaba como «tinta» y el
+#: dibujo entero seguía viéndose en gris por encima de la tela. Con un suelo,
+#: el rayado pasa a ser sombra (que es lo que es) y solo la línea se conserva.
+PISO_DEL_TRAZO = 0.35
+PLENO_DEL_TRAZO = 0.75
+
+#: Anchura del desenfoque del sombreado, como divisor del ancho de la imagen.
+#: Tiene que borrar el grano del papel y conservar el pliegue, que es mucho más
+#: ancho. Con el croquis de referencia, un pliegue mide unos 30 px de 794.
+RADIO_DEL_SOMBREADO = 110.0
+
+#: Qué percentil del sombreado es «aquí da la luz de lleno».
+#:
+#: En una fotografía se usa la MEDIANA, porque una prenda real tiene luces y
+#: sombras repartidas alrededor de su color propio. En un dibujo no: el papel
+#: es el blanco de partida y el lápiz solo puede restar. Con la mediana, media
+#: prenda saldría por encima de la tela, más clara que la tela misma.
+PERCENTIL_DEL_PAPEL = 88.0
+
+#: Relieve dibujado por debajo del cual no hay sombreado que reutilizar, y por
+#: encima del cual se usa entero. Entre medias se mezcla con el inventado, para
+#: que un dibujo a medio sombrear no dé un salto brusco.
+RELIEVE_NULO = 0.020
+RELIEVE_PLENO = 0.075
 
 
 def vestir_boceto(
@@ -182,21 +239,29 @@ def vestir_boceto(
     exactamente el resultado equivocado. Una modista que dibuja cinco botones
     quiere ver cinco botones.
 
-    Así que aquí el dibujo manda. La tela rellena el interior, el trazo se
-    conserva por encima intacto, y el volumen se insinúa oscureciendo los
-    bordes. No es una fotografía —no lo aparenta— pero es SU prenda.
+    Así que aquí el dibujo manda, entero: su trazo y su sombreado.
 
-    El camino generativo sigue estando, y para lo que sí sabe hacer: convertir
-    el boceto en algo fotorrealista. Pero se pide a conciencia, sabiendo que
-    reinterpreta y que se cobra.
+    EL SOMBREADO DEL DIBUJO ES LUZ, Y ANTES SE TIRABA
+    -------------------------------------------------
+    La primera versión rellenaba el interior con tela plana y oscurecía los
+    bordes con un degradado. El usuario lo describió en una frase: «parece que
+    le echara pintura a la prenda». Era exactamente eso, y el fallo estaba en
+    una suposición escrita aquí mismo: que un boceto no tiene sombras.
 
-    DE DÓNDE SALE EL VOLUMEN
-    ------------------------
-    De la distancia al borde de la silueta. Una prenda es un cuerpo blando: el
-    centro está de frente a la luz y los bordes se curvan y se alejan. Un
-    desenfoque ancho de la máscara da justo eso —1 en el centro, medio en el
-    canto— y es un modelado pobre pero honesto, porque no pretende haber
-    deducido una forma que en el dibujo no está.
+    Un figurín SÍ las tiene. El diseñador sombrea a lápiz por dónde cae el
+    pliegue, cómo se quiebra la cola, qué lado queda de espaldas a la luz. Es
+    la misma información que trae una fotografía, puesta a mano — y el motor la
+    estaba descartando para inventarse una peor.
+
+    Ahora el dibujo se parte en sus dos capas (`_separar_trazo_de_sombreado`):
+    el sombreado va DEBAJO multiplicando la tela, como la razón de luz de una
+    foto, y el trazo va ENCIMA intacto, que es lo que mantiene el diseño.
+
+    CUANDO EL DIBUJO NO TRAE SOMBREADO
+    ----------------------------------
+    Un plano técnico o un contorno a bolígrafo no tienen tonos. Ahí se vuelve
+    al volumen inventado por distancia al borde, que es pobre pero honesto. La
+    mezcla entre uno y otro la decide el relieve medido, no un ajuste a mano.
     """
     boceto = boceto.convert("RGB")
     if mascara.size != boceto.size:
@@ -209,26 +274,98 @@ def vestir_boceto(
     if not dentro.any():
         return Retexturizado(imagen=boceto, contraste=0.0)
 
-    # Volumen inventado: lejos del borde, más luz.
-    hinchado = _desenfocar(alfa, max(8.0, boceto.width / 26.0))
-    volumen = 1.0 - VOLUMEN_DEL_BOCETO * (1.0 - np.clip(hinchado, 0.0, 1.0))
+    trazo, sombreado = _separar_trazo_de_sombreado(original, boceto.width)
 
-    campo = _tender_la_tela(tela, boceto.size, repeticiones, caja)
-    vestida = _a_srgb(_a_luz_lineal(campo) * volumen[..., None])
+    # El sombreado, convertido en luz. Mismo cociente que en una fotografía: se
+    # divide entre «lo que está plenamente iluminado» y lo que queda ya no
+    # depende de con qué dureza dibujara esta persona.
+    referencia = max(float(np.percentile(sombreado[dentro], PERCENTIL_DEL_PAPEL)), BRILLO_MINIMO)
+    dibujado = np.clip(sombreado / referencia, SOMBRA_MINIMA, 1.0)
+    relieve = float(dibujado[dentro].std())
+
+    # Volumen inventado, para los dibujos que no traen tono: lejos del borde,
+    # más luz.
+    hinchado = _desenfocar(alfa, max(8.0, boceto.width / 26.0))
+    inventado = 1.0 - VOLUMEN_DEL_BOCETO * (1.0 - np.clip(hinchado, 0.0, 1.0))
+
+    mezcla = float(
+        np.clip((relieve - RELIEVE_NULO) / (RELIEVE_PLENO - RELIEVE_NULO), 0.0, 1.0)
+    )
+    modelado = mezcla * dibujado + (1.0 - mezcla) * inventado
+
+    # Con relieve de verdad, el estampado ya puede doblarse por donde el dibujo
+    # dice que se dobla. Antes no tenía sentido: la única pendiente era la del
+    # degradado del borde, y curvaba los cuadros hacia fuera en todas partes.
+    pendiente = _pendiente_de_la_prenda(modelado)
+    campo = _tender_la_tela(tela, boceto.size, repeticiones, caja, pendiente)
+    vestida = _a_srgb(_a_luz_lineal(campo) * modelado[..., None])
 
     # EL TRAZO SE CONSERVA, Y ES LO QUE HACE QUE SIGA SIENDO SU DISEÑO.
-    #
-    # Se detecta por oscuridad relativa: el papel es claro y la tinta no. Se
-    # usa el mínimo de los tres canales para que un trazo de color —azul de
-    # bolígrafo, lápiz de color— cuente igual que uno negro.
-    tinta = 1.0 - np.clip(original.min(axis=2) / UMBRAL_DE_TRAZO, 0.0, 1.0)
-    tinta = tinta * alfa
-
+    tinta = trazo * alfa
     resultado = vestida * (1.0 - tinta[..., None]) + original * tinta[..., None]
     compuesta = resultado * alfa[..., None] + original * (1.0 - alfa[..., None])
 
     imagen = Image.fromarray(np.clip(compuesta * 255.0, 0, 255).astype(np.uint8), mode="RGB")
-    return Retexturizado(imagen=imagen, contraste=float(volumen[dentro].std()))
+    return Retexturizado(imagen=imagen, contraste=relieve)
+
+
+def _separar_trazo_de_sombreado(
+    original: np.ndarray, ancho: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Parte un dibujo en sus dos capas, que son cosas distintas.
+
+    El TRAZO define el diseño: el escote, la costura, el canto de la cola. Es
+    estrecho y hay que dejarlo intacto por encima de la tela.
+
+    El SOMBREADO es luz: ancho, suave, y dice dónde se pliega. Va debajo,
+    multiplicando la tela.
+
+    CÓMO SE SEPARAN, Y POR QUÉ NO POR OSCURIDAD
+    -------------------------------------------
+    La versión anterior las separaba por oscuridad absoluta: «más oscuro que
+    0,62 es trazo». Eso mete en el mismo saco una línea de contorno y una
+    sombra bien cargada, y como el trazo se conserva tal cual, TODA la sombra
+    se quedaba dibujada en gris lápiz por encima de la tela nueva.
+
+    Se separan por ANCHURA, que es lo que de verdad las distingue. Un máximo
+    local un poco más ancho que la línea la borra —es estrecha y oscura— y deja
+    el sombreado, que es ancho. Lo que la línea haya restado a esa superficie
+    limpia es la línea.
+
+    Y se mide en proporción, no en diferencia: una línea trazada sobre una zona
+    ya sombreada resta menos en valor absoluto, pero es igual de línea.
+
+    EL RAYADO NO ES LÍNEA, ES TONO
+    ------------------------------
+    Un croquis se sombrea rayando, y una raya de sombreado también es estrecha
+    y oscura. Si se contara como trazo, se conservaría tal cual y el dibujo
+    entero se vería en gris lápiz por encima de la tela nueva — que es el
+    defecto que se venía a arreglar.
+
+    Los separa la PROFUNDIDAD, y está medida: en el croquis de referencia el
+    rayado hunde un 11% y el contorno un 73%. De ahí el suelo.
+
+    Y lo que se quita para calcular el sombreado son SOLO las líneas de verdad.
+    Borrar también el rayado dejaría el papel liso y se perdería justo el tono
+    que el dibujante puso rayando.
+    """
+    lineal = _a_luz_lineal(original)
+    brillo = lineal @ LUMINANCIA
+
+    radio = max(1, round(ancho / GROSOR_DEL_TRAZO))
+    sin_trazo = maximo_local(brillo, radio)
+
+    hundido = 1.0 - brillo / np.maximum(sin_trazo, BRILLO_MINIMO)
+    trazo = np.clip(
+        (hundido - PISO_DEL_TRAZO) / (PLENO_DEL_TRAZO - PISO_DEL_TRAZO), 0.0, 1.0
+    )
+
+    # Donde hay línea se pone el papel de al lado; donde hay rayado se deja el
+    # dibujo. Después se desenfoca: lo que queda es tono sin contornos.
+    limpio = brillo * (1.0 - trazo) + sin_trazo * trazo
+    sombreado = _desenfocar(limpio, max(2.0, ancho / RADIO_DEL_SOMBREADO))
+
+    return trazo, sombreado
 
 
 def _separar_forma_de_trama(razon: np.ndarray, tamano: tuple[int, int]) -> np.ndarray:

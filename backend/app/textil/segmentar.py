@@ -102,6 +102,44 @@ SUAVIZADO_DE_DECISION = 1.0
 #: columnas incluso con radio 7.
 RADIO_CIERRE = 5
 
+#: Saturación a partir de la cual un píxel es FIGURA y no prenda.
+#:
+#: En un figurín hay una persona dibujada, y la persona no es la prenda. Si se
+#: deja dentro del recorte, la tela le pinta la cara, el pelo y los brazos —que
+#: es exactamente lo que pasaba, y lo que hacía que el resultado no fuera «tu
+#: dibujo con otra tela» sino otra cosa.
+#:
+#: Se separan por saturación porque es lo que de verdad los distingue: el lápiz
+#: es gris —acromático— y la piel y el pelo se colorean. Medido en el croquis
+#: de referencia: el vestido tiene saturación 0,020 de mediana y 0,057 en el
+#: percentil 90; la figura está por encima de 0,10. Hay un orden de magnitud
+#: entre las dos cosas, así que el umbral no es delicado.
+#:
+#: La regla clásica de tono de piel en RGB (Kovac) NO sirve aquí: está ajustada
+#: a fotografías y pide |R−G| > 15, que una piel dibujada en beige pálido no
+#: cumple. Detectaba el 0,2% de lo que hay que detectar.
+SATURACION_DE_LA_FIGURA = 0.10
+
+#: Si la «figura» ocupa más que esto del recorte, NO es una figura.
+#:
+#: Es la salvaguarda que hace segura la regla anterior. Una prenda de color
+#: cálido —un lino terracota, una seda burdeos— también es saturada, y sin este
+#: tope el recorte se comería la prenda entera. Si lo detectado es casi todo,
+#: lo que hay es una prenda de color, no una persona, y no se quita nada.
+#:
+#: Medido: el croquis del vestido da 0,05 después de cerrar y rellenar. Una
+#: fotografía de prenda lisa cálida daría cerca de 1.
+MAXIMO_DE_FIGURA = 0.30
+
+#: Radios de la limpieza de la figura, en píxeles de la imagen de trabajo.
+#:
+#: El primero quita el fleco de color que deja el escaneo a lo largo de cada
+#: línea de lápiz —cromatismo del sensor, no dibujo—. El segundo une el pelo
+#: alrededor de la cara para que la cara quede encerrada y el relleno la tape:
+#: la cara es papel en blanco y por sí sola no tiene color que detectar.
+RADIO_LIMPIEZA_DE_FIGURA = 2
+RADIO_UNION_DE_FIGURA = 6
+
 #: Si el fondo se come más que esto, el recorte no vale.
 MAXIMO_BORRADO = 0.92
 
@@ -135,7 +173,9 @@ def segmentar_prenda(imagen: Image.Image) -> Recorte:
     # relleno es una aproximación.
     if imagen.mode in ("RGBA", "LA") and _tiene_transparencia(imagen):
         alfa = imagen.getchannel("A")
-        return _empaquetar(alfa, original)
+        trabajo = _reducir(imagen.convert("RGB"), LADO_DE_TRABAJO)
+        alfa = alfa.resize(trabajo.size, Image.Resampling.BILINEAR)
+        return _empaquetar(_quitar_la_figura(alfa, trabajo), original)
 
     trabajo = _reducir(imagen.convert("RGB"), LADO_DE_TRABAJO)
     px = np.asarray(trabajo, dtype=np.float32)
@@ -193,7 +233,77 @@ def segmentar_prenda(imagen: Image.Image) -> Recorte:
     fuera = _rellenar_desde_el_borde(~solida)
     mascara = Image.fromarray((~fuera).astype(np.uint8) * 255, mode="L")
 
+    # PASO 3. Sacar a la persona dibujada, si la hay.
+    mascara = _quitar_la_figura(mascara, trabajo)
+
     return _empaquetar(mascara, original)
+
+
+def _quitar_la_figura(mascara: Image.Image, trabajo: Image.Image) -> Image.Image:
+    """Quita del recorte la piel y el pelo de la figura, si los hay.
+
+    POR QUÉ HACE FALTA
+    ------------------
+    El recorte contesta «qué no es fondo», y en un figurín lo que no es fondo
+    incluye a la modelo. La tela se le estampaba encima: cara burdeos, pelo
+    burdeos, brazos burdeos. Para un producto que promete enseñar TU dibujo con
+    otra tela, pintarle la cara a la modelo es cambiar el dibujo.
+
+    CÓMO SE DISTINGUE
+    -----------------
+    Por saturación. El lápiz con el que se dibuja la prenda es acromático; la
+    piel y el pelo se colorean. Hay un orden de magnitud entre las dos cosas
+    (0,02 contra 0,10+), así que el umbral no es delicado — ver
+    `SATURACION_DE_LA_FIGURA`.
+
+    Y POR QUÉ NO SE FÍA DE ESO A SECAS
+    ----------------------------------
+    Porque una prenda de color cálido también es saturada. Si lo detectado
+    ocupa casi todo el recorte, lo que hay no es una persona: es una prenda de
+    color, y no se toca nada. La regla solo puede quitar una minoría.
+    """
+    ancho, alto = trabajo.size
+    px = np.asarray(trabajo.convert("RGB"), dtype=np.float32)
+    dentro = np.asarray(mascara.resize((ancho, alto), Image.Resampling.BILINEAR)) > 127
+    if not dentro.any():
+        return mascara
+
+    maximo = px.max(axis=2)
+    minimo = px.min(axis=2)
+    saturacion = (maximo - minimo) / np.maximum(maximo, 1.0)
+
+    # Cálido además de saturado: descarta el azulado que deja una sombra de
+    # lápiz sobre papel blanco, que también sube algo de saturación.
+    figura = (saturacion > SATURACION_DE_LA_FIGURA) & (px[..., 0] > px[..., 2]) & dentro
+
+    lienzo = Image.fromarray(figura.astype(np.uint8) * 255, mode="L")
+
+    # Apertura: quita el fleco de color a lo largo de cada línea de lápiz, que
+    # es del escáner y no del dibujo. Aquí erosionar es seguro —justo al revés
+    # que sobre la máscara de la prenda— porque lo fino ES el ruido.
+    lado = RADIO_LIMPIEZA_DE_FIGURA * 2 + 1
+    lienzo = lienzo.filter(ImageFilter.MinFilter(lado)).filter(ImageFilter.MaxFilter(lado))
+
+    # Cierre: une el pelo por encima de la cara, para que la cara quede
+    # encerrada y el relleno la pueda tapar.
+    lado = RADIO_UNION_DE_FIGURA * 2 + 1
+    lienzo = lienzo.filter(ImageFilter.MaxFilter(lado)).filter(ImageFilter.MinFilter(lado))
+
+    # Tapar lo que la figura encierra: la cara es papel en blanco y no tiene
+    # color propio que detectar, pero está rodeada de pelo.
+    solida = np.asarray(lienzo, dtype=np.uint8) > 127
+    solida = ~_rellenar_desde_el_borde(~solida)
+    solida &= dentro
+
+    proporcion = solida.sum() / max(1, dentro.sum())
+    if proporcion > MAXIMO_DE_FIGURA:
+        # No es una persona: es una prenda de color. Ver MAXIMO_DE_FIGURA.
+        return mascara
+
+    quitada = dentro & ~solida
+    return Image.fromarray(quitada.astype(np.uint8) * 255, mode="L").resize(
+        mascara.size, Image.Resampling.BILINEAR
+    )
 
 
 def _tiene_transparencia(imagen: Image.Image) -> bool:

@@ -105,6 +105,13 @@ python -m scripts.seed_telas
 python -m scripts.seed --con-prendas-reales
 ```
 
+Y si `app/textil/segmentar.py` cambia, hay que recalcular los recortes ya
+guardados — se calculan al subir y no se recalculan solos:
+
+```powershell
+python -m scripts.resegmentar --aplicar
+```
+
 El primero carga 12 telas con su ficha técnica y su mosaico. El segundo carga
 el catálogo del probador con cámara.
 
@@ -229,12 +236,35 @@ que queda se traslada a la tela nueva.
    y la cobertura no se mueve ni una milésima.
 4. **El cierre morfológico sella el túnel pero deja la cavidad.** Hace falta un
    segundo paso que rellene los huecos ya desconectados del borde.
-5. **En un croquis de moda, la máscara se come a la modelo.** El recorte es
-   «todo lo que no es fondo», y en un figurín eso incluye la cara, el pelo y los
-   brazos: salen pintados de la tela. Con una foto de prenda sola no ocurre, así
-   que no se ve hasta que alguien sube un dibujo de verdad. Es la limitación #34
-   y es el caso de uso central.
-6. **La máscara de OpenAI va al revés que la nuestra.** Ahí lo TRANSPARENTE es
+5. **Un boceto SÍ tiene luz, y darlo por supuesto costó el motor entero.**
+   Aquí ponía —escrito en el propio módulo— que un dibujo no tiene sombras. Es
+   verdad de un plano técnico y falso del dibujo que de verdad hace un
+   diseñador: un figurín va sombreado a lápiz, y ese sombreado es dónde caen
+   los pliegues. El motor lo tiraba y lo sustituía por un degradado desde el
+   borde; el usuario lo describió de una frase: «parece que le echara pintura a
+   la prenda». Tenía razón, era relleno plano más viñeta.
+
+   Lo que hay que separar en un dibujo no es forma contra color: es **trazo
+   contra sombreado**, y lo que los distingue es la ANCHURA, no la oscuridad.
+   Separarlos por oscuridad —que era lo que se hacía— mete la sombra cargada en
+   el mismo saco que el contorno, y como el trazo se conserva tal cual, el
+   dibujo entero seguía viéndose en gris por encima de la tela.
+
+   Medido en el croquis de referencia: el rayado del lápiz hunde un 11% respecto
+   al papel de al lado y el contorno un 73%. De ahí que el umbral sea doble
+   (`PISO_DEL_TRAZO`, `PLENO_DEL_TRAZO`) y no simple: con uno solo, un tercio de
+   la prenda se conservaba como tinta.
+6. **En un croquis, el recorte se come a la modelo, y se distingue por
+   saturación.** «Todo lo que no es fondo» incluye la cara, el pelo y los
+   brazos, y la tela se los pintaba. El lápiz con el que se dibuja la prenda es
+   acromático (saturación 0,02 de mediana) y la figura no (0,10+): hay un orden
+   de magnitud, así que el umbral no es delicado. La regla clásica de tono de
+   piel en RGB (Kovac) NO vale, está ajustada a fotografías y detectaba el 0,2%.
+
+   Lleva una salvaguarda imprescindible: si lo detectado ocupa más del 30% del
+   recorte, no es una persona, es una prenda de color cálido, y no se quita
+   nada. Medido: el croquis da 0,05; la fotografía de la camiseta, 0,00.
+7. **La máscara de OpenAI va al revés que la nuestra.** Ahí lo TRANSPARENTE es
    lo que se edita. Mandarla sin invertir da una imagen plausible y equivocada.
 
 ### Los parámetros están medidos, no elegidos a ojo
@@ -253,20 +283,39 @@ valor por defecto del repositorio es `none`, porque que clonarlo empiece a
 gastar dinero de alguien sería una trampa. Un valor desconocido **hace fallar el
 procesado**, nunca cae al motor local en silencio.
 
+### Qué se le manda al modelo, que es la decisión que más pesa
+
+**El retexturizado, no el original.** Una imagen que ya tiene el diseño del
+usuario y ya tiene la tela puesta, pidiéndole solo que la haga fotográfica. La
+primera versión mandaba el boceto crudo y pedía «un vestido de tafetán»: a eso
+un modelo solo puede responder inventándose un vestido, y se lo inventaba.
+
+**Y la salida se recompone contra el original a través de la máscara.**
+`images.edit` **no** es un parcheo: regenera la imagen entera, también fuera de
+la máscara. Por eso cambiaba el fondo aunque la máscara fuera perfecta. Con la
+composición, todo lo que no es prenda —fondo, cara, pelo— queda idéntico al
+original píxel a píxel. Es lo único que lo garantiza.
+
 ### Lo que se midió con llamadas reales
 
-Se probó el camino generativo con un boceto de camisa que tenía cartera de
-botones, cinco botones, bolsillo de pecho, cuello camisero y costuras de manga.
+Cinco llamadas, dos prendas, los dos modelos. La conclusión no se movió.
 
-| Motor | Tiempo | Coste | Conserva el diseño |
-|---|---|---|---|
-| `gpt-image-1-mini` | 47 s | 7.880 tokens | **No** — devolvió una túnica lisa |
-| `gpt-image-1` + `input_fidelity=high` | 46 s | 12.935 tokens | **No** — igual de genérica |
-| Retexturizado de boceto | 0,32 s | gratis | **Sí, entero** |
+| # | Motor | Partiendo de | Tiempo | Coste | Conserva el diseño |
+|---|---|---|---|---|---|
+| 1 | `gpt-image-1-mini` + fidelidad alta | boceto crudo | — | 0 | 400: el mini **no admite** el parámetro |
+| 2 | `gpt-image-1-mini` | boceto crudo | 47 s | 7.880 | **No** — túnica lisa |
+| 3 | `gpt-image-1` + fidelidad alta | boceto crudo | 46 s | 12.935 | **No** |
+| 4 | `gpt-image-1-mini` | **retexturizado** | 24 s | 3.276 | **No** — manga larga y cuello barco |
+| 5 | `gpt-image-1` + fidelidad alta | **retexturizado** | 52 s | 12.987 | **No** — igual |
+| — | Retexturizado de boceto | — | 0,5 s | gratis | **Sí, entero** |
 
-`input_fidelity="high"` existe justo para evitarlo, **no lo admite el modelo
-mini** (400 con `invalid_input_fidelity_model`), y con el completo tampoco
-bastó.
+Las dos últimas son las importantes: **aunque se le dé la imagen ya hecha y solo
+se le pida pulir, el modelo rediseña.** Con el modelo grande y con
+`input_fidelity="high"`, que es el parámetro que existe justo para evitarlo.
+
+Lo que sí resolvió el trabajo: de la 4 en adelante, el fondo, la cara y el pelo
+son los del original y no los toca nadie. La composición funciona; lo que no se
+puede es confiarle el interior de la prenda.
 
 **Conclusión, y es una decisión de producto:** el camino por defecto es
 siempre el determinista, también para bocetos. La IA es **opt-in** y sirve para
