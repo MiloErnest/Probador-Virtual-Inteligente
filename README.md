@@ -1,13 +1,29 @@
-# Probador Virtual
+# Probador Virtual de Telas
 
-Un probador de ropa que funciona con la cámara del navegador. Eliges una prenda
-del catálogo, te pones delante de la cámara y la prenda se coloca sobre tu
-cuerpo, ajustada a tus medidas. Proyecto universitario.
+Una plataforma web para **ver una prenda con distintas telas antes de comprar el
+metraje**. Subes la fotografía de una prenda —o el boceto de una que todavía no
+existe—, le pruebas telas del catálogo y las comparas lado a lado. Proyecto
+universitario.
 
-**No usa ninguna IA generativa.** La detección del cuerpo es MediaPipe Pose
-compilado a WebAssembly y corre entera en tu navegador: la imagen de la cámara
-no sale de tu equipo. El backend solo sirve el catálogo, las cuentas y las
-fotografías de las prendas.
+Está pensado para tiendas y distribuidores de telas y sus clientes: diseñadores,
+modistas y talleres de confección, que hoy tienen que pedir muestras físicas y
+probarlas una por una.
+
+**Dos motores, y el reparto es el fondo del asunto:**
+
+- Una **fotografía** ya trae los pliegues y las sombras reales. El motor
+  determinista los reutiliza: la tela nueva cae por donde caía la original. Es
+  instantáneo, gratis, y da siempre el mismo resultado — que es lo único que
+  hace honesta una comparación entre cuatro telas.
+- Un **boceto** no tiene sombras. Se rellena conservando el trazo intacto, para
+  que siga siendo tu diseño.
+- La **IA generativa** (OpenAI) está integrada y es opcional: convierte un
+  boceto en una imagen fotorrealista. Se pide a conciencia, porque cuesta dinero
+  y porque reinterpreta el diseño — está medido, ver §6h.
+
+**Funcionalidad adicional:** un probador con cámara que superpone prendas sobre
+el cuerpo en vivo, con MediaPipe Pose corriendo en el navegador. La imagen de la
+cámara no sale de tu equipo.
 
 **Estado actual: funciona de punta a punta.**
 Ver [PROJECT_STATUS.md](PROJECT_STATUS.md) para el detalle de lo que funciona y
@@ -407,48 +423,110 @@ docker compose --profile full down
 | Ruta | Que hace | Acceso |
 |---|---|---|
 | `/` | Portada: que hace la aplicacion y hasta donde llega | Publica |
-| `/catalogo` | Prendas disponibles, filtro por categoria | Publica |
-| `/probador` | Camara + prenda superpuesta y ajustada a tu cuerpo | Requiere cuenta |
+| `/telas` | Catalogo de telas, con ficha tecnica y filtro por dibujo | Publica |
+| `/taller` | Tus prendas y bocetos. Subir, ver, borrar | Requiere cuenta |
+| `/taller/:id` | **Probar telas y compararlas.** Es la pantalla del producto | Requiere cuenta |
+| `/probador` | Probador con camara (funcionalidad adicional) | Requiere cuenta |
 | `/entrar`, `/registro` | Acceso y alta | Publicas |
 | `/perfil` | Tu cuenta y estado del sistema | Requiere cuenta |
 
-Desde el catalogo, cada prenda enlaza al probador con ella ya elegida
-(`/probador?prenda=12`).
-
-**La API entera son cuatro recursos:**
+**La API:**
 
 | Endpoint | Que hace | Acceso |
 |---|---|---|
 | `GET /api/health` | Estado del servicio y de la base de datos | Publico |
-| `GET /api/garments` | Catalogo, con filtro por categoria | Publico |
-| `GET /api/garments/{id}` | Una prenda | Publico |
-| `POST /api/garments` | Alta de prenda | Token |
-| `POST /api/garments/{id}/image` | Subir o reemplazar su fotografia | Token |
-| `POST /api/users` | Registro | Publico |
-| `GET /api/users/{id}` | Tu cuenta (la de otro responde 404) | Token |
-| `POST /api/auth/login` | Iniciar sesion, devuelve un JWT | Publico |
-| `GET /api/auth/me` | Quien soy segun el token | Token |
+| `GET /api/fabrics` | Catalogo de telas. `?only_probable=true` filtra las que tienen mosaico | Publico |
+| `GET /api/fabrics/{id}` | Ficha de una tela | Publico |
+| `POST /api/fabrics` | Dar de alta una tela | Token |
+| `PATCH /api/fabrics/{id}` | Editar la ficha | Token |
+| `POST /api/fabrics/{id}/photo` | Subir la foto de catalogo | Token |
+| `POST /api/fabrics/{id}/texture` | Subir el mosaico que se estampa | Token |
+| `GET /api/garment-uploads` | Tus prendas | Token |
+| `POST /api/garment-uploads` | Subir una prenda o boceto (multipart) | Token |
+| `DELETE /api/garment-uploads/{id}` | Borrar prenda y archivos | Token |
+| `GET /api/trials` | Tus pruebas. `?garment_upload_id=` para comparar | Token |
+| `POST /api/trials` | Probar una tela (202 + sondeo) | Token |
+| `DELETE /api/trials/{id}` | Borrar una prueba | Token |
+| `GET /api/garments` | Catalogo del probador con camara | Publico |
 
 ---
 
-## 6g. Como se coloca la prenda
+## 6g. Como se estampa una tela sobre una prenda
 
-Es la parte con matematica, y vive entera en `frontend/src/probador/`.
+Es la parte con matematica, y vive en `backend/app/textil/`.
 
-1. **MediaPipe Pose** devuelve, por fotograma, 33 puntos del cuerpo y una
-   mascara que dice que pixeles son la persona.
-2. **`cuerpo.ts`** convierte esos puntos en medidas. Aplica la correccion
-   anatomica: los puntos del modelo estan en la ARTICULACION del hombro, por
-   dentro del cuerpo, no en su borde exterior.
-3. **`vestir.ts`** decide donde va la prenda (segun su categoria), cuanto mide
-   de ancho (igualando su franja de ajuste al cuerpo) y como se deforma: se
-   parte en 28 franjas horizontales y cada una sigue el eje del cuerpo.
-4. El **tejido** decide cuanto se cine la prenda al contorno real. Un cuero
-   mantiene su forma; un punto fino se pega.
+**La idea.** Una fotografia ya contiene lo dificil: donde hay un pliegue, donde
+da la luz, donde cae una sombra. Esa informacion depende de la FORMA de la
+prenda, no de su color, asi que se puede separar y reutilizar.
 
-**Lo que NO hace:** simular la tela. No hay pliegues, ni sombras propias, ni
-peso, ni oclusion (si pones la mano delante del pecho, la prenda te la tapa).
-Es una vista previa de corte y proporcion.
+Se separa dividiendo: se mide el brillo tipico de la prenda —su color propio— y
+se divide el brillo de cada pixel entre el. Lo que queda vale 1 donde la luz es
+normal, menos en un pliegue y mas en un brillo, **y ya no depende del color
+original**. Esa razon es la que se traslada a la tela nueva.
+
+**Los pasos:**
+
+1. `segmentar.py` recorta la prenda del fondo. Se hace UNA vez al subir y se
+   guarda: se necesita identico para cada tela que se pruebe.
+2. `retexturizar.py` calcula la razon de luz, borra la trama del tejido viejo
+   conservando las costuras, y multiplica la tela nueva por esa razon — en luz
+   lineal, no en sRGB.
+3. El estampado se dobla con los pliegues, desplazando las coordenadas de la
+   textura segun el gradiente del modelado.
+
+**Lo que NO hace:** cambiar como CAE la tela. Si la foto es de un vestido
+fluido, una lona rigida caera como el vestido, porque los pliegues son los de la
+foto. Simular el tejido es otro problema y bastante mayor.
+
+---
+
+## 6h. La IA generativa: donde esta y por que es opcional
+
+Esta integrada con la **API de OpenAI** y se activa en `backend/.env`:
+
+```
+AI_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+OPENAI_IMAGE_MODEL=gpt-image-1-mini
+```
+
+El valor por defecto del repositorio es `AI_PROVIDER=none`, a proposito: que
+clonarlo empiece a gastar dinero de alguien seria una trampa. Un valor
+desconocido **hace fallar el procesado**, nunca cae al motor local en silencio.
+
+**CUIDADO:** una clave valida SIN SALDO falla igual, con un 429 cuyo mensaje no
+dice que falte dinero. Hay que anadir fondos en Settings -> Billing, y conviene
+poner un limite mensual en Settings -> Limits.
+
+### Por que es opcional y no el motor principal
+
+Se probo contra la API real con un boceto de camisa que tenia cartera de
+botones, cinco botones, bolsillo de pecho, cuello camisero y costuras de manga:
+
+| Motor | Tiempo | Coste | Conserva el diseno |
+|---|---|---|---|
+| `gpt-image-1-mini` | 47 s | 7.880 tokens | **No** — devolvio una tunica lisa |
+| `gpt-image-1` + `input_fidelity=high` | 46 s | 12.935 tokens | **No** — igual de generica |
+| Retexturizado de boceto | 0,32 s | gratis | **Si, entero** |
+
+`input_fidelity="high"` existe justo para evitarlo, el modelo mini no lo admite,
+y con el completo tampoco basto.
+
+Para un producto que promete «mira TU diseno con otra tela», un motor que
+redibuja el diseno esta haciendo lo contrario de lo que se le pide. Asi que el
+camino por defecto es el determinista, y la IA se pide a conciencia para lo que
+si sabe hacer: convertir un dibujo en algo fotorrealista.
+
+### Control de gasto
+
+1. El limite mensual del panel de OpenAI.
+2. `AI_TRIALS_PER_USER_PER_DAY` (20 por defecto), en ventana movil de 24 h.
+3. **Las pruebas automatizadas no pueden gastar nunca**: un fixture `autouse`
+   fuerza `AI_PROVIDER="none"` en toda la suite.
+
+Y **sin reintentos automaticos**, con una excepcion documentada: si la API
+rechaza `input_fidelity` con un 400, se reintenta sin ese parametro. Un 400 se
+rechaza antes de generar imagen, asi que no ha costado nada.
 
 ---
 
@@ -463,6 +541,7 @@ backend/
     schemas/      Contratos de la API (Pydantic)
     repositories/ Acceso a datos
     services/     Lógica de negocio + almacenamiento de archivos
+    textil/       El motor: recorte, retexturizado y proveedor generativo
   alembic/        Migraciones de esquema
   scripts/        Utilidades (seed)
   storage/        Imágenes subidas (fuera de git)
@@ -476,7 +555,20 @@ frontend/
     services/     Cliente HTTP y llamadas a la API
     hooks/        Lógica de React reutilizable
     types/        Espejo del contrato de la API
-    probador/     El probador: cámara, medidas del cuerpo y encaje
+    probador/     Probador con cámara: pose, medidas del cuerpo y encaje
+```
+
+El motor textil, que es donde está la matemática del producto:
+
+```
+backend/app/textil/
+  segmentar.py         Qué píxeles son prenda. Una vez por imagen subida.
+  retexturizar.py      Dos caminos: fotografía (reutiliza su luz) y boceto
+                       (rellena conservando el trazo).
+  filtros.py           Desenfoque y reescalado en coma flotante.
+  provider.py          El contrato y el selector de motor.
+  openai_provider.py   El motor generativo.
+  errores.py           `ErrorDeMotor`: el motor no conoce la capa de servicios.
 ```
 
 El probador es el único sitio con algo de complejidad, y está partido en

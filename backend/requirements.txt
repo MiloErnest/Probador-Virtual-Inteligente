@@ -1,9 +1,5 @@
 # Dependencias de ejecución.
 # Versiones fijadas para que el entorno sea reproducible entre máquinas.
-#
-# NO hay ninguna librería de IA. El probador corre entero en el navegador
-# (MediaPipe Pose compilado a WebAssembly); el backend solo sirve el catálogo,
-# las cuentas y las imágenes de las prendas.
 
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
@@ -31,3 +27,15 @@ PyJWT==2.13.0
 # imagen, abriéndolo, en vez de fiarse de la cabecera Content-Type que envía
 # el cliente. También dibuja las siluetas del catálogo de ejemplo.
 Pillow==12.3.0
+
+# Cálculo sobre imágenes: el motor textil trabaja con matrices de píxeles, y en
+# Python puro una sola prueba tardaría minutos en vez de medio segundo. Aquí
+# hace el trabajo de verdad, no es una comodidad.
+numpy==2.5.3
+
+# Cliente oficial de la API de OpenAI. Solo se usa con AI_PROVIDER=openai, pero
+# se instala siempre para que el import no dependa de la configuración.
+#
+# CUIDADO: genera imágenes de pago. El valor por defecto es AI_PROVIDER=none
+# precisamente para que clonar el repositorio no empiece a gastar dinero.
+openai==3.15.0

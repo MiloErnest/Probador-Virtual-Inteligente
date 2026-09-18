@@ -1,13 +1,13 @@
 /**
  * Portada.
  *
- * Antes era una hoja de ruta de cinco fases con cuatro de ellas en
- * "planificado". Eso describía el plan de trabajo, no el producto: quien abría
- * la aplicación se encontraba un índice de cosas que no podía hacer.
+ * Cuenta el producto del Product Vision Board: una herramienta para que
+ * diseñadores, modistas y talleres vean su prenda con distintas telas antes de
+ * comprar el metraje. El usuario no es quien se pone la ropa: es quien tiene
+ * que elegir la tela.
  *
- * Ahora enseña lo único que hace, y lo enseña con las prendas reales del
- * catálogo. La franja de fotos no es decoración: es la prueba de que el
- * backend responde y de que hay ropa que probarse.
+ * La franja de telas no es decoración, es la prueba de que el backend responde
+ * y de que hay catálogo. Y enseña el tejido de cerca, que es lo que se compra.
  */
 
 import { useCallback } from 'react'
@@ -15,81 +15,86 @@ import { Link } from 'react-router-dom'
 
 import { useAuth } from '@/auth/AuthContext'
 import { useApi } from '@/hooks/useApi'
-import { fetchGarments } from '@/services/endpoints'
+import { fetchFabrics } from '@/services/endpoints'
 
 const PASOS = [
   {
-    titulo: 'Elige una prenda',
+    titulo: 'Sube tu prenda',
     detalle:
-      'Del catálogo. Se recorta su fondo en tu navegador para poder superponerla sin el rectángulo de la foto.',
+      'La fotografía de una prenda que ya existe, o el boceto de una que todavía no. Se recorta del fondo automáticamente.',
   },
   {
-    titulo: 'Ponte delante de la cámara',
+    titulo: 'Elige telas del catálogo',
     detalle:
-      'Un modelo de detección de pose localiza tus hombros, caderas y piernas, y mide tu silueta real.',
+      'Con su ficha real: composición, gramaje, ancho del rollo y precio por metro. Lo que hace falta para decidir.',
   },
   {
-    titulo: 'La prenda se adapta',
+    titulo: 'Compara y decide',
     detalle:
-      'Se parte en franjas y cada una sigue tu cuerpo: se estrecha en la cintura, gira si te inclinas y mide lo que tiene que medir.',
+      'Todas las opciones a la vez, sobre tu diseño. Sin pedir muestras, sin esperar días y sin gastar tela.',
   },
 ]
 
 export default function HomePage() {
   const { isAuthenticated } = useAuth()
 
-  const fetcher = useCallback((signal: AbortSignal) => fetchGarments({ signal }), [])
+  const fetcher = useCallback(
+    (signal: AbortSignal) => fetchFabrics({ onlyProbable: true, signal }),
+    [],
+  )
   const { data } = useApi(fetcher)
-  const conFoto = (data ?? []).filter((g) => g.image_url !== null).slice(0, 6)
+  const telas = (data ?? []).slice(0, 8)
 
   return (
     <div className="space-y-20 sm:space-y-28">
       <section className="wrap">
-        <p className="rotulo">Vestidor inteligente</p>
+        <p className="rotulo">Prueba virtual de telas</p>
 
-        <h1 className="mt-5 max-w-[13ch] font-display text-display">
-          Pruébate la ropa sin quitarte la que llevas.
+        <h1 className="mt-5 max-w-[15ch] font-display text-display">
+          Mira tu diseño con otra tela. Sin cortar ni un metro.
         </h1>
 
         <div className="mt-8 flex flex-col gap-8 border-t border-ink-10 pt-8 sm:flex-row sm:items-start sm:justify-between">
           <p className="max-w-lg text-base leading-relaxed text-ink-80">
-            Abre la cámara, elige una prenda del catálogo y mírate con ella puesta. Todo ocurre
-            dentro de tu navegador: tu imagen no se envía a ningún servidor ni se guarda en
-            ninguna parte.
+            Hoy, para saber cómo queda una prenda en una tela hay que pedir muestras y
+            probarlas una por una. Eso cuesta tiempo, dinero y material. Aquí subes tu
+            prenda, eliges telas del catálogo y las comparas en minutos.
           </p>
 
           <div className="flex shrink-0 flex-wrap gap-3">
-            <Link to={isAuthenticated ? '/probador' : '/entrar'} className="btn-primary">
-              Abrir el probador
+            <Link to={isAuthenticated ? '/taller' : '/entrar'} className="btn-primary">
+              {isAuthenticated ? 'Ir a mi taller' : 'Empezar'}
             </Link>
-            <Link to="/catalogo" className="btn-ghost">
-              Ver el catálogo
+            <Link to="/telas" className="btn-ghost">
+              Ver las telas
             </Link>
           </div>
         </div>
       </section>
 
-      {conFoto.length > 0 && (
-        // Se sale del contenedor a propósito y se desplaza de lado en móvil:
-        // una fila de ropa cortada por el borde invita a seguir mirando, y
-        // apilarla en vertical rompería el ritmo de la portada.
-        <section aria-label="Prendas del catálogo" className="-mt-6 sm:-mt-10">
+      {telas.length > 0 && (
+        <section aria-label="Telas del catálogo" className="-mt-6 sm:-mt-10">
           <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto px-5 pb-2 sm:gap-4 sm:px-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {conFoto.map((prenda) => (
+            {telas.map((tela) => (
               <Link
-                key={prenda.id}
-                to="/catalogo"
-                className="group w-[46%] shrink-0 snap-start sm:w-[30%] lg:w-[18%]"
+                key={tela.id}
+                to="/telas"
+                className="group w-[40%] shrink-0 snap-start sm:w-[24%] lg:w-[15%]"
               >
-                <div className="aspect-[3/4] overflow-hidden bg-bone">
-                  <img
-                    src={prenda.image_url as string}
-                    alt={prenda.name}
-                    loading="lazy"
-                    className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
-                  />
+                <div
+                  className="aspect-square overflow-hidden rounded border border-ink-10"
+                  style={{ backgroundColor: tela.color_hex ?? '#f7f7f5' }}
+                >
+                  {tela.texture_url && (
+                    <img
+                      src={tela.texture_url}
+                      alt={tela.name}
+                      loading="lazy"
+                      className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-110"
+                    />
+                  )}
                 </div>
-                <p className="mt-2 truncate text-xs text-ink-60">{prenda.name}</p>
+                <p className="mt-2 truncate text-xs text-ink-60">{tela.name}</p>
               </Link>
             ))}
           </div>
@@ -119,24 +124,33 @@ export default function HomePage() {
       <section className="wrap">
         <div className="grid gap-10 border-t border-ink-10 pt-10 sm:grid-cols-[1fr_1.4fr] sm:gap-16">
           <div>
-            <p className="rotulo">Hasta dónde llega</p>
-            <h2 className="mt-4 font-display text-titulo">Lo que ves es una superposición.</h2>
+            <p className="rotulo">Cómo se hace</p>
+            <h2 className="mt-4 font-display text-titulo">
+              Los pliegues son los de tu foto.
+            </h2>
           </div>
 
           <div className="space-y-5 text-sm leading-relaxed text-ink-80">
             <p>
-              La prenda se deforma para seguir tu cuerpo, pero no se simula la tela: no hay
-              pliegues, ni sombras propias, ni peso. Una camisa no ondea. Es una vista previa de
-              corte y proporción, no una fotografía de cómo te quedaría.
+              Una fotografía ya contiene lo difícil: dónde hay un pliegue, dónde da la luz,
+              dónde cae una sombra. Esa información depende de la <em>forma</em> de la
+              prenda, no de su color, así que se puede separar y reutilizar con otra tela.
             </p>
             <p>
-              El tejido de cada prenda —algodón, cuero, punto— sí cambia algo: cuánto se ciñe al
-              contorno. Un cuero mantiene su forma; un punto fino se pega. Es un ajuste de
-              silueta, y es lo más honesto que se puede hacer sin simular el material.
+              Por eso el resultado no es una tela pegada encima: cae por donde caía la
+              original, respeta las costuras y los botones, y el estampado se dobla con los
+              pliegues. Es instantáneo, no cuesta nada, y sale idéntico cada vez — que es lo
+              único que hace honesta una comparación entre cuatro telas.
+            </p>
+            <p>
+              <strong className="font-medium">Con un boceto es otra cosa.</strong> Un dibujo
+              de líneas no tiene sombras que reutilizar: el volumen y la caída hay que
+              inventarlos, y ahí sí entra la inteligencia artificial generativa.
             </p>
             <p className="text-ink-60">
-              La simulación de telas y la caída real del tejido son el paso siguiente, y llevan
-              un motor 3D detrás.
+              Lo que no hace, y conviene saberlo: no cambia cómo <em>cae</em> la tela. Si la
+              foto es de un vestido fluido, una lona rígida caerá como el vestido. Simular el
+              tejido es otro problema, y bastante mayor.
             </p>
           </div>
         </div>

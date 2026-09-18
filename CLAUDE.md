@@ -3,21 +3,24 @@
 Léeme antes de tocar nada. Recoge decisiones y restricciones que no son
 evidentes leyendo el código, y evita repetir errores ya cometidos.
 
-**Qué es:** un probador de ropa que funciona con la cámara del navegador.
-Eliges una prenda del catálogo, te pones delante de la cámara y la prenda se
-coloca sobre tu cuerpo, ajustada a tus medidas. Proyecto universitario.
+**Qué es:** una plataforma web de **prueba virtual de telas**. Un diseñador,
+una modista o un taller sube la fotografía de una prenda —o el boceto de una
+que todavía no existe—, le prueba telas del catálogo y las compara lado a lado,
+sin pedir muestras ni gastar metraje. Proyecto universitario.
 
-**Estado:** funciona de punta a punta y **no usa ninguna IA generativa**. La
-detección del cuerpo es MediaPipe Pose corriendo en WebAssembly dentro del
-navegador; el backend solo sirve el catálogo, las cuentas y las imágenes.
+El producto lo define el **Product Vision Board** que aportó el usuario
+(`Product Vision Board - Probador Virtual de Telas.docx`). Sus cinco
+características son el alcance: catálogo digital de telas, carga del boceto o
+modelo, generación de la imagen con la tela aplicada, comparación lado a lado,
+y galería e historial.
 
-**El 2026-09-14 se retiró toda la IA generativa del proyecto.** Fuera el
-probador por foto con Gemini, el generador de diseños por texto y el análisis
-corporal, con sus tablas, sus rutas y sus pantallas. Estaba construido y
-funcionaba, pero con proveedores simulados: producía vistas previas que no
-convencían, y el problema real —que la prenda no encajaba bien sobre el
-cuerpo— seguía sin resolverse porque el esfuerzo se repartía entre cinco
-fases. Ahora el proyecto hace una cosa.
+**El usuario del producto NO es quien se pone la ropa.** Es quien tiene que
+elegir la tela. Eso invierte el catálogo: el catálogo es de **telas**, y las
+prendas las pone el usuario.
+
+**Funcionalidad adicional:** un probador con cámara que superpone prendas sobre
+el cuerpo en vivo. Es de otra etapa, funciona, y se mantiene — pero no es el
+producto y no aparece en el Vision Board.
 
 Ver [PROJECT_STATUS.md](PROJECT_STATUS.md) para el detalle vivo: qué funciona,
 qué falta, errores conocidos, decisiones técnicas y próximos pasos.
@@ -67,9 +70,6 @@ sobrevive: los acentos van bien.
 .\start-frontend.ps1
 ```
 
-Resuelven el `PATH` y las rutas solos, funcionan desde cualquier carpeta y no
-requieren activar el entorno virtual.
-
 ### Versiones instaladas y verificadas
 
 Python 3.12.10 · Node 24.19.0 / npm 11.17.0 · PostgreSQL 16.15-3 · gh 2.100.0
@@ -78,53 +78,41 @@ Python 3.12.10 · Node 24.19.0 / npm 11.17.0 · PostgreSQL 16.15-3 · gh 2.100.0
 ### Base de datos local
 
 Base `vfit`, rol de aplicación `vfit` / `vfit_dev_password`. Son las mismas
-credenciales que `docker-compose.yml`, a propósito: el `DATABASE_URL` sirve igual
-con PostgreSQL nativo o con Docker. El superusuario `postgres` quedó con la
-contraseña por defecto `postgres` (instalación silenciosa de winget).
+credenciales que `docker-compose.yml`, a propósito.
 
 Ejecutar pruebas: `pytest` desde `backend/` con el venv activo. Usan SQLite en
-memoria — **no necesitan PostgreSQL levantado**. Son 53 y tardan unos 24 s;
-la lentitud es bcrypt, que es lento a propósito.
+memoria — **no necesitan PostgreSQL levantado**. Son 71 y tardan unos 35 s.
 
-**El esquema lo gobierna Alembic, no `create_all`.** La aplicación ya no crea
-tablas al arrancar. Sobre una base nueva:
+**El esquema lo gobierna Alembic, no `create_all`.** Sobre una base nueva:
 
 ```powershell
 alembic upgrade head
 ```
 
-Tras tocar cualquier archivo de `app/models/`, comprobar si hace falta migración:
+Tras tocar cualquier archivo de `app/models/`, comprobar con `alembic check` y,
+si hace falta, `alembic revision --autogenerate -m "descripcion"`. Revisa
+siempre el archivo generado: autogenerate ve tablas y columnas, no intenciones.
+
+Cuenta de desarrollo: `dev@example.com` / `vfit-dev-1234`.
+
+Datos de ejemplo:
 
 ```powershell
-alembic check
+python -m scripts.seed_telas
 ```
-
-Y si la hace:
-
-```powershell
-alembic revision --autogenerate -m "descripcion"
-```
-
-Revisa siempre el archivo generado. Autogenerate ve tablas y columnas, no
-intenciones: lo que para él es "columna nueva" puede ser un renombrado que debe
-conservar los datos.
-
-Cuenta de desarrollo ya creada en la base local: `dev@example.com` /
-`vfit-dev-1234`.
-
-Cargar el catálogo de ejemplo con las fotografías reales del repositorio:
 
 ```powershell
 python -m scripts.seed --con-prendas-reales
 ```
+
+El primero carga 12 telas con su ficha técnica y su mosaico. El segundo carga
+el catálogo del probador con cámara.
 
 ---
 
 ## Cómo trabajar
 
 **Git: commits directos a `main`. NO abrir pull requests.**
-El usuario lo eligió explícitamente: trabaja solo y los PR sin revisor solo
-añaden ceremonia. Hay dos remotos, ambos suyos:
 
 ```powershell
 git push                      # origin  (claudeplus09)
@@ -134,41 +122,33 @@ git push                      # origin  (claudeplus09)
 git push institucion main     # institucion (MiloErnest)
 ```
 
-**Un chat por etapa.** Cada etapa del proyecto se desarrolla en una conversación
-nueva. Por eso este archivo y `PROJECT_STATUS.md` tienen que quedar siempre al
-día: son el único puente entre sesiones.
+**Un chat por etapa.** Por eso este archivo y `PROJECT_STATUS.md` tienen que
+quedar siempre al día: son el único puente entre sesiones.
 
 **Reglas que pidió el usuario:**
 
 1. Trabajar por etapas pequeñas; cada una deja el sistema ejecutable.
 2. Explicar qué se va a construir y por qué **antes** de crear archivos.
 3. No inventar APIs, endpoints ni librerías. Verificar que existen.
-4. Al añadir una dependencia: nombre, versión, instalación, propósito y riesgos
-   de compatibilidad.
+4. Al añadir una dependencia: nombre, versión, instalación, propósito y riesgos.
 5. Ante varias alternativas: comparar brevemente y elegir una.
 6. No sustituir algo que funciona por una arquitectura más compleja sin motivo.
 7. Secretos siempre por variables de entorno.
 8. Archivos completos y ejecutables, no fragmentos.
-9. Mantener al día en `PROJECT_STATUS.md`: terminado, pendiente, errores
-   conocidos, decisiones y próximos pasos.
-10. **Es una aplicación web, no se empaqueta en un ejecutable.** Se planteó el
-    2026-09-06 y el usuario lo descartó. Implicación: PostgreSQL se queda como
-    base de datos. No proponer SQLite, PyInstaller, Electron ni Tauri salvo que
-    el usuario lo pida.
+9. Mantener al día `PROJECT_STATUS.md`.
+10. **Es una aplicación web, no se empaqueta en un ejecutable.**
 11. **No añadir infraestructura "por si acaso"** (Redis, Celery, Kubernetes,
-    microservicios, S3, pgvector, GPU serverless). Solo cuando exista una
-    necesidad concreta y demostrada.
-12. **No reintroducir IA generativa** sin que el usuario lo pida. Se retiró a
-    conciencia el 2026-09-14. Si vuelve, vuelve como decisión suya.
+    microservicios, S3). Solo con necesidad demostrada.
 
-**Verificar antes de afirmar.** Nada se da por funcionando hasta ejecutarlo. En
-la Etapa 1, tres bugs (`CORS_ORIGINS`, `tsconfig` con project references, y el
-`.gitignore` de `storage/`) solo aparecieron al ejecutar de verdad.
+**Verificar antes de afirmar.** Nada se da por funcionando hasta ejecutarlo.
 
 **Nunca escribir contraseñas en un formulario, ni siquiera las de desarrollo.**
-Para revisar una pantalla protegida, el asistente abre la ruta temporalmente
-fuera de `RequireAuth`, hace la captura y la devuelve a su sitio comprobándolo
-después. Así se verifica el diseño sin tocar credenciales.
+Para revisar una pantalla protegida, abrir la ruta temporalmente fuera de
+`RequireAuth`, hacer la captura y devolverla a su sitio comprobándolo después.
+
+**Y nunca pegar la clave de API en el chat.** Ocurrió una vez y hubo que
+revocarla. El código la lee de `OPENAI_API_KEY` en `backend/.env`, que está en
+`.gitignore`; el asistente no necesita verla nunca.
 
 ---
 
@@ -178,114 +158,161 @@ Monolito modular. Una app FastAPI, un proceso, una base de datos.
 
 ```
 Ruta (HTTP) → Servicio (negocio) → Repositorio (SQL) → Modelo
+                    ↓
+              app/textil/  (el motor, por debajo)
 ```
 
 - Las rutas no ejecutan SQL. Solo llaman a servicios.
 - Los repositorios no conocen HTTP ni lanzan `HTTPException`.
 - Los servicios no conocen FastAPI. Lanzan errores de dominio
   (`app/services/exceptions.py`) que las rutas traducen a códigos HTTP.
+- **El motor no conoce los servicios.** Lanza `ErrorDeMotor`
+  (`app/textil/errores.py`) y el servicio lo traduce. Al principio lanzaba
+  `ValidationError` directamente y eso creó un ciclo de importación que solo
+  reventaba si algo importaba el motor antes que `app.main` — el ciclo era el
+  síntoma; el problema era que una capa de abajo conocía la de arriba.
 
-**Costuras deliberadas** (puntos preparados para cambiar de implementación):
+**Costuras deliberadas:**
 
-- `app/services/storage.py` — protocolo `Storage`. La BD guarda `image_key`
-  (clave opaca), la API expone `image_url`. Migrar a S3/R2 no obliga a reescribir
-  datos.
-- `app/api/deps.py::get_current_user` — **único** punto que convierte un token en
-  un usuario. Declararlo en una ruta es lo que la protege. Ninguna ruta debe
-  decodificar un token por su cuenta.
+- `app/services/storage.py` — protocolo `Storage`. La BD guarda claves opacas,
+  la API expone URLs. Migrar a S3/R2 no obliga a reescribir datos.
+- `app/api/deps.py::get_current_user` — **único** punto que convierte un token
+  en un usuario.
+- `app/textil/provider.py::motor_para` — **único** punto que decide qué motor
+  corre.
 
-### El probador vive entero en el navegador
+### Dos catálogos, dos productos
 
-`frontend/src/probador/`, cuatro módulos con una responsabilidad cada uno:
-
-| Archivo | Qué hace |
+| Tabla | Qué es |
 |---|---|
-| `usePoseScanner.ts` | Abre la cámara y ejecuta MediaPipe Pose. Devuelve 33 puntos del cuerpo y la máscara de silueta, por fotograma. |
-| `cuerpo.ts` | Convierte esos puntos en medidas de pantalla, las suaviza entre fotogramas y mide el contorno real sobre la máscara. |
-| `vestir.ts` | Decide dónde va la prenda, cuánto mide y cómo se deforma. Es donde está la matemática del encaje. |
-| `dibujo.ts` | Silueta, esqueleto y la máscara engordada con la que se recorta la prenda. |
-
-**Las tres decisiones que gobiernan el encaje**, y el orden importa:
-
-1. **Dónde empieza y acaba la prenda** — lo dice su categoría (`TRAMOS` en
-   `vestir.ts`). Una camiseta cuelga de los hombros; un pantalón, de la cintura.
-2. **Dónde se mide para escalarla** — la franja donde esa prenda *ajusta*
-   (`referencia`). Fue el primer error de esta versión: escalando por el punto
-   más ancho, el tamaño de una camiseta lo decidían las mangas, y salía pequeña
-   y corta. Un pantalón ajusta en la cadera, un vestido en el cuerpo, una
-   camiseta en el torso por debajo de las mangas.
-3. **Cuánto manda el cuerpo frente a la forma de la prenda** — lo dice el
-   tejido (`TEJIDOS`). Es el único efecto que tiene hoy el campo `fabric`.
-
-Dos límites que hay que respetar al tocar esto:
-
-- **Los puntos de MediaPipe NO son el borde del cuerpo.** Están en la
-  articulación, por dentro. `cuerpo.ts` aplica la corrección anatómica
-  (`HOMBROS_A_ANCHO_REAL`, `CADERAS_A_ANCHO_REAL`). Sin ella, la prenda sale
-  estrecha y aparece la tentación de compensarlo con un número a ojo, que es
-  exactamente lo que hacía la versión anterior con un `1.9` que había que
-  reajustar por cada foto y cada persona.
-- **La máscara corrige la silueta, no decide el tamaño.** Con los brazos
-  pegados al cuerpo, el barrido los incluye; con un fondo complicado, se rompe.
-  Por eso la corrección está limitada (`CORRECCION_MINIMA` / `CORRECCION_MAXIMA`).
-
-**Cómo verificar el encaje sin cámara:** en la consola del navegador se importa
-`/src/probador/vestir.ts` con Vite, se construye una prenda sintética y un
-cuerpo sintético, y se miden los píxeles que pinta. Es como se comprobó que una
-camiseta acaba justo por debajo de la cadera y un pantalón llega al tobillo.
-Está en PROJECT_STATUS.md con los números.
+| `fabrics` | El catálogo de la tienda textil. **El centro del producto.** |
+| `garment_uploads` | La prenda o el boceto que sube el usuario. |
+| `fabric_trials` | Una prueba: prenda × tela → imagen. La unidad de negocio. |
+| `garments` | El catálogo del probador con cámara. Otra cosa, no se mezcla. |
 
 ---
 
-## Estado por partes
+## El motor textil — lo que hay que saber antes de tocarlo
 
-| Parte | Estado |
+`backend/app/textil/`. Es donde está la matemática y donde se han cometido y
+corregido los errores más caros.
+
+| Archivo | Qué hace |
 |---|---|
-| Infraestructura: catálogo, usuarios, almacenamiento | ✅ |
-| Alembic + autenticación JWT | ✅ |
-| Probador con cámara: pose, medidas y encaje | ✅ |
-| Tejido de la prenda (`fabric`) como ajuste de silueta | ✅ básico |
-| Simulación real de telas y caída (3D) | ⬜ futuro |
-| Acceso con Google | ⬜ futuro, lo pidió el usuario |
+| `segmentar.py` | Qué píxeles son prenda. Se calcula UNA vez al subir y se guarda. |
+| `retexturizar.py` | El motor determinista: dos caminos, foto y boceto. |
+| `filtros.py` | Desenfoque y reescalado en coma flotante. |
+| `provider.py` | El contrato y el selector. |
+| `openai_provider.py` | El motor generativo. |
 
-**Alembic fue antes que JWT** por una razón concreta: ya había datos reales en
-PostgreSQL, y `create_all` no aplica cambios a tablas existentes — falla en
-silencio y parece que funcionó.
+### La idea, en una frase
 
-### Reparto de acceso vigente
+Una fotografía ya contiene lo difícil: dónde hay un pliegue, dónde da la luz.
+Esa información depende de la **forma**, no del color, así que se separa
+dividiendo el brillo de cada píxel entre el brillo típico de la prenda — y lo
+que queda se traslada a la tela nueva.
 
-Públicos: `/api/health`, el catálogo en lectura, `POST /api/users` (registro) y
-`POST /api/auth/login`. Todo lo demás exige `Authorization: Bearer <token>`.
+### Cinco cosas que costaron encontrarse
 
-El probador exige sesión aunque no envíe nada al servidor. **Es una decisión
-del usuario, tomada el 2026-09-14**: quiere controlar el flujo de usuarios, y
-más adelante entrar con Google. No abrirlo sin que lo pida.
+1. **Todo en coma flotante.** Pillow desenfoca en enteros de 0 a 255. Sobre una
+   imagen no se nota; sobre un campo del que después se calcula el GRADIENTE es
+   casi toda la señal. Síntoma: el estampado se troceaba en moaré. Y el mismo
+   error se repitió al optimizar —cuantizando antes de ampliar— con el mismo
+   resultado. **Regla: nunca cuantizar nada de lo que se vaya a derivar.**
+2. **Multiplicar en luz lineal, no en sRGB.** Los valores de un PNG llevan una
+   curva encima. Multiplicar sobre ellos no multiplica luz.
+3. **El ruido se limpia en la DECISIÓN, no en el resultado.** El contorno
+   dentado de la chaqueta se intentó arreglar con una apertura morfológica
+   sobre la máscara ya hecha: funcionó en la chaqueta y **se comió el 7% de la
+   camiseta blanca**, porque erosionar borra lo fino y lo fino era prenda.
+   Suavizando el mapa de distancias antes de umbralizar, los picos desaparecen
+   y la cobertura no se mueve ni una milésima.
+4. **El cierre morfológico sella el túnel pero deja la cavidad.** Hace falta un
+   segundo paso que rellene los huecos ya desconectados del borde.
+5. **La máscara de OpenAI va al revés que la nuestra.** Ahí lo TRANSPARENTE es
+   lo que se edita. Mandarla sin invertir da una imagen plausible y equivocada.
 
-Tres reglas que hay que mantener al añadir endpoints:
+### Los parámetros están medidos, no elegidos a ojo
+
+`DOBLADO_DEL_ESTAMPADO = 0.10`: a 0,06 se nota que la tela envuelve el hombro; a
+0,20 aparecen remolinos; a 0,35 se derrite. `RADIO_CIERRE = 5`: con 3 queda una
+ranura abierta en la camiseta blanca, y con 7 las perneras del vaquero siguen
+separadas. Si cambias uno, mídelo igual.
+
+---
+
+## La IA: dónde está y por qué está ahí
+
+**`AI_PROVIDER=openai`, modelo `gpt-image-1-mini`.** Se activa a conciencia; el
+valor por defecto del repositorio es `none`, porque que clonarlo empiece a
+gastar dinero de alguien sería una trampa. Un valor desconocido **hace fallar el
+procesado**, nunca cae al motor local en silencio.
+
+### Lo que se midió con llamadas reales
+
+Se probó el camino generativo con un boceto de camisa que tenía cartera de
+botones, cinco botones, bolsillo de pecho, cuello camisero y costuras de manga.
+
+| Motor | Tiempo | Coste | Conserva el diseño |
+|---|---|---|---|
+| `gpt-image-1-mini` | 47 s | 7.880 tokens | **No** — devolvió una túnica lisa |
+| `gpt-image-1` + `input_fidelity=high` | 46 s | 12.935 tokens | **No** — igual de genérica |
+| Retexturizado de boceto | 0,32 s | gratis | **Sí, entero** |
+
+`input_fidelity="high"` existe justo para evitarlo, **no lo admite el modelo
+mini** (400 con `invalid_input_fidelity_model`), y con el completo tampoco
+bastó.
+
+**Conclusión, y es una decisión de producto:** el camino por defecto es
+siempre el determinista, también para bocetos. La IA es **opt-in** y sirve para
+lo que sí sabe hacer —convertir un dibujo en algo fotorrealista— sabiendo que
+reinterpreta el diseño y que se cobra.
+
+Eso no debilita el uso de IA en el proyecto: lo justifica. Está donde aporta
+algo que la otra vía no puede dar, y se elige a sabiendas.
+
+### Control de gasto, en tres sitios
+
+1. El límite mensual del panel de OpenAI. Lo puso el usuario.
+2. `AI_TRIALS_PER_USER_PER_DAY` (20), ventana móvil de 24 h. Protege a unos
+   usuarios de otros.
+3. **Las pruebas automatizadas no pueden gastar nunca.** `conftest.py` tiene un
+   fixture `autouse` que fuerza `AI_PROVIDER="none"`. Sin él, poner
+   `AI_PROVIDER=openai` en el `.env` haría que la suite entera —71 tests,
+   decenas de veces al día— generara imágenes facturadas.
+
+**Sin reintentos automáticos**, con UNA excepción documentada: si la API rechaza
+`input_fidelity` con un 400, se reintenta sin ese parámetro. Un 400 se rechaza
+antes de generar imagen, así que no ha costado nada, y la alternativa —una lista
+de qué modelo admite qué— caducaría con el siguiente modelo.
+
+---
+
+## Reparto de acceso
+
+Públicos: `/api/health`, el catálogo de telas en lectura, el catálogo de
+prendas del probador, `POST /api/users` y `POST /api/auth/login`. Todo lo demás
+exige `Authorization: Bearer <token>`.
+
+Tres reglas al añadir endpoints:
 
 1. **El usuario sale del token, nunca de un parámetro.** El historial aceptaba
    `?user_id=` y eso permitía leer el de cualquiera cambiando un número.
-2. **Un recurso ajeno responde 404, no 403.** Un 403 confirma que existe.
+2. **Un recurso ajeno responde 404, no 403.** Un 403 confirma que existe. Aquí
+   importa más que en otros sitios: el boceto de un taller es su trabajo.
 3. **Los fallos de identificación son indistinguibles entre sí**: mismo 401,
-   mismo mensaje, y mismo tiempo de respuesta (por eso se verifica contra un
-   hash señuelo cuando el email no existe).
+   mismo mensaje, mismo tiempo de respuesta.
 
 ---
 
 ## Diseño de la interfaz
 
-Blanco y negro, sin color de acento. **No es una preferencia estética, es un
-arreglo:** la versión anterior tenía violeta sobre fondo crema y el usuario la
-describió como "muy pálida". El problema no era la falta de color, era el
-contraste bajo en toda la página —fondo crema, texto gris— que dejaba todo a
-media luz. La solución fue usar los extremos.
+Blanco y negro, sin color de acento. **No es preferencia estética, es un
+arreglo:** la versión con violeta sobre crema se veía apagada por contraste
+bajo en toda la página, no por falta de color.
 
-- Los grises son opacidades de la tinta (`ink-80`, `ink-60`…), nunca colores
-  nuevos: así ninguno se desvía hacia el azul o el verde por accidente.
-- **Los estados no se distinguen por color.** Un error usa peso y estructura;
-  el indicador de salud usa forma (punto lleno, hueco, latiendo) y la palabra.
-  Es lo único que funciona para quien no distingue el rojo del verde.
-- Tipografía fluida con `clamp()`: un titular no cambia de tamaño de golpe al
-  girar el móvil.
-- El menú móvil ocupa la pantalla entera. Cuatro enlaces apretados contra el
-  borde superior son cuatro objetivos pequeños.
+- Los grises son opacidades de la tinta, nunca colores nuevos.
+- **Los estados no se distinguen por color**, sino por forma y palabra. Es lo
+  único que funciona para quien no distingue el rojo del verde.
+- Tipografía fluida con `clamp()`.
+- El menú móvil ocupa la pantalla entera.

@@ -21,14 +21,38 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.api.deps import get_trial_runner
+from app.core.config import settings
 from app.core.database import get_session
 from app.main import app
 from app.models import Base
+from app.repositories.fabric import FabricRepository
+from app.repositories.fabric_trial import FabricTrialRepository
+from app.repositories.garment_upload import GarmentUploadRepository
+from app.services.fabric_trial import FabricTrialService
 from app.services.storage import LocalStorage, Storage, get_storage
+
+
+@pytest.fixture(autouse=True)
+def sin_gastar_dinero(monkeypatch):
+    """Ninguna prueba llama nunca a una API de pago. Ni por accidente.
+
+    Los tests leen el `.env` real, así que en cuanto alguien pone
+    AI_PROVIDER=openai —que es lo normal cuando se está trabajando en esa
+    parte— la suite entera empezaría a generar imágenes facturadas. Con una
+    suite de setenta tests que se ejecuta decenas de veces al día, eso vacía
+    una cuenta antes de que nadie entienda por qué.
+
+    `autouse` es deliberado: esto no es algo que cada test deba acordarse de
+    pedir. Un test que quiera probar el camino de la IA tiene que decirlo
+    explícitamente, y aun así contra un cliente simulado.
+    """
+    monkeypatch.setattr(settings, "AI_PROVIDER", "none")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
 
 
 @pytest.fixture
@@ -40,6 +64,18 @@ def engine():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+
+    # SQLite trae las claves ajenas DESACTIVADAS por omisión, y hay que
+    # encenderlas en cada conexión. Sin esto, los tests no comprueban ninguna
+    # restricción de integridad: un borrado en cascada parece funcionar y en
+    # PostgreSQL se comporta distinto. Se descubrió porque borrar una prenda
+    # dejaba sus pruebas vivas solo en los tests.
+    @event.listens_for(test_engine, "connect")
+    def _activar_claves_ajenas(conexion, _registro):  # noqa: ANN001
+        cursor = conexion.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     Base.metadata.create_all(bind=test_engine)
     yield test_engine
     test_engine.dispose()
@@ -67,6 +103,24 @@ def storage(tmp_path: Path) -> Storage:
 def client(db_session: Session, storage: Storage) -> Generator[TestClient, None, None]:
     app.dependency_overrides[get_session] = lambda: db_session
     app.dependency_overrides[get_storage] = lambda: storage
+
+    # La tarea de fondo real (`run_trial_job`) abre su PROPIA sesión con
+    # `SessionLocal`, que apunta a PostgreSQL. Sin esta sustitución, crear una
+    # prueba en un test escribiría en la base de desarrollo.
+    #
+    # TestClient ejecuta las tareas de fondo de forma SÍNCRONA al terminar la
+    # petición, así que al volver de `client.post(...)` la prueba ya está
+    # procesada. Cómodo para testear, distinto de producción: eso lo cubre la
+    # verificación manual contra el servidor real.
+    def procesar_prueba(trial_id: int) -> None:
+        FabricTrialService(
+            FabricTrialRepository(db_session),
+            GarmentUploadRepository(db_session),
+            FabricRepository(db_session),
+            storage,
+        ).process(trial_id)
+
+    app.dependency_overrides[get_trial_runner] = lambda: procesar_prueba
 
     with TestClient(app) as test_client:
         yield test_client
@@ -149,6 +203,75 @@ def make_image_bytes(
     buffer = BytesIO()
     Image.new("RGB", (width, height), color).save(buffer, format=fmt)
     return buffer.getvalue()
+
+
+def make_prenda_bytes(width: int = 300, height: int = 400) -> bytes:
+    """Una «fotografía de prenda» sintética, con fondo liso y pliegues.
+
+    Tiene que parecerse a una foto de producto en lo que le importa al motor:
+    un fondo claro uniforme del que recortar, y un degradado dentro de la
+    prenda que haga las veces de luz y sombra. Sin ese degradado, el
+    retexturizado no tendría nada que reutilizar y la prueba no probaría nada.
+    """
+    from io import BytesIO
+
+    from PIL import Image, ImageDraw
+
+    imagen = Image.new("RGB", (width, height), (218, 218, 214))
+    dibujo = ImageDraw.Draw(imagen)
+
+    caja = (width // 5, height // 6, width * 4 // 5, height * 5 // 6)
+    dibujo.rectangle(caja, fill=(120, 90, 70))
+
+    # Un degradado vertical dentro de la prenda: es la «luz».
+    for y in range(caja[1], caja[3]):
+        t = (y - caja[1]) / max(1, caja[3] - caja[1])
+        tono = int(70 + 90 * (1 - abs(t - 0.35) * 1.6))
+        dibujo.line([(caja[0], y), (caja[2], y)], fill=(tono + 40, tono, tono - 20))
+
+    buffer = BytesIO()
+    imagen.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+@pytest.fixture
+def fabric_with_texture(auth_client: TestClient) -> dict:
+    """Tela del catálogo con su mosaico ya cargado, lista para probarse."""
+    creada = auth_client.post(
+        "/api/fabrics",
+        json={
+            "name": "Lino de prueba",
+            "reference": "TEST-01",
+            "composition": "100% lino",
+            "weight_gsm": 190,
+            "width_cm": 140,
+            "price_per_meter": 16.5,
+            "color_name": "Crudo",
+            "color_hex": "#d6cab2",
+            "pattern": "textured",
+            "default_repeat": 7,
+        },
+    )
+    assert creada.status_code == 201, creada.text
+
+    subida = auth_client.post(
+        f"/api/fabrics/{creada.json()['id']}/texture",
+        files={"file": ("tela.png", make_image_bytes(64, 64, "tan"), "image/png")},
+    )
+    assert subida.status_code == 200, subida.text
+    return subida.json()
+
+
+@pytest.fixture
+def uploaded_garment(auth_client: TestClient) -> dict:
+    """Prenda subida por el usuario, con su recorte ya calculado."""
+    respuesta = auth_client.post(
+        "/api/garment-uploads",
+        data={"name": "Camisa de prueba", "kind": "photo"},
+        files={"file": ("camisa.png", make_prenda_bytes(), "image/png")},
+    )
+    assert respuesta.status_code == 201, respuesta.text
+    return respuesta.json()
 
 
 @pytest.fixture

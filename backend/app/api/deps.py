@@ -5,6 +5,7 @@ Las rutas solo declaran qué servicio necesitan; no saben cómo se arma.
 Esto también permite sustituir cualquier pieza en los tests.
 """
 
+from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
@@ -13,12 +14,19 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_session
 from app.models.user import User
+from app.repositories.fabric import FabricRepository
+from app.repositories.fabric_trial import FabricTrialRepository
 from app.repositories.garment import GarmentRepository
+from app.repositories.garment_upload import GarmentUploadRepository
 from app.repositories.user import UserRepository
 from app.services.auth import AuthService
 from app.services.exceptions import AuthenticationError
+from app.services.fabric import FabricService
+from app.services.fabric_trial import FabricTrialService
 from app.services.garment import GarmentService
+from app.services.garment_upload import GarmentUploadService
 from app.services.storage import Storage, get_storage
+from app.services.trial_jobs import run_trial_job
 from app.services.user import UserService
 
 SessionDep = Annotated[Session, Depends(get_session)]
@@ -46,9 +54,46 @@ def get_garment_service(session: SessionDep, storage: StorageDep) -> GarmentServ
     return GarmentService(GarmentRepository(session), storage)
 
 
+def get_fabric_service(session: SessionDep, storage: StorageDep) -> FabricService:
+    return FabricService(FabricRepository(session), storage)
+
+
+def get_garment_upload_service(
+    session: SessionDep, storage: StorageDep
+) -> GarmentUploadService:
+    return GarmentUploadService(GarmentUploadRepository(session), storage)
+
+
+def get_trial_service(session: SessionDep, storage: StorageDep) -> FabricTrialService:
+    return FabricTrialService(
+        FabricTrialRepository(session),
+        GarmentUploadRepository(session),
+        FabricRepository(session),
+        storage,
+    )
+
+
+def get_trial_runner() -> Callable[[int], None]:
+    """Función que procesa una prueba en segundo plano.
+
+    Se inyecta en lugar de llamar a `run_trial_job` directamente desde la ruta
+    por una razón concreta: esa función abre su PROPIA sesión de base de datos
+    con `SessionLocal`, que en los tests apunta a PostgreSQL y no a la base
+    SQLite de prueba. Pasando por una dependencia, `conftest.py` puede
+    sustituirla por una que use la sesión del test.
+    """
+    return run_trial_job
+
+
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 GarmentServiceDep = Annotated[GarmentService, Depends(get_garment_service)]
+FabricServiceDep = Annotated[FabricService, Depends(get_fabric_service)]
+GarmentUploadServiceDep = Annotated[
+    GarmentUploadService, Depends(get_garment_upload_service)
+]
+TrialServiceDep = Annotated[FabricTrialService, Depends(get_trial_service)]
+TrialRunnerDep = Annotated[Callable[[int], None], Depends(get_trial_runner)]
 
 
 def get_current_user(

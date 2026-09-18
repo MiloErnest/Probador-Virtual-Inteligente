@@ -1,10 +1,10 @@
 /**
  * Mapa de navegación.
  *
- * Ya no hay secciones "de fases futuras" con aviso en lugar de contenido: la
- * aplicación hace una cosa —vestirte delante de la cámara— y todo lo que se
- * enseña funciona. Un menú lleno de enlaces que no llevan a nada no comunica
- * ambición, comunica que no está terminado.
+ * El orden refleja el producto: primero las telas —el catálogo de la tienda,
+ * que es el escaparate— y después el taller, que es donde el usuario trabaja.
+ * El probador con cámara va al final porque es la funcionalidad adicional, no
+ * el producto.
  */
 
 export interface NavItem {
@@ -16,7 +16,8 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Inicio' },
-  { to: '/catalogo', label: 'Catálogo' },
-  { to: '/probador', label: 'Probador', requiresAuth: true },
+  { to: '/telas', label: 'Telas' },
+  { to: '/taller', label: 'Mi taller', requiresAuth: true },
+  { to: '/probador', label: 'Probador con cámara', requiresAuth: true },
   { to: '/perfil', label: 'Perfil', requiresAuth: true },
 ]

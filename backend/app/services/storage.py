@@ -32,11 +32,11 @@ ALLOWED_IMAGE_TYPES: dict[str, str] = {
 }
 
 # Carpetas lógicas dentro del almacén.
-#
-# Solo queda una. Las de fotos de usuario, resultados generados y diseños se
-# retiraron al quitar la IA: el probador corre entero en el navegador y no
-# sube ninguna imagen de la persona al servidor.
-FOLDER_GARMENTS = "garments"  # fotos de catálogo
+FOLDER_GARMENTS = "garments"    # catálogo del probador con cámara
+FOLDER_FABRICS = "fabrics"      # catálogo de telas: foto y mosaico
+FOLDER_UPLOADS = "uploads"      # prendas y bocetos que sube el usuario
+FOLDER_MASKS = "masks"          # recorte de cada prenda subida, cacheado
+FOLDER_TRIALS = "trials"        # resultados de las pruebas
 
 
 class Storage(Protocol):
@@ -68,7 +68,13 @@ class LocalStorage:
         self.public_base_url = public_base_url.rstrip("/")
 
     def ensure_directories(self) -> None:
-        for folder in (FOLDER_GARMENTS,):
+        for folder in (
+            FOLDER_GARMENTS,
+            FOLDER_FABRICS,
+            FOLDER_UPLOADS,
+            FOLDER_MASKS,
+            FOLDER_TRIALS,
+        ):
             (self.root / folder).mkdir(parents=True, exist_ok=True)
 
     def save(self, data: bytes, *, folder: str, extension: str) -> str:

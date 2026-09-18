@@ -114,13 +114,6 @@ export const api = {
     })
   },
 
-  /**
-   * Envía un formulario multipart: uno o varios archivos y campos sueltos.
-   *
-   * `fields` existe porque una petición no puede llevar JSON y un archivo a la
-   * vez: cuando hay archivo, TODO viaja como campos del formulario. Por eso
-   * `garment_id` se manda así y no en un cuerpo JSON.
-   */
   put<T>(path: string, body: unknown, options: { signal?: AbortSignal } = {}) {
     return request<T>(path, {
       method: 'PUT',
@@ -134,6 +127,13 @@ export const api = {
     return request<T>(path, { method: 'DELETE', headers: authHeaders(), signal: options.signal })
   },
 
+  /**
+   * Envía un formulario multipart: uno o varios archivos y campos sueltos.
+   *
+   * `fields` existe porque una petición no puede llevar JSON y un archivo a la
+   * vez: cuando hay archivo, TODO viaja como campos del formulario. Por eso el
+   * nombre y el tipo de una prenda se mandan así y no en un cuerpo JSON.
+   */
   postForm<T>(
     path: string,
     files: Record<string, File>,

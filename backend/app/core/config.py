@@ -65,6 +65,48 @@ class Settings(BaseSettings):
     PUBLIC_BASE_URL: str = "http://localhost:8000"
     MAX_UPLOAD_MB: int = 8
 
+    # --- Motor generativo para bocetos ---
+    #
+    # "none"   = no hay motor de IA. Los bocetos no se pueden vestir y se dice
+    #            por qué. Es el valor por defecto A PROPÓSITO: que clonar el
+    #            repositorio empiece a gastar dinero de alguien sería una
+    #            trampa.
+    # "openai" = API de OpenAI. SE COBRA POR IMAGEN.
+    #
+    # Un valor desconocido hace fallar el procesado, nunca cae al motor
+    # determinista en silencio. Creer que estás usando la IA cuando en realidad
+    # estás multiplicando píxeles sería el peor error posible aquí, y ya se
+    # cometió una vez en este proyecto.
+    AI_PROVIDER: str = "none"
+
+    #: Se obtiene en https://platform.openai.com/api-keys
+    #: NUNCA en el código: este campo se lee del .env, que está en .gitignore.
+    OPENAI_API_KEY: str = ""
+
+    # Modelo de imagen. Configurable porque este catálogo se mueve deprisa y
+    # los precios cambian con él. Los "mini" son bastante más baratos; los
+    # grandes dan mejor resultado en bocetos complicados.
+    OPENAI_IMAGE_MODEL: str = "gpt-image-1-mini"
+
+    # `input_fidelity="high"` le dice al modelo que respete el detalle de la
+    # imagen de entrada. Es la diferencia entre «tu diseño con otra tela» y
+    # «un diseño parecido al tuyo»: sin esto, el modelo mueve los botones,
+    # cambia el cuello y reinventa el corte, que es justo lo contrario de lo
+    # que le pide una modista.
+    OPENAI_INPUT_FIDELITY: Literal["high", "low"] = "high"
+
+    # Corte de la llamada. Debe ser MENOR que el corte del sondeo del navegador
+    # (120 s en el frontend); si no, el navegador se rinde antes de que la
+    # prueba termine y el usuario no llega a ver el resultado.
+    OPENAI_TIMEOUT_SECONDS: int = 100
+
+    # TECHO DE GASTO, EN LA APLICACIÓN Y NO SOLO EN EL PANEL DE OPENAI
+    #
+    # El límite de la cuenta protege la cartera; este protege al usuario de que
+    # un fallo suyo —o un bucle en el frontend— se coma el presupuesto de
+    # todos. Se cuenta por usuario y día natural.
+    AI_TRIALS_PER_USER_PER_DAY: int = 20
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:

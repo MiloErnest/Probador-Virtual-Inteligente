@@ -21,7 +21,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 
 import {
   dibujarEsqueleto,
@@ -505,11 +505,9 @@ export default function ProbadorPage() {
 
             {vestibles.length === 0 ? (
               <p className="mt-3 text-sm text-ink-60">
-                No hay prendas con fotografía todavía.{' '}
-                <Link to="/catalogo" className="enlace">
-                  Ver el catálogo
-                </Link>
-                .
+                No hay prendas con fotografía en el catálogo del probador. Se cargan
+                con <code className="text-[11px]">python -m scripts.seed --con-prendas-reales</code>{' '}
+                desde la carpeta backend.
               </p>
             ) : (
               // Con un catálogo largo, la rejilla empujaba el tejido y el

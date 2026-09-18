@@ -2,189 +2,106 @@
 
 > Documento vivo. Se actualiza al cerrar cada etapa.
 
-**Etapa actual:** probador con cámara, sin IA. Reestructuración completa.
-**Última actualización:** 2026-09-14
+**Etapa actual:** prueba virtual de telas, el producto del Product Vision Board.
+**Última actualización:** 2026-09-18
 
 ---
 
-## Qué pasó el 2026-09-14
+## Qué pasó el 2026-09-18
 
-Se retiró **toda la IA generativa** y la aplicación se redujo a lo que el
-usuario quería que hiciera: vestir a alguien delante de la cámara.
+El usuario aportó el **Product Vision Board** del proyecto, y el producto que
+describe no es el que había: no es un probador de ropa para quien se la pone,
+es una **herramienta de venta para tiendas de telas**, cuyos usuarios son
+diseñadores, modistas y talleres que tienen que **elegir tela para una prenda**.
 
-**Por qué.** Las Fases 1, 2 y 3 estaban construidas de punta a punta, pero con
-proveedores simulados: un probador que pegaba la prenda con Pillow, un
-generador de diseños que dibujaba siluetas según palabras clave, y un análisis
-corporal que estimaba medidas a partir de la altura. Todo funcionaba y nada
-convencía. Y el problema de verdad —que la prenda no encajaba sobre el
-cuerpo— seguía intacto, porque el esfuerzo se repartía entre cinco fases.
+Eso invierte el modelo. El catálogo pasa a ser de **telas**; las prendas las
+sube el usuario. El probador con cámara se conserva como funcionalidad
+adicional, pero no es el producto.
 
-**Qué se borró.**
+### Lo que se construyó
 
-| Se fue | Dónde vivía |
+| Pieza | Qué es |
 |---|---|
-| Probador por foto con IA (local y Gemini) | `app/ai/`, `try_on_sessions`, `TryOnPage` |
-| Generador de diseños por texto | `app/ai/design_provider.py`, `designs`, `DesignAIPage` |
-| Análisis corporal y recomendación de talla | `app/vision/`, `body_profiles`, `BodyProfilePage` |
-| Maniquí 3D con Three.js | `frontend/src/ar/avatar3d.ts` |
-| Historial de pruebas | `MyTryOnsPage` |
-| `google-genai`, `three`, `@types/three` | requisitos del backend y del frontend |
+| `fabrics` | Catálogo de la tienda: referencia, composición, gramaje, ancho de rollo, precio/m, color, dibujo, mosaico. |
+| `garment_uploads` | La prenda o boceto del usuario, con su recorte ya calculado y guardado. |
+| `fabric_trials` | Una prueba: prenda × tela → imagen. Guarda motor, duración y tokens. |
+| `app/textil/` | El motor: recorte, retexturizado de foto, retexturizado de boceto, y proveedor generativo. |
+| 4 pantallas nuevas | Portada, catálogo de telas, taller, y comparación. |
 
-La migración `1a61ba91aea8` tira las tres tablas. **Borra datos a propósito**:
-el historial de pruebas y los diseños guardados desaparecen. Su `downgrade`
-reconstruye las tablas vacías — recupera el esquema, no el contenido.
-
-**Qué se ganó.** 217 KB de bundle en lugar de ~800 KB. Un backend con cuatro
-rutas. Y un probador que ya no es el borrador de otra cosa.
+Migración `84f6b95eefae`. **No toca nada de lo que ya había**: `garments` sigue
+siendo el catálogo del probador con cámara.
 
 ---
 
 ## Lo que funciona
 
-### El probador (es la aplicación)
+### El motor de telas
 
-- [x] Cámara + MediaPipe Pose en WebAssembly, **entero en el navegador**.
-      Ninguna imagen de la persona llega al servidor: no es que se borre
-      después, es que no se envía.
-- [x] Recorte del fondo de la prenda por relleno desde los bordes, con umbral
-      adaptativo y cierre morfológico (`removeBackground.ts`).
-- [x] **Medidas reales del cuerpo**, con la corrección anatómica entre la
-      articulación que detecta el modelo y el borde exterior del cuerpo.
-- [x] **Contorno real medido sobre la máscara de segmentación**, a 28 alturas
-      a lo largo del tramo que cubre la prenda.
-- [x] **Deformación por franjas**: la prenda se parte en 28 tiras y cada una
-      sigue el eje del cuerpo, con su ancho, su posición y su inclinación.
-      Dobla por la rodilla en un pantalón y gira si te inclinas.
-- [x] Anclaje por categoría: camiseta de hombros a bajo cadera, pantalón de
-      cintura a tobillo, vestido hasta la rodilla, chaqueta algo más larga. Y
-      el tamaño de la prenda sale de ese tramo, no de medir su anchura.
-- [x] Suavizado temporal de las medidas, **por constante de tiempo real**: el
-      comportamiento ya no depende de los fotogramas por segundo.
-- [x] **Inercia**: la prenda va por detrás de ti y rebota al parar, con un
-      muelle amortiguado de paso fijo (1/120 s). El tejido decide cuánto.
-- [x] **Orientación 3D**: la tela rueda alrededor del cuerpo al girarte y se
-      desvanece cuando ya no queda frente que enseñar. De espaldas no se
-      dibuja, porque del reverso no hay fotografía.
-- [x] Recorte opcional contra la silueta engordada, para que la prenda no
-      flote sobre el fondo sin perder la holgura.
-- [x] Guías de detección (silueta + esqueleto) conmutables.
-- [x] Ajuste fino manual de ancho, largo y altura, para lo que una categoría
-      no distingue (una chaqueta y un abrigo largo son ambos «abrigos»).
-- [x] **Aviso cuando el recorte de una fotografía sale roto**, en vez de
-      dibujar la prenda a tiras sin decir nada.
-- [x] Entrada directa desde el catálogo con `/probador?prenda=12`.
-
-### Tejido de la prenda
-
-- [x] Columna `fabric` en `garments`, nullable, con ocho valores.
-- [x] Cada tejido define **ceñido** (cuánto adopta la forma del cuerpo) y
-      **holgura** (cuánto más ancho cae). El cuero mantiene su forma; el punto
-      se pega.
-- [x] Y desde la inercia, también **masa**: frecuencia propia, amortiguación y
-      vuelo. Medido sobre un salto de 100 px — cuero: 0 px de rebote, asentado
-      en 0,30 s; seda: 36,7 px de rebote y 1,03 s. Sigue sin ser simulación de
-      tela: es un muelle por prenda, no una malla con hilos.
-- [x] Se puede cambiar en vivo desde el probador para comparar.
-- [x] Una prenda sin tejido registrado dice que no lo tiene. No se inventa un
-      valor por defecto, y hay una prueba que lo fija.
+- [x] **Recorte automático** al subir, por relleno desde los bordes con umbral
+      adaptativo, cierre morfológico y tapado de cavidades. ~200 ms.
+      Funciona igual con una foto que con un boceto.
+- [x] **Retexturizado de fotografía**: separa la luz del color dividiendo por el
+      brillo propio de la prenda, y multiplica la tela nueva por esa razón. En
+      luz lineal. ~500 ms.
+- [x] **El estampado se dobla con los pliegues**, desplazando las coordenadas de
+      la textura según el gradiente del modelado.
+- [x] **Se conservan costuras, botones y bolsillos**, devolviendo una fracción
+      del detalle fino después de borrar la trama del tejido viejo.
+- [x] **Retexturizado de boceto**: rellena el interior con la tela y **conserva
+      el trazo intacto**, con volumen insinuado por distancia al borde. ~320 ms.
+- [x] **Motor generativo con OpenAI**, opt-in, con traducción de errores a
+      mensajes accionables y registro de tokens.
+- [x] **Aviso cuando el recorte sale dudoso**, antes de que el usuario gaste
+      pruebas sobre una máscara rota.
 
 ### Backend
 
-- [x] FastAPI con CORS por entorno y configuración por variables de entorno.
-- [x] PostgreSQL con SQLAlchemy 2.0 síncrono. Esquema gobernado por Alembic.
-- [x] `GET /api/health` que informa también del estado de la base de datos.
-- [x] Registro con bcrypt, login JWT, `GET /api/auth/me`.
-- [x] Catálogo: listar con filtro por categoría, obtener, crear, subir imagen.
-- [x] Validación de imágenes por CONTENIDO con Pillow, no por `Content-Type`.
-- [x] Costura `Storage` con implementación en disco local y servido en `/media`.
-- [x] Semilla idempotente, con las cinco fotografías reales del repositorio.
-- [x] **53 pruebas automatizadas, ejecutadas y en verde.**
+- [x] Catálogo de telas: listar con filtro por dibujo, ficha completa, alta,
+      edición, foto de catálogo y mosaico por separado.
+- [x] Prendas del usuario: subir, listar, ver, borrar. Todo filtrado por token.
+- [x] Pruebas: crear (202 + sondeo), listar, filtrar por prenda, borrar.
+- [x] Techo de gasto por usuario y ventana móvil de 24 h.
+- [x] **71 pruebas automatizadas, en verde.** Y **no pueden gastar dinero**:
+      un fixture `autouse` fuerza `AI_PROVIDER="none"`.
 
 ### Frontend
 
-- [x] React 18 + TypeScript + Vite + Tailwind. Build de producción verificado.
-- [x] Sesión con `AuthContext`, formularios de acceso y registro, rutas
-      protegidas.
-- [x] Cinco pantallas: portada, catálogo, probador, acceso/registro, perfil.
-- [x] Rediseño completo en blanco y negro (ver más abajo).
+- [x] Portada que cuenta el producto del Vision Board.
+- [x] Catálogo de telas con ficha técnica completa y filtro por dibujo.
+- [x] Taller: subir prenda o boceto, con la diferencia explicada.
+- [x] Comparación lado a lado, con el original como referencia, y sondeo.
+- [x] Probador con cámara, intacto.
+- [x] Build de producción verificado: 236 KB.
 
 ---
 
-## Verificación hecha el 2026-09-14
+## Verificación hecha el 2026-09-18
 
-**Backend.** `pytest` → 53 en verde. `alembic upgrade head` aplicado sobre la
-base real. `alembic check` → "No new upgrade operations detected". Arranque con
-uvicorn correcto, `/api/garments` devuelve las 13 prendas con su tejido.
+**Backend.** `pytest` → 71 en verde. `alembic upgrade head` aplicado sobre la
+base real, `alembic check` limpio. 12 telas sembradas.
 
-**Frontend.** `tsc --noEmit` limpio. `npm run build` correcto (217 KB).
-Consola del navegador sin errores. Archivos de MediaPipe servidos: el modelo
-(5,6 MB) y el wasm (11,5 MB) responden 200.
+**Frontend.** `tsc --noEmit` limpio, `npm run build` correcto. La portada carga
+y pinta las telas reales de la base.
 
-**El encaje, sin cámara.** Se importó `vestir.ts` desde la consola del
-navegador, se construyó un cuerpo sintético con proporciones antropométricas
-reales y se pasaron por él las cinco fotografías del catálogo, recortadas por
-el mismo código que usa la aplicación. Se midieron los píxeles pintados.
+**El motor, mirando los resultados.** 5 prendas × 5 telas. El recorte tarda
+~200 ms y el retexturizado ~500 ms. Se corrigieron tres defectos encontrados
+así: la camiseta blanca agujereada, el contorno dentado de la chaqueta de
+cuero, y el estampado troceado en moaré.
 
-Cuerpo de referencia: hombros en y=200, caderas en y=420 (torso 220 px),
-rodillas 616, tobillos 812. Ancho real de hombros 214 px, de caderas 182 px.
+**La API de OpenAI, con llamadas reales.** Es lo único que no se puede
+verificar sin gastar. Tres llamadas, y las tres dijeron algo:
 
-| Prenda | Ancho | Acaba en | Lectura |
-|---|---|---|---|
-| Jersey gris (top, punto) | 249 px · 1,16× hombros | 66 px bajo la cadera | ✅ |
-| Camiseta blanca (top, algodón) | 233 px · 1,09× | 66 px bajo la cadera | ✅ colocación; ❌ recorte |
-| Camisa marrón (top, algodón) | 225 px · 1,05× | 66 px bajo la cadera | ✅ |
-| Chaqueta de cuero (abrigo) | 328 px · 1,53× | 88 px bajo la cadera | ✅ |
-| Vaquero (inferior, denim) | 180 px ≈ ancho de cadera | exactamente en el tobillo | ✅ |
+| # | Qué se probó | Resultado |
+|---|---|---|
+| 1 | `gpt-image-1-mini` + `input_fidelity=high` | 400: el mini **no admite** ese parámetro. Gratis: se rechaza antes de generar. |
+| 2 | `gpt-image-1-mini` sin fidelidad | OK en 47 s, 7.880 tokens. **No conservó el diseño.** |
+| 3 | `gpt-image-1` + `input_fidelity=high` | OK en 46 s, 12.935 tokens. **Tampoco.** |
 
-Sin ver las piernas, el vaquero acaba 26 px por debajo del tobillo real: la
-proporción media de reserva se equivoca en un 3% del largo de la pierna.
+El boceto de prueba tenía cartera de botones, cinco botones, bolsillo de pecho,
+cuello camisero y costuras de manga. Las dos veces volvió convertido en una
+túnica lisa de cuello barco.
 
-Con el cuerpo inclinado, el centro de la prenda sigue al del cuerpo con 7–11 px
-de desvío sobre un torso de 220 px. Con las piernas quebradas, el centro del
-pantalón se desplaza hacia la rodilla y vuelve hacia el tobillo.
-
-El contorno medido sobre una máscara sintética detecta el pellizco de la
-cintura en la fila exacta donde se puso, y a la altura de las rodillas mide las
-dos perneras pese al hueco que hay entre ellas.
-
-**Tres errores encontrados así, antes de tocar la cámara.** Los tres habrían
-pasado por buenos a ojo:
-
-1. El camino del pantalón se pasaba 148 px del tobillo, porque el final
-   teórico se añadía aunque el modelo ya hubiera visto el tobillo. Y el del
-   vestido se saltaba la rodilla por lo mismo al revés. Ahora manda el punto
-   que el modelo ve, y la distancia teórica es solo el plan B.
-2. Cada franja leía el ancho del cuerpo por su número de fila, no por la
-   altura a la que caía. Una camiseta no cubre el tramo entero que se le
-   reserva, así que su bajo se ajustaba a un ancho medido más abajo.
-3. **El tamaño se calculaba igualando el ancho de la prenda al del cuerpo, y
-   esa medida no es de fiar.** Ver la decisión correspondiente más abajo. Es
-   el cambio de fondo de esta etapa.
-
-**La cámara arranca.** Verificado por el usuario en Chrome, sobre
-`localhost:5173`, después de arreglar el fallo de abajo. Lo que sigue sin
-comprobarse es la CALIDAD del encaje sobre una persona real (limitación #24).
-
-**Un cuarto error, este encontrado al usarlo.** Al pulsar «Encender» la
-pantalla volvía al mismo botón sin decir nada, pasara lo que pasara. El
-`catch` del arranque hacía `setStatus('error')` y a continuación `stop()`, que
-acaba en `setStatus('idle')`: React agrupa los cambios de estado y gana el
-último, así que **el estado de error se perdía siempre**. Ni mensaje dentro del
-recuadro, ni botón de reintentar.
-
-Arreglado separando la limpieza (`soltarTodo`) del cambio de estado. Y de paso,
-tres cosas más que salieron al mirarlo:
-
-- **La cámara se pide ahora ANTES de cargar el modelo.** Antes esperabas ~28 MB
-  de descarga antes de que el navegador te preguntara siquiera por el permiso,
-  y ese silencio se parecía mucho a «el botón no hace nada».
-- **Si la GPU falla, se reintenta en CPU.** Medido en este equipo: GPU 3,2 s,
-  CPU 0,7 s, las dos correctas — pero hay equipos sin aceleración por hardware
-  donde solo funciona la segunda, y antes ahí no arrancaba.
-- El motivo del fallo se repite **dentro del recuadro negro**, que es donde
-  está la mirada cuando la cámara no tira, y los mensajes distinguen permiso
-  bloqueado, cámara ocupada por otro programa, equipo sin cámara y dirección no
-  permitida (abrirlo por la IP de la red local, no por `localhost`).
+**El camino determinista de boceto conserva todo**, en 320 ms y gratis.
 
 ---
 
@@ -192,90 +109,81 @@ tres cosas más que salieron al mirarlo:
 
 | # | Descripción | Impacto | Plan |
 |---|---|---|---|
-| 24 | **El encaje no se ha probado con una cámara y una persona de verdad.** La cámara ya arranca y se ve la imagen; lo que falta es juzgar si la prenda queda bien puesta. La geometría está verificada con cuerpos sintéticos, que no tiemblan, no se giran y tienen una máscara perfecta. | Alto | Es lo primero que hay que hacer. Si algo baila, el sitio es `suavizarCuerpo`; si la talla no cuadra, `TRAMOS[categoria].referencia`. |
-| 25 | **No hay oclusión.** Si pones la mano delante del pecho, la prenda te tapa la mano. El navegador sabe qué píxeles son persona, pero no cuáles están delante. | Medio | Se puede aproximar recortando los antebrazos cuando cruzan el torso. No es gratis y aún no se ha intentado. |
-| 26 | **No hay simulación de tela.** Ni pliegues, ni sombras propias, ni peso. Una camisa no ondea. La interfaz lo dice en la portada y en el probador. | Medio | Es la Fase 3D. Necesita motor y materiales; el campo `fabric` ya está puesto para cuando llegue. |
-| 27 | **La camiseta blanca del catálogo NO se puede recortar, y no es cuestión de ajustar nada.** Medido: el fondo es (217,218,212) y hay zonas de tela en sombra que valen exactamente (217,217,217) — distancia 6, cuando el propio fondo varía 7 a lo largo del borde. La tela y el fondo son el mismo color. Se dibuja a tiras. | Alto | **La aplicación lo detecta y avisa** (`recorteDudoso`), así que no se confunde con un fallo del encaje. La solución es una fotografía sobre fondo que contraste. Un recorte de calidad real es trabajo de un modelo de segmentación. |
-| 28 | **Las ocho prendas de la semilla son siluetas planas de colores**, dibujadas con Pillow. En el catálogo, al lado de las cinco fotografías reales, se ven mal. | Bajo | Retirarlas con `active = false`, o subirles fotos reales. Es decisión del usuario: son sus datos. |
-| 29 | **Hace falta salir de cabeza a cadera en el encuadre.** Con un portátil sobre la mesa no siempre se consigue, y sin los cuatro puntos clave no se dibuja nada. | Medio | La pantalla lo avisa. Un aviso más concreto ("acércate", "apártate") sería fácil de añadir. |
-| 4 | Los tests usan SQLite, no PostgreSQL. No validan comportamiento específico de PG. | Medio | Aceptable mientras el esquema sea portable. |
-| 5 | **El proyecto está dentro de OneDrive.** `node_modules` y `.venv` provocan sincronización constante. | Medio | Mover a `C:\dev\` o excluir esas carpetas de OneDrive. |
-| 20 | **Las imágenes de Docker nunca se han construido.** Solo se validó la sintaxis del compose. | Medio | `docker compose --profile full up -d --build` con Docker Desktop arrancado. |
-| 7 | Las imágenes se sirven desde el proceso de FastAPI. | Bajo | Delegar en Nginx/CDN cuando haya despliegue real. |
-| 8 | Sin límite de peticiones. **Incluye el login**: nada impide probar contraseñas en bucle. | Medio | Antes de exponer la aplicación públicamente. `slowapi` o un límite en el proxy. |
-| 9 | **Sin refresh token ni lista de revocación.** Cerrar sesión descarta el token en el navegador, pero seguiría siendo válido hasta caducar (12 h). | Bajo | Solo si aparece la necesidad real de expulsar a alguien al momento. |
-| 10 | **El token se guarda en `localStorage`.** Un fallo de XSS permitiría leerlo. Se aceptó a cambio de que recargar no cierre la sesión. | Medio | Primer punto a revisar antes de un despliegue público. |
-| 11 | **Cualquier usuario registrado puede dar de alta prendas.** No existe la distinción usuario/administrador. | Bajo | Columna `is_admin` cuando haya un panel que la justifique. |
-| 12 | **Las migraciones no se ejecutan en los tests**, que crean el esquema desde los modelos con SQLite. | Medio | Se contrastan a mano con `alembic check`. |
-| 14 | **El registro no verifica que el buzón exista.** No hay correo de confirmación. | Medio | Se resolverá con el acceso mediante Google. |
-| 13 | La suite tarda ~24 s. Es bcrypt, que es lento a propósito. | Bajo | Aceptable. Si molesta, bajar el coste de bcrypt solo en el entorno de test. |
+| 30 | **El camino generativo no conserva el diseño.** Medido con dos modelos e `input_fidelity=high`. Es una limitación del modelo, no de la integración. | Alto | Por eso la IA es opt-in y el camino por defecto es determinista. La interfaz lo advierte. Si aparece un modelo que sí lo conserve, es cambiar `OPENAI_IMAGE_MODEL`. |
+| 31 | **El retexturizado no cambia cómo CAE la tela.** Si la foto es de un vestido fluido, una lona rígida caerá como el vestido: los pliegues son los de la foto. | Medio | Es el límite de la técnica. Simular el tejido es otro problema y bastante mayor. Se dice en la portada. |
+| 32 | **Los mosaicos del catálogo son generados, no fotografías de tela real.** Son creíbles y seamless por construcción, pero no son telas de verdad. | Medio | Para el producto real, la tienda aliada fotografía sus rollos y se recorta un cuadrado limpio. Sale mejor y es gratis. |
+| 33 | **El volumen de un boceto es inventado.** Sale de la distancia al borde, no de información del dibujo. | Bajo | Es honesto y se avisa. No hay forma de deducir volumen de un dibujo de líneas. |
+| 27 | **Una prenda casi del color del fondo no se puede recortar**, y no es cuestión de ajustar el umbral. Medido: fondo (217,218,212) contra tela en sombra (217,217,217). | Alto | Se detecta y se avisa. La solución es una fotografía sobre fondo que contraste. |
+| 24 | **El probador con cámara no se ha probado con una persona real.** La cámara arranca y detecta; falta juzgar cómo queda la prenda puesta. | Alto | Pendiente de la etapa anterior. |
+| 25 | **El probador con cámara no tiene oclusión**: si pones la mano delante del pecho, la prenda la tapa. | Medio | Pendiente de la etapa anterior. |
+| 15 | **`BackgroundTasks` no sobrevive a un reinicio.** Si el proceso se para mientras una prueba está en `processing`, se queda ahí. Con el motor determinista son 500 ms de ventana; con el generativo, 45 s. | Medio | `status` está modelado, así que meter una cola no obliga a rehacer la tabla. |
+| 4 | Los tests usan SQLite, no PostgreSQL. | Medio | Se activaron las claves ajenas (`PRAGMA foreign_keys=ON`); sin eso no se validaba ninguna restricción de integridad. |
+| 5 | **El proyecto está dentro de OneDrive.** | Medio | Mover a `C:\dev\` o excluir `node_modules` y `.venv`. |
+| 20 | **Las imágenes de Docker nunca se han construido.** | Medio | `docker compose --profile full up -d --build`. |
+| 8 | Sin límite de peticiones. **Incluye el login.** | Medio | Antes de exponer la aplicación públicamente. |
+| 10 | **El token se guarda en `localStorage`.** | Medio | Primer punto a revisar antes de un despliegue público. |
+| 11 | **Cualquier usuario registrado puede dar de alta telas.** No existe la figura de administrador. | Bajo | Columna `is_admin` cuando haya un panel que la justifique. |
+| 14 | **El registro no verifica que el buzón exista.** | Medio | Se resolverá con el acceso mediante Google. |
 
 ---
 
 ## Decisiones técnicas
 
-### De la reestructuración (2026-09-14)
+### De esta etapa
 
 | Decisión | Alternativa descartada | Motivo |
 |---|---|---|
-| **Retirar la IA en lugar de seguir mejorándola** | Conectar Gemini de verdad | Los proveedores simulados ya no aportaban, y los reales cuestan dinero por imagen. Pero el motivo de fondo es otro: mientras el probador fuera el borrador que se enviaba al modelo, no había presión para que la superposición estuviera bien hecha. Quitando el modelo, la superposición es el producto. |
-| **Borrar las tablas en vez de dejarlas** | Mantenerlas "por si acaso" | Ya no hay código que sepa leerlas. Quedarían datos huérfanos que nadie miraría y que aparecerían en cada `alembic check`. |
-| **Borrar también el maniquí 3D** | Desengancharlo del perfil corporal y conservarlo | Decisión del usuario. Dependía de las medidas del perfil corporal, que se iba, y un maniquí con una textura plana encima tampoco vestía bien. Los 600 KB de Three.js volverán cuando haya telas de verdad que simular. |
-| **El login se queda delante del probador** | Abrirlo, ya que no envía nada al servidor | Decisión del usuario: quiere controlar el flujo de usuarios y más adelante entrar con Google. |
-| **El tamaño de la prenda sale de su ALTO** | Igualar su ANCHO al del cuerpo | Es el cambio de fondo de esta etapa, y se llegó a él descartando lo otro con medidas. Escalar por el ancho respeta la proporción de la foto, que suena mejor; con las fotos reales da resultados incoherentes, porque el ancho de una foto de producto depende de cómo esté colocada la prenda y de qué tal haya salido el recorte. La camiseta blanca, con un agujero en el torso, se medía un 35% estrecha y se dibujaba a mitad del muslo; la camisa marrón, con las mangas tocando el torso, medía la prenda entera en la fila del pecho y salía por encima de la cadera. Se probaron tres formas de medir ese ancho —de borde a borde, solo la mancha central, y por franjas según la categoría— y ninguna aguanta las cinco fotos. El alto no tiene ese problema: una camiseta empieza en el hombro y acaba en el bajo, y eso es cierto en todas las fotos. |
-| **Un control manual de largo** | Deducir el largo de la proporción de la foto | Al anclar por alto, la categoría decide el largo, y una categoría mete en el mismo saco una chaqueta biker y un abrigo hasta la rodilla. La foto ya no puede desempatar —por lo de arriba—, así que la salida es un control. Son tres líneas y resuelve un caso conocido. |
-| **Avisar cuando el recorte sale roto** | Dibujarlo igual | Antes se pintaba la camiseta a tiras sin decir nada, y quien la veía no podía saber si el fallo era del recorte, del encaje o de la cámara. La métrica (borde respecto a superficie, más cobertura) separa las cuatro fotos buenas —0,011 a 0,020— de la rota, 0,031. |
-| **Corrección anatómica en los puntos de MediaPipe** | Un multiplicador ajustable a ojo | El `1.9` anterior había que reajustarlo por cada foto y cada persona porque mezclaba dos correcciones distintas: la anatómica (constante para todos) y el encuadre de la foto (propio de cada una). Separadas, la primera es un factor fijo y la segunda sale del recorte. |
-| **Franjas horizontales** | Malla de triángulos | `drawImage` solo hace transformaciones afines sobre rectángulos. Una malla obliga a recortar triángulo a triángulo: más código, más coste y costuras dentadas. Veintiocho trapecios describen la misma curva. |
-| **La máscara corrige, no decide** | Confiar en el contorno medido | Con los brazos pegados al cuerpo, el barrido los incluye y la prenda saldría ancha; con un fondo complicado, la segmentación se rompe. Limitando la corrección, un fallo deforma un poco en lugar de arruinarlo todo. |
-| **El barrido guarda el punto más lejano, no el primer hueco** | Parar en el primer píxel de fondo | Un pantalón cubre dos piernas y entre ellas hay fondo. Parando en el primer hueco, a la altura de las rodillas mediría cero. |
-| **Dibujar en un lienzo aparte y volcarlo** | Pintar las franjas directamente | Las franjas se solapan un píxel para que no se vea la costura. Con transparencia, ese píxel se pintaría dos veces y cada unión saldría como una raya oscura. |
-| **Recorte contra la silueta ENGORDADA** | Contra la silueta exacta | Recortar por el borde del cuerpo convertiría la ropa en pintura corporal: una chaqueta holgada tiene que sobresalir. Lo que molesta es verla flotar sobre el fondo. |
-| **Suavizado exponencial con salto detectado** | Suavizar siempre | El modelo reestima la pose en cada fotograma y los puntos bailan. Pero suavizar un salto grande —la persona se movió de verdad— dejaría la prenda arrastrándose por la pantalla. |
-| **`fabric` nullable sin valor por defecto** | Poner "algodón" a lo existente | Del tejido depende el encaje. Rellenarlo con un valor inventado se vería en pantalla y nadie sabría de dónde salió. |
-| **Blanco y negro sin color de acento** | Añadir más color | El usuario dijo que se veía "pálido". El problema no era la falta de color sino el contraste bajo en toda la página. Los extremos lo arreglan, y a un catálogo de ropa le va mejor. |
-| **Los estados no se distinguen por color** | Semáforo verde/ámbar/rojo | En una página sin color, tres puntos coloreados serían lo único llamativo, y el tema de la página no es el estado del servidor. Por forma y por palabra funciona además para quien no distingue el rojo del verde. |
+| **El camino por defecto es determinista, también para bocetos** | Mandar los bocetos a la IA | Se midió con llamadas reales: dos modelos, con y sin `input_fidelity=high`, y las tres veces el modelo devolvió una prenda distinta. Para un producto que promete «mira TU diseño con otra tela», eso es el resultado equivocado — y encima se cobraba por él. |
+| **La IA se queda, pero como opción** | Quitarla | Sabe hacer algo que la otra vía no puede: convertir un dibujo de líneas en una imagen fotorrealista. Eso tiene valor real; lo que no tiene sentido es que sea el camino por defecto de un producto cuya promesa es la fidelidad al diseño. |
+| **Retexturizado en vez de generación, para fotos** | Generar la imagen con IA | Tres razones, y la tercera es la que manda: es gratis, es cien veces más rápido, y es **determinista**. Comparar cuatro telas lado a lado solo significa algo si lo único que cambia entre las cuatro es la tela. Un modelo generativo redibuja el corte en cada llamada. |
+| **Dividir el brillo entre el brillo propio de la prenda** | Multiplicar la tela por el brillo | Multiplicar mezcla forma y color: una prenda azul marino deja la tela nueva oscura, y una blanca la deja plana. Dividiendo, lo que queda es solo la forma. |
+| **Multiplicar en luz lineal** | Multiplicar en sRGB | Los valores de un PNG llevan una curva encima; multiplicar sobre ellos no multiplica luz y las sombras salen más oscuras de lo que deberían. Cuesta dos funciones. |
+| **Desenfoque y reescalado en coma flotante** | Usar los filtros de Pillow | Pillow trabaja en enteros de 0 a 255. Sobre una imagen no se nota; sobre un campo del que se calcula el gradiente, los escalones de 1/255 son casi toda la señal. Síntoma: el estampado troceado en moaré. **Se cometió dos veces**: la segunda al optimizar, cuantizando antes de ampliar. |
+| **Derivar en pequeño y ampliar el gradiente** | Ampliar el campo y derivar | Un gradiente de un campo de frecuencia muy baja también es de frecuencia muy baja, así que ampliarlo no inventa nada. Derivar algo ya interpolado, sí. |
+| **Limpiar el ruido en la DECISIÓN, no en el resultado** | Apertura morfológica sobre la máscara | La apertura arregló el contorno dentado de la chaqueta y **se comió el 7% de la camiseta blanca**: erosionar borra lo fino, y lo fino era prenda. Suavizando el mapa de distancias antes de umbralizar, los picos desaparecen y la cobertura no se mueve. |
+| **Cierre morfológico + tapado de cavidades** | Solo cierre | El cierre sella la boca del túnel y deja la cavidad detrás, que sale como un agujero en mitad de la prenda. |
+| **El recorte se calcula al subir y se guarda** | Calcularlo al probar | Se necesita idéntico para cada tela. Guardándolo, probar diez telas son diez multiplicaciones en vez de diez recortes. |
+| **La escala del estampado se mide sobre la PRENDA** | Sobre la imagen | Con la imagen, la misma tela cambiaría de tamaño según el margen que tuviera la foto, y dos pruebas de la misma prenda dejarían de ser comparables. |
+| **El mosaico se repite sin espejar** | Espejar para ocultar las uniones | Espejando, una raya se convierte en un galón en cada unión. En confección la dirección del hilo es un dato real. |
+| **Dos imágenes por tela: foto y mosaico** | Una sola | La foto de catálogo lleva orillo y dobleces; repetirla sobre una camisa los mete cuarenta veces. |
+| **`fabrics` aparte de `garments`** | Una tabla con un campo «tipo» | Son inventario de una tienda de telas y ropa para probarse delante del espejo. En una tabla, la mitad de las columnas estarían siempre vacías. |
+| **El motor lanza su propio error** | Reutilizar `ValidationError` de servicios | Creaba un ciclo de importación que solo reventaba según el orden de carga. El ciclo era el síntoma; el problema es que una capa de abajo conocía la de arriba. |
+| **Un fixture `autouse` que apaga la IA en los tests** | Confiar en no ejecutar esos tests | La suite lee el `.env` real. Con `AI_PROVIDER=openai` puesto —que es lo normal mientras se trabaja en esa parte— 71 tests × decenas de ejecuciones al día generarían imágenes facturadas. |
+| **Claves ajenas activadas en SQLite** | Dejar el valor por defecto | SQLite las trae desactivadas, así que los tests no validaban ninguna restricción de integridad. Se descubrió porque borrar una prenda dejaba sus pruebas vivas solo en los tests. |
+| **Un reintento, y solo uno** | Ninguno, o varios | Si la API rechaza `input_fidelity` con un 400, se reintenta sin él. Un 400 se rechaza antes de generar imagen, así que es gratis; y una lista de qué modelo admite qué caducaría con el siguiente modelo. |
+| **`gpt-image-1-mini` por defecto** | El modelo completo | Cuesta un 64% menos en tokens (7.880 contra 12.935) y **no conserva mejor el diseño**. Pagar más por lo mismo no tiene defensa. |
+| **202 al crear una prueba** | 200 síncrono | El motor determinista tarda medio segundo y el generativo cuarenta y cinco. Con dos contratos distintos, el frontend tendría que saber qué motor va a correr antes de pedirlo. |
 
 ### Anteriores, todavía vigentes
 
-| Decisión | Alternativa descartada | Motivo |
-|---|---|---|
-| Monolito modular por capas | Microservicios | Con un dominio aún poco conocido, los límites de servicio se pondrían mal. |
-| SQLAlchemy síncrono | `AsyncSession` | Consultas triviales; el modo síncrono es más simple de depurar y testear. |
-| Migración inicial generada contra una base vacía desechable | Autogenerar contra `vfit` | Contra una base que ya tenía las tablas habría producido una migración VACÍA. |
-| `create_all` fuera del arranque | Dejarlo "por si acaso" | Dos fuentes de verdad para el esquema divergen en silencio. |
-| `compare_type` y `compare_server_default` activos | Los valores por defecto de Alembic | Sin ellos, autogenerate se pierde los cambios de tipo, que son los más habituales. |
-| `PyJWT` | `python-jose` | python-jose tiene mantenimiento irregular e historial de CVEs. |
-| HS256 fijado en código | Algoritmo configurable por entorno | Un algoritmo elegido por configuración se puede degradar a `none`. |
-| Login con JSON | `OAuth2PasswordRequestForm` | El formulario obliga a enviar un campo `username` que en realidad contiene un email. |
-| Token en `localStorage` | Solo en memoria; cookie `httpOnly` | En memoria, cada recarga cierra la sesión. La cookie exige CSRF y cookies entre orígenes. |
-| Validar el token guardado contra `/auth/me` al arrancar | Confiar en él | Un token caducado pintaría la interfaz como "sesión iniciada" con todas las peticiones fallando. |
-| 404 en recursos ajenos | 403 | Un 403 confirma que el recurso existe. |
-| Sin `POST /auth/logout` | Endpoint de cierre de sesión | Sin lista de revocación no podría invalidar nada: fingiría trabajar. |
-| **Seguir siendo aplicación web** | Empaquetar en un `.exe` | Lo descartó el usuario el 2026-09-06. Un instalador obliga a abandonar PostgreSQL. **No reabrir sin que lo pida.** |
-| `image_key` en BD, `image_url` en la API | Guardar la URL completa | Migrar a S3/R2 no obliga a reescribir filas. |
-| Enums como `VARCHAR` sin CHECK | `ENUM` nativo de PostgreSQL | Añadir un valor a un ENUM nativo exige `ALTER TYPE`; estas listas crecen. Los valores los valida Pydantic. |
-| `bcrypt` directo | `passlib[bcrypt]` | passlib 1.7.4 falla con bcrypt ≥ 4.1 y no tiene mantenimiento activo. |
-| `max_length=72` en la contraseña | Sin límite | bcrypt trunca en silencio a 72 bytes. |
-| `fetch` nativo | axios | No aporta nada que necesitemos. |
-| Hook `useApi` propio | TanStack Query | Aún no hay caché ni revalidación que gestionar. |
-| React 18 | React 19 | Todo el ecosistema es compatible sin fricción. |
-| Tailwind v3 | Tailwind v4 | v4 cambia a configuración CSS-first; casi toda la documentación existente es de v3. |
-| PostgreSQL nativo con rol `vfit` dedicado | Usar el superusuario `postgres` | La aplicación no debe correr como superusuario. |
-| Docker solo para PostgreSQL | Dockerizar toda la aplicación | El hot-reload nativo es más rápido de depurar en desarrollo. |
+| Decisión | Motivo |
+|---|---|
+| Monolito modular por capas | Con un dominio poco conocido, los límites de servicio se pondrían mal. |
+| SQLAlchemy síncrono | Consultas triviales; más simple de depurar y testear. |
+| `create_all` fuera del arranque | Dos fuentes de verdad para el esquema divergen en silencio. |
+| `PyJWT` sobre `python-jose` | Mantenimiento irregular e historial de CVEs. |
+| HS256 fijado en código | Un algoritmo configurable se puede degradar a `none`. |
+| 404 en recursos ajenos | Un 403 confirma que el recurso existe. |
+| Token en `localStorage` | En memoria, cada recarga cierra la sesión. Riesgo asumido (#10). |
+| `image_key` en BD, `image_url` en la API | Migrar a S3/R2 no obliga a reescribir filas. |
+| Enums como `VARCHAR` sin CHECK | Añadir un valor a un ENUM nativo exige `ALTER TYPE`. |
+| `bcrypt` directo | passlib 1.7.4 falla con bcrypt ≥ 4.1. |
+| `fetch` nativo sobre axios | No aporta nada que necesitemos. |
+| React 18, Tailwind v3 | Ecosistema compatible sin fricción. |
+| Blanco y negro sin acento | El problema era el contraste bajo, no la falta de color. |
 
 ---
 
 ## Próximos pasos
 
-1. **Probarlo con una cámara y una persona.** Es lo único que falta para dar
-   el encaje por bueno. Todo lo demás está medido.
-2. **Decidir qué hacer con las ocho prendas de silueta** del catálogo:
-   retirarlas o darles fotografías reales.
-3. **Ajustar los tramos con lo que se vea.** `TRAMOS` en `vestir.ts` tiene los
-   números de dónde empieza y acaba cada categoría, y están comentados uno a
-   uno. Cambiarlos es cambiar un número, no reescribir nada.
-4. **Acceso con Google**, que el usuario ya ha pedido. De paso resuelve la
-   limitación #14: garantiza que el buzón existe.
-5. Oclusión de los brazos cuando cruzan el torso (limitación #25), si molesta
-   al usarlo de verdad.
+1. **Fotografiar telas reales.** Los mosaicos generados funcionan, pero la
+   tienda aliada tiene los rollos. Un cuadrado limpio de cada uno mejora el
+   resultado más que cualquier ajuste del motor, y es gratis.
+2. **Probar con prendas y bocetos reales de un taller.** Lo que hay está
+   medido contra cinco fotografías de catálogo y un boceto sintético.
+3. **La conversión prueba→compra.** El Vision Board la pone como métrica y hoy
+   no se mide nada. Un botón de «pedir esta tela» con su referencia sería el
+   primer paso, y cierra el círculo del producto.
+4. **Terminar de verificar el probador con cámara** (limitación #24), que quedó
+   pendiente de la etapa anterior.
+5. **Acceso con Google**, que el usuario ya pidió. De paso resuelve la #14.
