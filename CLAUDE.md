@@ -112,6 +112,13 @@ guardados — se calculan al subir y no se recalculan solos:
 python -m scripts.resegmentar --aplicar
 ```
 
+Y para que los mosaicos del catálogo sean fotográficos en vez de procedurales
+(cuesta dinero, una vez por tela, y sin `--aplicar` solo dice lo que haría):
+
+```powershell
+python -m scripts.telas_fotograficas --aplicar
+```
+
 El primero carga 12 telas con su ficha técnica y su mosaico. El segundo carga
 el catálogo del probador con cámara.
 
@@ -219,7 +226,7 @@ Esa información depende de la **forma**, no del color, así que se separa
 dividiendo el brillo de cada píxel entre el brillo típico de la prenda — y lo
 que queda se traslada a la tela nueva.
 
-### Cinco cosas que costaron encontrarse
+### Cosas que costaron encontrarse
 
 1. **Todo en coma flotante.** Pillow desenfoca en enteros de 0 a 255. Sobre una
    imagen no se nota; sobre un campo del que después se calcula el GRADIENTE es
@@ -264,86 +271,113 @@ que queda se traslada a la tela nueva.
    Lleva una salvaguarda imprescindible: si lo detectado ocupa más del 30% del
    recorte, no es una persona, es una prenda de color cálido, y no se quita
    nada. Medido: el croquis da 0,05; la fotografía de la camiseta, 0,00.
-7. **La máscara de OpenAI va al revés que la nuestra.** Ahí lo TRANSPARENTE es
+7. **El fondo no es un color: es una superficie.** El recorte de una foto de
+   camiseta incluía un manchón que después salía estampado de tela. Parecía la
+   sombra proyectada y no lo era: medido, ese manchón tiene brillo **235 y el
+   fondo 223** — es MÁS CLARO. Era el degradado del ciclorama.
+
+   Un solo color de las esquinas no puede representar un fondo con degradado, y
+   el umbral no estaba mal ajustado: **el modelo de fondo estaba mal
+   planteado**. Ahora se ajusta una superficie cuadrática por canal al marco de
+   la imagen, de forma robusta. Medido: la cobertura de la camiseta pasa de
+   0,613 a 0,520 y la del boceto no se mueve.
+
+   Se descartó frenar el relleno con la fuerza del borde —dejarlo pasar por
+   cualquier sitio liso—: arreglaba la camiseta y **se comía un tercio del
+   vestido**, porque el interior de un dibujo a lápiz también es liso. Entre el
+   valor que funciona y el que destruye había un factor dos.
+8. **El muestreo del mosaico era por vecino más próximo**, y el desplazamiento
+   del pliegue se truncaba a entero. La tela no se curvaba: se escalonaba. Ahora
+   es bilineal, con el módulo sobre los ÍNDICES para que la interpolación cruce
+   la costura del mosaico sin partirse.
+9. **La máscara de OpenAI va al revés que la nuestra.** Ahí lo TRANSPARENTE es
    lo que se edita. Mandarla sin invertir da una imagen plausible y equivocada.
 
 ### Los parámetros están medidos, no elegidos a ojo
 
-`DOBLADO_DEL_ESTAMPADO = 0.10`: a 0,06 se nota que la tela envuelve el hombro; a
-0,20 aparecen remolinos; a 0,35 se derrite. `RADIO_CIERRE = 5`: con 3 queda una
-ranura abierta en la camiseta blanca, y con 7 las perneras del vaquero siguen
-separadas. Si cambias uno, mídelo igual.
+`DOBLADO_DEL_ESTAMPADO = 0.03`. Estuvo en 0,10 y **hubo que recalibrarlo al
+pasar a mosaicos fotográficos**: el parámetro no cambió, cambió la frecuencia de
+la textura sobre la que actúa. Con un cuadro nítido, 0,10 lo derrite en cintas y
+el denim sale en vetas verticales. Medido de nuevo sobre vichy fotográfico: 0,05
+todavía ondula, 0,03 sigue la curva del hombro conservando el cuadro, 0,015 no
+se nota, y 0 deja una rejilla recta sobre una manga curva.
+
+`RADIO_CIERRE = 5`: con 3 queda una ranura abierta en la camiseta blanca, y con
+7 las perneras del vaquero siguen separadas. Si cambias uno, mídelo igual.
 
 ---
 
-## La IA: dónde está y por qué está ahí
+## La IA: dónde está y por qué está AHÍ y no en otro sitio
 
-**`AI_PROVIDER=openai`, modelo `gpt-image-1-mini`.** Se activa a conciencia; el
-valor por defecto del repositorio es `none`, porque que clonarlo empiece a
-gastar dinero de alguien sería una trampa. Un valor desconocido **hace fallar el
-procesado**, nunca cae al motor local en silencio.
+**`AI_PROVIDER=openai`.** El valor por defecto del repositorio es `none`, porque
+que clonarlo empiece a gastar dinero de alguien sería una trampa. Un valor
+desconocido **hace fallar el procesado**, nunca cae al motor local en silencio.
 
-### Qué se le manda al modelo, que es la decisión que más pesa
+### La causa raíz, y está en la documentación de OpenAI
 
-**El retexturizado, no el original.** Una imagen que ya tiene el diseño del
-usuario y ya tiene la tela puesta, pidiéndole solo que la haga fotográfica. La
-primera versión mandaba el boceto crudo y pedía «un vestido de tafetán»: a eso
-un modelo solo puede responder inventándose un vestido, y se lo inventaba.
+> *«masking with GPT Image is entirely prompt-based»* — y el modelo *«may not
+> follow mask shapes with complete precision»*.
 
-**Y la salida se recompone contra el original a través de la máscara.**
-`images.edit` **no** es un parcheo: regenera la imagen entera, también fuera de
-la máscara. Por eso cambiaba el fondo aunque la máscara fuera perfecta. Con la
-composición, todo lo que no es prenda —fondo, cara, pelo— queda idéntico al
-original píxel a píxel. Es lo único que lo garantiza.
+**La máscara es una sugerencia, no una restricción.** No existe parámetro de
+intensidad, ni de ruido, ni condicionamiento estructural: nada equivalente a un
+ControlNet o a un `strength`. `images.edit` **regenera la imagen entera**, no
+parchea la zona marcada.
 
-### Lo que se midió con llamadas reales
+Con eso sobre la mesa, pedirle a `images.edit` que conserve la geometría de una
+prenda no es un problema de prompt: es pedir una garantía que la API no ofrece.
+Se midió seis veces y la sexta con TODO bien puesto —modelo de precisión,
+fidelidad alta de verdad, máscara binaria, tamaño nativo, calidad alta, la tela
+como segunda imagen y partiendo del retexturizado correcto—: devolvió una seda
+espléndida sobre un vestido que no era el del boceto.
 
-Cinco llamadas, dos prendas, los dos modelos. La conclusión no se movió.
+### Por eso la IA no está en el camino de la geometría
 
-| # | Motor | Partiendo de | Tiempo | Coste | Conserva el diseño |
-|---|---|---|---|---|---|
-| 1 | `gpt-image-1-mini` + fidelidad alta | boceto crudo | — | 0 | 400: el mini **no admite** el parámetro |
-| 2 | `gpt-image-1-mini` | boceto crudo | 47 s | 7.880 | **No** — túnica lisa |
-| 3 | `gpt-image-1` + fidelidad alta | boceto crudo | 46 s | 12.935 | **No** |
-| 4 | `gpt-image-1-mini` | **retexturizado** | 24 s | 3.276 | **No** — manga larga y cuello barco |
-| 5 | `gpt-image-1` + fidelidad alta | **retexturizado** | 52 s | 12.987 | **No** — igual |
-| — | Retexturizado de boceto | — | 0,5 s | gratis | **Sí, entero** |
+```
+ficha de la tela + mosaico procedural
+    --[IA, UNA VEZ POR TELA]--> mosaico fotográfico, guardado en el catálogo
+prenda + máscara + mosaico
+    --[determinista, SIEMPRE]--> resultado con la geometría exacta
+```
 
-Las dos últimas son las importantes: **aunque se le dé la imagen ya hecha y solo
-se le pida pulir, el modelo rediseña.** Con el modelo grande y con
-`input_fidelity="high"`, que es el parámetro que existe justo para evitarlo.
+La geometría —silueta, pliegues, costuras, la persona— sale del retexturizado,
+que es una multiplicación por píxel y **por construcción no puede mover nada**.
+Lo que a ese camino le faltaba no era geometría: era que el mosaico pareciera
+tela de verdad. Y eso sí lo hace de maravilla un modelo generativo, porque en un
+trozo de tela plano no hay diseño que respetar.
 
-Lo que sí resolvió el trabajo: de la 4 en adelante, el fondo, la cara y el pelo
-son los del original y no los toca nadie. La composición funciona; lo que no se
-puede es confiarle el interior de la prenda.
+`app/textil/tejido_ia.py` y `scripts/telas_fotograficas.py`. Se paga una vez por
+tela y para siempre, en vez de una vez por comparación: doce telas son doce
+llamadas. Y se conserva lo que hace útil comparar, que entre dos pruebas lo
+único que cambie sea la tela.
 
-**Conclusión, y es una decisión de producto:** el camino por defecto es
-siempre el determinista, también para bocetos. La IA es **opt-in** y sirve para
-lo que sí sabe hacer —convertir un dibujo en algo fotorrealista— sabiendo que
-reinterpreta el diseño y que se cobra.
+**El mosaico se cierra después, y se mide.** Un modelo no devuelve bordes que
+encajen, y pedírselo por escrito no funciona; se funde consigo mismo desplazado
+media anchura (`hacer_repetible`) y se comprueba con `medir_junta`, que da ~1
+cuando no hay junta. Medido: tafetán 1,03, denim 0,76, vichy 1,30.
 
-Eso no debilita el uso de IA en el proyecto: lo justifica. Está donde aporta
-algo que la otra vía no puede dar, y se elige a sabiendas.
+### Los cinco defectos de implementación que había además
+
+Ninguno era el prompt.
+
+| # | Qué pasaba | Arreglo |
+|---|---|---|
+| 1 | **El modelo era `gpt-image-1-mini`**, el más débil de los ocho que acepta `images.edit`, y **el único que rechaza `input_fidelity`**. Como ese 400 se reintenta sin el parámetro, TODAS las llamadas salían con la fidelidad desactivada sin que se notara. | `gpt-image-2.5-sunburst`, que es el de precisión de edición. |
+| 2 | **La tela nunca se le enseñaba**: viajaba como texto. Imaginarse el material y imaginarse la prenda son, para un modelo generativo, el mismo acto. | Va como segunda imagen; la API admite 16 y aplica la máscara sobre la primera. |
+| 3 | **La máscara iba difuminada** (13–25 px de pluma, un 3% de los píxeles) a una API que solo define alfa = 0. Lo indefinido pasaba justo en el contorno. | Binaria para la API; la pluma se queda para nuestra composición. |
+| 4 | **Se forzaba a 1024x1536 y se devolvía al tamaño original**: dos remuestreos de la geometría para nada. | Tamaño nativo múltiplo de 16, con reintento a los tres fijos para los modelos que no lo admiten (se descubrió con un 400: la capacidad es POR MODELO, no de la API). |
+| 5 | **`quality` sin poner**, o sea `auto`, justo cuando lo que se mira es el detalle fino. | `high`. |
 
 ### Control de gasto, en tres sitios
 
 1. El límite mensual del panel de OpenAI. Lo puso el usuario.
-2. `AI_TRIALS_PER_USER_PER_DAY` (20), ventana móvil de 24 h. Protege a unos
-   usuarios de otros.
+2. `AI_TRIALS_PER_USER_PER_DAY` (20), ventana móvil de 24 h.
 3. **Las pruebas automatizadas no pueden gastar nunca.** `conftest.py` tiene un
-   fixture `autouse` que fuerza `AI_PROVIDER="none"`. Sin él, poner
-   `AI_PROVIDER=openai` en el `.env` haría que la suite entera —71 tests,
-   decenas de veces al día— generara imágenes facturadas.
+   fixture `autouse` que fuerza `AI_PROVIDER="none"`. Sin él, la suite entera
+   —71 tests, decenas de veces al día— generaría imágenes facturadas.
 
-La IA **se pide desde la pantalla de pruebas**, con un selector de motor. Antes
-estaba integrada y era inalcanzable: el cliente aceptaba `method` y la pantalla
-nunca lo mandaba, así que todo salía por el camino determinista.
-
-**Sin reintentos automáticos**, con UNA excepción documentada: si la API rechaza
-`input_fidelity` con un 400, se reintenta sin ese parámetro. Verificado contra
-la API real: la petición que antes moría con ese 400 ahora sale adelante. Un 400 se rechaza
-antes de generar imagen, así que no ha costado nada, y la alternativa —una lista
-de qué modelo admite qué— caducaría con el siguiente modelo.
+**Sin reintentos automáticos**, con DOS excepciones y las dos gratis: un 400 por
+`input_fidelity` y un 400 por `size` se rechazan ANTES de generar imagen. Una
+tabla de qué modelo admite qué caducaría con el siguiente modelo.
 
 ---
 

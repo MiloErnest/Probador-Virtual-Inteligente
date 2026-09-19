@@ -97,12 +97,20 @@ DETALLE_CONSERVADO = 0.35
 #: relación entre sombra y pendiente depende de dónde estuviera la luz al hacer
 #: la foto, y eso no se sabe.
 #:
-#: Medido con un cuadro vichy sobre camisa y jersey: a 0,06 se nota que la tela
-#: envuelve el hombro; a 0,12 todavía es creíble; a 0,20 aparecen remolinos en
-#: el cuello y el dibujo empieza a parecer líquido; a 0,35 se derrite. Con 0 el
-#: cuadro sale perfectamente recto sobre una manga curva, que es lo que delata
-#: el montaje.
-DOBLADO_DEL_ESTAMPADO = 0.10
+#: RECALIBRADO AL PASAR A MOSAICOS FOTOGRÁFICOS
+#: -------------------------------------------
+#: Estuvo en 0,10, medido contra los mosaicos procedurales, que son suaves. Con
+#: un mosaico fotográfico —trama fina, cuadro nítido— el mismo valor desplaza
+#: hasta ±72 px y el dibujo se derrite: el vichy sale en cintas y el denim en
+#: vetas verticales. El parámetro no cambió; cambió la frecuencia de la textura
+#: sobre la que actúa, que es lo que estaba midiendo sin saberlo.
+#:
+#: Medido de nuevo, vichy fotográfico sobre camiseta (cuadro de 182 px en la
+#: prenda): a 0,10 se derrite; a 0,05 todavía ondula; **a 0,03 el cuadro sigue
+#: la curva del hombro y sigue siendo un cuadro**; a 0,015 apenas se nota; con 0
+#: sale una rejilla perfectamente recta sobre una manga curva, que es lo que
+#: delata el montaje.
+DOBLADO_DEL_ESTAMPADO = 0.03
 
 #: Brillo de referencia mínimo. Una prenda negra sobre fondo negro tiene un
 #: brillo medio cercano a cero, y dividir por él manda la razón al infinito.
@@ -476,11 +484,27 @@ def _tender_la_tela(
         x += gx * empuje
         y += gy * empuje
 
-    # Muestreo con envoltura: el mosaico es periódico, así que el módulo lo
-    # repite sin tener que construir la imagen entera repetida en memoria.
-    ix = np.mod(x.astype(np.int32), lado)
-    iy = np.mod(y.astype(np.int32), lado)
-    return mosaico[iy, ix]
+    # MUESTREO BILINEAL, Y NO ES UN LUJO
+    # ----------------------------------
+    # El desplazamiento del pliegue es fraccionario: medio píxel aquí, un tercio
+    # allá. Truncándolo a entero —que es lo que hacía— la tela no se curva: se
+    # escalona, y en un cuadro escocés los escalones se ven como dientes.
+    #
+    # El módulo va sobre los ÍNDICES y no sobre las coordenadas, así que la
+    # interpolación cruza la costura del mosaico sin partirse: el píxel que
+    # sigue al último es el primero, que es exactamente lo que significa que un
+    # mosaico sea repetible.
+    x0 = np.floor(x).astype(np.int32)
+    y0 = np.floor(y).astype(np.int32)
+    fx = (x - x0)[..., None]
+    fy = (y - y0)[..., None]
+
+    ix0, ix1 = np.mod(x0, lado), np.mod(x0 + 1, lado)
+    iy0, iy1 = np.mod(y0, lado), np.mod(y0 + 1, lado)
+
+    arriba = mosaico[iy0, ix0] * (1.0 - fx) + mosaico[iy0, ix1] * fx
+    abajo = mosaico[iy1, ix0] * (1.0 - fx) + mosaico[iy1, ix1] * fx
+    return arriba * (1.0 - fy) + abajo * fy
 
 
 # --- Conversión de color ----------------------------------------------------

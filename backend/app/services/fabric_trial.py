@@ -244,20 +244,85 @@ def _caja_de(mascara: Image.Image) -> tuple[int, int, int, int]:
     return caja if caja is not None else (0, 0, mascara.width, mascara.height)
 
 
+#: El ligamento, deducido del nombre comercial.
+#:
+#: NO es un adorno: es el dato que más determina el aspecto de un tejido. Un
+#: tafetán y un punto del mismo color y el mismo gramaje no se parecen en nada
+#: —uno es liso y rígido con brillo seco, el otro es mate y con malla— y la
+#: diferencia entre los dos está en esta palabra y en ninguna otra de la ficha.
+#:
+#: El catálogo está en español y el modelo entiende mejor el inglés, así que la
+#: traducción tiene que ocurrir en algún sitio. Aquí, con un diccionario
+#: pequeño que cae con elegancia: si el nombre no coincide con nada, se manda
+#: la composición y el modelo hace lo que puede.
+LIGAMENTOS = {
+    "tafetán": "taffeta, with a crisp smooth surface and a dry sheen",
+    "tafetan": "taffeta, with a crisp smooth surface and a dry sheen",
+    "popelín": "poplin, with a fine flat plain weave",
+    "popelin": "poplin, with a fine flat plain weave",
+    "lino": "linen, with a visible irregular slubby weave",
+    "denim": "denim twill, with a diagonal twill line",
+    "franela": "flannel, with a brushed matte fuzzy surface",
+    "vichy": "gingham, with an even woven check",
+    "punto": "jersey knit, with visible knitted loops",
+    "rayas": "yarn-dyed striped jersey",
+    "sarga": "twill, with a diagonal rib",
+    "seda": "silk, smooth with a soft lustre",
+    "lana": "wool, matte with a slight nap",
+}
+
+#: Las fibras, del español de la ficha al inglés que entiende el modelo.
+FIBRAS = {
+    "algodón": "cotton",
+    "algodon": "cotton",
+    "lino": "linen",
+    "seda": "silk",
+    "lana virgen": "virgin wool",
+    "lana": "wool",
+    "elastano": "elastane",
+    "poliéster": "polyester",
+    "poliester": "polyester",
+    "viscosa": "viscose",
+}
+
+
 def _describir(tela) -> str:
     """Cómo se le cuenta la tela al modelo generativo.
 
-    Se construye con los campos de la ficha y no con el nombre comercial. «Lino
-    Toscana 320» no le dice nada a un modelo; «natural beige linen fabric,
-    visible weave, 190 g/m²» sí.
+    Se construye con la ficha técnica, no con el nombre comercial: «Lino
+    Toscana 320» no le dice nada a un modelo.
+
+    LO QUE FALTABA, Y ERA LO QUE MÁS PESABA
+    ---------------------------------------
+    Esto devolvía «burdeos, 100% seda, lightweight and fluid fabric». Tres
+    problemas: mezclaba los dos idiomas, **no decía el ligamento** —que es lo
+    que distingue un tafetán de un satén de la misma seda— y no daba el color
+    exacto, aunque la ficha lo tiene en hexadecimal.
+
+    El color en hexadecimal importa de verdad aquí: el cliente pide la tela por
+    su referencia, y una imagen que le enseñe otro burdeos es una imagen que
+    miente sobre el producto.
     """
-    partes = []
+    nombre = tela.name.lower()
+    partes: list[str] = []
+
     if tela.color_name:
         partes.append(tela.color_name.lower())
-    if tela.composition:
-        partes.append(tela.composition.lower())
-    else:
-        partes.append(tela.name.lower())
+    if tela.color_hex:
+        partes.append(f"(exactly colour {tela.color_hex})")
+
+    ligamento = next((v for k, v in LIGAMENTOS.items() if k in nombre), None)
+
+    composicion = (tela.composition or "").lower()
+    for español, ingles in FIBRAS.items():
+        composicion = composicion.replace(español, ingles)
+    if composicion:
+        partes.append(composicion)
+
+    if ligamento:
+        partes.append(ligamento)
+    elif not composicion:
+        partes.append(nombre)
 
     dibujo = {
         "stripes": "with woven stripes",
@@ -270,7 +335,8 @@ def _describir(tela) -> str:
 
     if tela.weight_gsm:
         partes.append(
-            "lightweight and fluid" if tela.weight_gsm < 150 else "heavy and structured"
+            f"{tela.weight_gsm} g/m², "
+            + ("lightweight and fluid" if tela.weight_gsm < 150 else "heavy and structured")
         )
 
     return ", ".join(partes) + " fabric"

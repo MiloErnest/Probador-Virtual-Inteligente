@@ -83,10 +83,31 @@ class Settings(BaseSettings):
     #: NUNCA en el código: este campo se lee del .env, que está en .gitignore.
     OPENAI_API_KEY: str = ""
 
-    # Modelo de imagen. Configurable porque este catálogo se mueve deprisa y
-    # los precios cambian con él. Los "mini" son bastante más baratos; los
-    # grandes dan mejor resultado en bocetos complicados.
-    OPENAI_IMAGE_MODEL: str = "gpt-image-1-mini"
+    # Modelo de imagen para el camino de EDICIÓN de prenda. Configurable porque
+    # este catálogo se mueve deprisa y los precios cambian con él.
+    #
+    # Estuvo en `gpt-image-1-mini` y era un error medido: de los ocho modelos
+    # que acepta `images.edit` (dall-e-2, gpt-image-1, gpt-image-1-mini,
+    # gpt-image-1.5, gpt-image-2, gpt-image-2-2026-04-21, gpt-image-2.5-sunburst
+    # y gpt-image-2.5-flare) era el más débil, y además **el único que rechaza
+    # `input_fidelity`**. Como ese 400 se reintenta sin el parámetro, todas las
+    # llamadas salían con la fidelidad DESACTIVADA sin que se notara.
+    OPENAI_IMAGE_MODEL: str = "gpt-image-2.5-sunburst"
+
+    # Calidad de la edición. Se cobra por píxel generado, así que subirla cuesta;
+    # pero con una tela lo que se está mirando ES el detalle fino, y en "auto"
+    # el modelo puede elegir una calidad que borra justo eso.
+    OPENAI_IMAGE_QUALITY: str = "high"
+
+    # Modelo para sintetizar el MOSAICO de una tela (`app/textil/tejido_ia.py`).
+    # Se separa del anterior a propósito: son dos trabajos distintos y conviene
+    # poder pagarlos distinto. Éste se ejecuta una vez por tela y para siempre.
+    OPENAI_TEXTURE_MODEL: str = "gpt-image-2.5-sunburst"
+
+    # Calidad del mosaico. Aquí sí compensa la alta: el mosaico se genera una
+    # sola vez por tela y después lo usan todas las pruebas de todos los
+    # usuarios. Es el único sitio del proyecto donde el gasto no se repite.
+    OPENAI_TEXTURE_QUALITY: str = "high"
 
     # `input_fidelity="high"` le dice al modelo que respete el detalle de la
     # imagen de entrada. Es la diferencia entre «tu diseño con otra tela» y

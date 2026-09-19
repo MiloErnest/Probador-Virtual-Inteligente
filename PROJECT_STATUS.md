@@ -53,8 +53,16 @@ siendo el catálogo del probador con cámara.
       por encima. ~500 ms. Si el dibujo no trae tono, cae al volumen inventado.
 - [x] **La figura sale del recorte**: en un figurín, la cara, el pelo y los
       brazos ya no se pintan de tela.
-- [x] **Motor generativo con OpenAI**, opt-in, con traducción de errores a
-      mensajes accionables y registro de tokens.
+- [x] **La IA sintetiza el MOSAICO de la tela**, no la prenda: una vez por tela,
+      se guarda en el catálogo, y después lo usa el motor determinista. Es lo que
+      permite tener material fotográfico Y geometría exacta a la vez.
+- [x] **El mosaico generado se cierra para repetirse sin junta**, y se mide
+      (tafetán 1,03, denim 0,76, vichy 1,30; 1 es perfecto).
+- [x] **El fondo se modela como superficie**, no como un color: un ciclorama con
+      degradado ya no entra en el recorte.
+- [x] **Motor generativo de edición con OpenAI**, opt-in, con traducción de
+      errores a mensajes accionables y registro de tokens. Conserva intacto todo
+      lo que no es prenda; el interior lo reinterpreta y está medido seis veces.
 - [x] **Aviso cuando el recorte sale dudoso**, antes de que el usuario gaste
       pruebas sobre una máscara rota.
 
@@ -139,7 +147,9 @@ Dos cosas que solo se ven con un dibujo real:
 
 | # | Descripción | Impacto | Plan |
 |---|---|---|---|
-| 35 | **La sombra proyectada de una prenda entra en el recorte y se pinta.** Visto en la foto de camiseta del usuario: la sombra que cae a su derecha sale estampada. El umbral adaptativo la ve tan distinta del fondo como a la prenda. | **Alto** | Una sombra es el fondo más oscuro, no otro color: separarlas por cromaticidad en vez de por distancia RGB. Con una prenda negra eso solo no basta —también es acromática— así que hace falta combinarlo con el salto de borde. |
+| 37 | **Los mosaicos fotográficos solo están hechos para 3 de las 12 telas** (tafetán, denim y vichy). Las otras nueve siguen siendo procedurales. | Medio | `python -m scripts.telas_fotograficas --aplicar`. Son 9 llamadas, ~27.000 tokens, una sola vez. |
+| 38 | **La síntesis del mosaico no siempre acierta el ligamento.** El tafetán volvió con una trama más gruesa de lo que es una seda de 90 g. | Medio | La ficha ya le da gramaje y ligamento; falta iterar el texto de `_instruccion` y medir. O fotografiar el rollo real, que sigue siendo mejor. |
+| 35 | ~~**La sombra proyectada de una prenda entra en el recorte y se pinta.**~~ **RESUELTO, y no era una sombra.** Medido, el manchón tiene brillo 235 y el fondo 223: es MÁS claro. Era el degradado del ciclorama, no una sombra. | — | El fondo se modela con una superficie cuadrática ajustada al marco, de forma robusta, en vez de con un color de las esquinas. Cobertura de la camiseta 0,613 → 0,520; el boceto no se mueve. |
 | 36 | **En el croquis, la tela invade el escote y los hombros desnudos.** La exclusión de figura acierta con el pelo, la cara y los brazos, pero el pecho descubierto queda dentro del recorte. | Medio | El sombreado del escote es casi acromático en un dibujo a lápiz. Se arregla cerrando la figura hacia abajo desde el cuello, o dejando que el usuario retoque la máscara. |
 | 30 | **El camino generativo no conserva el diseño.** Medido **cinco** veces: los dos modelos, con `input_fidelity=high`, una camisa y un vestido, y las dos últimas **partiendo del retexturizado ya correcto y pidiendo solo pulir**. Rediseña igual. Es una limitación del modelo, no de la integración. | Alto | Por eso la IA es opt-in y el camino por defecto es determinista. La interfaz lo advierte. Si aparece un modelo que sí lo conserve, es cambiar `OPENAI_IMAGE_MODEL`. |
 | 34 | ~~**En un croquis de moda, el recorte pinta también a la modelo.**~~ **RESUELTO.** La máscara es «todo lo que no es fondo», y en un dibujo de figurín eso incluye la cara, el pelo y los brazos, que salen del color de la tela. Se vio con el boceto del usuario. | — | Se separa por saturación: el lápiz es acromático (0,02) y la figura no (0,10+). Con salvaguarda: si lo detectado pasa del 30% del recorte es una prenda de color, no una persona, y no se quita nada. Medido: el croquis pierde un 4,3%; la fotografía de camiseta, 0,0%. |
@@ -209,9 +219,8 @@ Dos cosas que solo se ven con un dibujo real:
 
 ## Próximos pasos
 
-1. **Sacar la sombra proyectada del recorte** (limitación #35). Es lo que más
-   se ve ahora mismo en una fotografía de prenda: la sombra sale estampada de la
-   tela nueva.
+1. **Terminar los mosaicos fotográficos** de las nueve telas que faltan
+   (limitación #37). Es una orden y ~27.000 tokens.
 2. **Rematar el escote en el croquis** (limitación #36).
 3. **Fotografiar telas reales.** Los mosaicos generados funcionan, pero la
    tienda aliada tiene los rollos. Un cuadrado limpio de cada uno mejora el

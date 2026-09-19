@@ -102,6 +102,13 @@ SUAVIZADO_DE_DECISION = 1.0
 #: columnas incluso con radio 7.
 RADIO_CIERRE = 5
 
+#: Anchura del marco del que se aprende el fondo, en fracción del lado corto.
+FRANJA_DEL_MARCO = 0.06
+
+#: Cuántas veces se reajusta el fondo descartando lo que no encaja. Dos bastan:
+#: la primera quita la prenda que toque el marco, la segunda afina.
+VUELTAS_DEL_AJUSTE = 2
+
 #: Saturación a partir de la cual un píxel es FIGURA y no prenda.
 #:
 #: En un figurín hay una persona dibujada, y la persona no es la prenda. Si se
@@ -181,13 +188,8 @@ def segmentar_prenda(imagen: Image.Image) -> Recorte:
     px = np.asarray(trabajo, dtype=np.float32)
     alto, ancho = px.shape[:2]
 
-    # Color de referencia del fondo: la mediana de las cuatro esquinas. Con la
-    # mediana, una esquina rara —una sombra, una marca de agua— no arrastra el
-    # resultado.
-    esquinas = np.stack(
-        [px[0, 0], px[0, ancho - 1], px[alto - 1, 0], px[alto - 1, ancho - 1]]
-    )
-    fondo = np.median(esquinas, axis=0)
+    # EL FONDO NO ES UN COLOR: ES UNA SUPERFICIE.
+    fondo = _campo_de_fondo(px)
 
     # UMBRAL ADAPTATIVO, NO FIJO.
     #
@@ -237,6 +239,80 @@ def segmentar_prenda(imagen: Image.Image) -> Recorte:
     mascara = _quitar_la_figura(mascara, trabajo)
 
     return _empaquetar(mascara, original)
+
+
+def _campo_de_fondo(px: np.ndarray) -> np.ndarray:
+    """El color del fondo EN CADA PUNTO, no uno solo para toda la imagen.
+
+    EL FALLO QUE ARREGLA, Y CÓMO SE ENCONTRÓ
+    ----------------------------------------
+    El recorte de una fotografía de camiseta incluía un manchón de fondo a su
+    derecha, que después salía estampado de tela. Parecía la sombra proyectada
+    y no lo era: medido, ese manchón tiene brillo **235 y el fondo 223**. Es
+    MÁS CLARO. Era el degradado del ciclorama del estudio.
+
+    Un solo color tomado de las esquinas no puede representar un fondo con
+    degradado: en la zona clara la diferencia llegaba a 21, por encima del
+    umbral de 18, y el relleno se paraba ahí como si hubiera empezado la
+    prenda. El umbral no estaba mal ajustado — **el modelo de fondo estaba mal
+    planteado**.
+
+    Un ciclorama, un papel iluminado desde un lado, el viñeteo de un objetivo:
+    todos son suaves y de orden bajo. Una superficie cuadrática por canal los
+    describe bien, y se aprende del MARCO de la imagen, que es donde con más
+    seguridad no hay prenda.
+
+    POR QUÉ EL AJUSTE ES ROBUSTO
+    ----------------------------
+    Porque una prenda puede tocar el marco. Se ajusta, se miran los residuos, se
+    descarta lo que se aparta más de 2,5 desviaciones —medidas con la mediana,
+    que no se deja arrastrar— y se vuelve a ajustar. Si queda muy poco donde
+    apoyarse, se usa el marco entero: preferible un ajuste mediocre a uno
+    dominado por cuatro píxeles.
+
+    LO QUE SE DESCARTÓ, Y POR QUÉ
+    -----------------------------
+    Frenar el relleno con la fuerza del borde —dejarle pasar por cualquier sitio
+    liso— también arreglaba la camiseta. Y se **comía un tercio del vestido**:
+    de 0,369 a 0,254 de cobertura con umbral 0,015, porque el interior de un
+    dibujo a lápiz también es liso. Entre el valor que funciona (0,008) y el que
+    destruye (0,015) hay un factor dos. Es el mismo error que la apertura
+    morfológica que se comió la camiseta blanca, y se descartó por lo mismo.
+    """
+    alto, ancho = px.shape[:2]
+
+    # Coordenadas normalizadas a [-1, 1]: el ajuste no depende del tamaño.
+    yy, xx = np.mgrid[0:alto, 0:ancho].astype(np.float32)
+    x = (xx / max(ancho - 1, 1)) * 2.0 - 1.0
+    y = (yy / max(alto - 1, 1)) * 2.0 - 1.0
+    base = np.stack(
+        [np.ones_like(x), x, y, x * x, x * y, y * y], axis=-1
+    ).reshape(-1, 6)
+
+    grosor = max(2, round(min(alto, ancho) * FRANJA_DEL_MARCO))
+    marco = np.zeros((alto, ancho), dtype=bool)
+    marco[:grosor, :] = marco[-grosor:, :] = True
+    marco[:, :grosor] = marco[:, -grosor:] = True
+    marco = marco.reshape(-1)
+
+    campo = np.empty_like(px)
+    for canal in range(3):
+        valores = px[..., canal].reshape(-1)
+        apoyo = marco.copy()
+        coeficientes = None
+        for _ in range(VUELTAS_DEL_AJUSTE):
+            coeficientes, *_ = np.linalg.lstsq(base[apoyo], valores[apoyo], rcond=None)
+            residuo = np.abs(valores - base @ coeficientes)
+            # 1,4826 convierte la mediana de los residuos en algo comparable a
+            # una desviación típica, sin que un valor extremo la infle.
+            escala = float(np.median(residuo[apoyo])) * 1.4826 + 1e-3
+            siguiente = marco & (residuo <= 2.5 * escala)
+            if siguiente.sum() < base.shape[1] * 8:
+                break
+            apoyo = siguiente
+        campo[..., canal] = (base @ coeficientes).reshape(alto, ancho)
+
+    return campo
 
 
 def _quitar_la_figura(mascara: Image.Image, trabajo: Image.Image) -> Image.Image:

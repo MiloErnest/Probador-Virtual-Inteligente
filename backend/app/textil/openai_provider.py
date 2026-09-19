@@ -67,13 +67,9 @@ from app.core.config import settings
 from app.textil.errores import ErrorDeMotor
 from app.textil.provider import PeticionDeTela, ResultadoDeTela
 
-#: Tamaños que acepta la API. La prenda se lleva al más parecido a su forma:
-#: pedir un cuadrado para una foto apaisada la deformaría.
-TAMANOS = {
-    "cuadrado": "1024x1024",
-    "apaisado": "1536x1024",
-    "vertical": "1024x1536",
-}
+#: Lado máximo que se le pide a la API. Se cobra por píxel, así que esto es el
+#: techo de gasto por llamada; por debajo, manda el tamaño propio de la prenda.
+LADO_MAXIMO = 1536
 
 
 class MotorOpenAI:
@@ -91,8 +87,8 @@ class MotorOpenAI:
 
         partida, desde_retexturizado = _punto_de_partida(peticion)
 
-        tamano = _tamano_para(peticion.prenda.size)
-        ancho, alto = (int(v) for v in tamano.split("x"))
+        ancho, alto = _tamano_para(peticion.prenda.size)
+        tamano = f"{ancho}x{alto}"
 
         # La imagen y la máscara tienen que medir lo mismo y salir en PNG.
         prenda = partida.convert("RGB").resize((ancho, alto), Image.Resampling.LANCZOS)
@@ -107,35 +103,48 @@ class MotorOpenAI:
             max_retries=0,
         )
 
+        # LA TELA SE LE ENSEÑA, NO SE LE CUENTA.
+        #
+        # Hasta ahora la tela viajaba solo como texto —«burdeos, 100% seda»— y
+        # el modelo tenía que imaginársela. Imaginarse el material y
+        # imaginarse la prenda son, para un modelo generativo, el mismo acto.
+        #
+        # La API acepta hasta 16 imágenes y aplica la máscara SOBRE LA PRIMERA,
+        # así que la prenda va primera y el mosaico detrás, como referencia.
+        imagenes = [("prenda.png", _a_png(prenda), "image/png")]
+        if peticion.mosaico is not None:
+            muestra = peticion.mosaico.convert("RGB").resize(
+                (512, 512), Image.Resampling.LANCZOS
+            )
+            imagenes.append(("tela.png", _a_png(muestra), "image/png"))
+
         peticion_api = {
             "model": settings.OPENAI_IMAGE_MODEL,
-            "image": ("prenda.png", _a_png(prenda), "image/png"),
+            "image": imagenes if len(imagenes) > 1 else imagenes[0],
             "mask": ("mascara.png", _a_png(mascara), "image/png"),
-            "prompt": _instruccion(peticion, desde_retexturizado),
+            "prompt": _instruccion(peticion, desde_retexturizado, len(imagenes) > 1),
             "size": tamano,
+            "quality": settings.OPENAI_IMAGE_QUALITY,
             "n": 1,
         }
 
         try:
             try:
-                respuesta = cliente.images.edit(
-                    **peticion_api, input_fidelity=settings.OPENAI_INPUT_FIDELITY
-                )
+                respuesta = _llamar(cliente, peticion_api)
             except openai.BadRequestError as exc:
-                # EL ÚNICO REINTENTO DE TODO EL PROYECTO, Y ES GRATIS
-                # ---------------------------------------------------
-                # `input_fidelity` no lo admiten todos los modelos: el mini lo
-                # rechaza con un 400. Se descubrió con la primera llamada real,
-                # que es la única forma de descubrir estas cosas.
+                # EL TAMAÑO NATIVO NO LO ADMITEN TODOS LOS MODELOS.
                 #
-                # Reintentar aquí no contradice la regla de «sin reintentos
-                # automáticos», que existe para no repetir algo que se cobra:
-                # un 400 se rechaza ANTES de generar ninguna imagen, así que no
-                # ha costado nada. Y la alternativa —una lista de qué modelo
-                # admite qué— caducaría con el siguiente modelo que saliera.
-                if "input_fidelity" not in str(exc):
+                # La documentación dice que `size` acepta cualquier múltiplo de
+                # 16; la API dice que depende del modelo — `gpt-image-1-mini`
+                # responde 400 con «Supported sizes are 1024x1024, 1024x1536,
+                # 1536x1024, and auto». Se descubrió llamando, que es la única
+                # forma. Mismo trato que `input_fidelity`: el 400 se rechaza
+                # antes de generar nada, así que reintentar es gratis, y una
+                # tabla de qué modelo admite qué caducaría con el siguiente.
+                if "size" not in str(exc).lower():
                     raise
-                respuesta = cliente.images.edit(**peticion_api)
+                peticion_api["size"] = _tamano_de_catalogo(peticion.prenda.size)
+                respuesta = _llamar(cliente, peticion_api)
 
         except openai.AuthenticationError as exc:
             raise ErrorDeMotor(
@@ -198,6 +207,44 @@ class MotorOpenAI:
         )
 
 
+def _llamar(cliente, peticion: dict):
+    """Llama a `images.edit` con la máxima fidelidad que acepte el modelo.
+
+    EL ÚNICO REINTENTO DE TODO EL PROYECTO, Y ES GRATIS
+    ---------------------------------------------------
+    `input_fidelity` no lo admiten todos los modelos: `gpt-image-1-mini` lo
+    rechaza con un 400. Reintentar aquí no contradice la regla de «sin
+    reintentos automáticos», que existe para no repetir algo que se cobra: un
+    400 se rechaza ANTES de generar ninguna imagen.
+
+    **Y conviene saber lo que significa que se dispare.** Durante todas las
+    pruebas del proyecto el modelo configurado era el mini, así que este camino
+    se tomaba SIEMPRE: cada llamada salía con la fidelidad desactivada sin que
+    se notara en ninguna parte. Eso explica buena parte de por qué el modelo
+    reinterpretaba el diseño, y es la razón de que ahora el modelo por defecto
+    sea uno que sí la admite.
+    """
+    import openai
+
+    try:
+        return cliente.images.edit(**peticion, input_fidelity=settings.OPENAI_INPUT_FIDELITY)
+    except openai.BadRequestError as exc:
+        if "input_fidelity" not in str(exc):
+            raise
+        return cliente.images.edit(**peticion)
+
+
+def _tamano_de_catalogo(tamano: tuple[int, int]) -> str:
+    """Los tres tamaños fijos, para los modelos que no admiten otra cosa."""
+    ancho, alto = tamano
+    proporcion = ancho / max(1, alto)
+    if proporcion > 1.2:
+        return "1536x1024"
+    if proporcion < 0.83:
+        return "1024x1536"
+    return "1024x1024"
+
+
 def _punto_de_partida(peticion: PeticionDeTela) -> tuple[Image.Image, bool]:
     """Qué imagen se le manda al modelo, y si ya lleva la tela puesta.
 
@@ -238,7 +285,9 @@ def _componer_con_el_original(
     return Image.composite(generada, original.convert("RGB"), mascara.convert("L"))
 
 
-def _instruccion(peticion: PeticionDeTela, desde_retexturizado: bool) -> str:
+def _instruccion(
+    peticion: PeticionDeTela, desde_retexturizado: bool, con_muestra: bool = False
+) -> str:
     """El texto que se le da al modelo.
 
     Está en inglés a propósito: estos modelos siguen instrucciones en inglés
@@ -251,12 +300,23 @@ def _instruccion(peticion: PeticionDeTela, desde_retexturizado: bool) -> str:
     """
     tela = peticion.descripcion
 
+    # Cuando va una segunda imagen hay que decirle QUÉ es, o intentará fundir
+    # las dos: la segunda no es una prenda ni una escena, es solo el material.
+    muestra = (
+        "The SECOND image is not a garment and not a scene: it is a flat swatch "
+        "of the fabric, provided only as the material reference. Use its weave, "
+        "its colour and its surface, and nothing else from it. "
+        if con_muestra
+        else ""
+    )
+
     if desde_retexturizado:
         # La tela YA está puesta. Pedirle que la ponga otra vez sería invitarle
         # a rehacer la prenda, que es justo lo que no queremos.
         return (
-            f"This image already shows the correct garment with the correct fabric "
-            f"({tela}) applied. Your ONLY task is to make that fabric look like a real "
+            muestra
+            + f"The FIRST image already shows the correct garment with the correct "
+            f"fabric ({tela}) applied. Your ONLY task is to make that fabric look like a real "
             "photograph: realistic weave and thread texture, natural sheen, believable "
             "soft shadows inside the folds that are already there. "
             "Keep the garment EXACTLY as it is: every line, seam, edge, hem, neckline, "
@@ -289,14 +349,36 @@ def _instruccion(peticion: PeticionDeTela, desde_retexturizado: bool) -> str:
     )
 
 
-def _tamano_para(tamano: tuple[int, int]) -> str:
+def _tamano_para(tamano: tuple[int, int]) -> tuple[int, int]:
+    """El tamaño que se le pide a la API, lo más cerca posible del original.
+
+    ANTES SE FORZABA A TRES TAMAÑOS FIJOS, Y ESO ERA UN DEFECTO
+    ----------------------------------------------------------
+    Se llevaba todo a 1024x1024, 1536x1024 o 1024x1536. Una prenda de 794x1111
+    se ampliaba a 1024x1536 y el resultado se devolvía a 794x1111: **dos
+    remuestreos completos de la geometría** para nada. La textura fina —el
+    grano de la tela, el pespunte— no sobrevive a ese viaje.
+
+    La API acepta hoy cualquier tamaño múltiplo de 16 entre 1:3 y 3:1. Así que
+    se manda el tamaño propio de la prenda, ajustado al múltiplo de 16 más
+    cercano y limitado por arriba para no disparar el coste, que se cobra por
+    píxel.
+    """
     ancho, alto = tamano
     proporcion = ancho / max(1, alto)
-    if proporcion > 1.2:
-        return TAMANOS["apaisado"]
-    if proporcion < 0.83:
-        return TAMANOS["vertical"]
-    return TAMANOS["cuadrado"]
+
+    # Fuera del rango que admite la API, se recorta la proporción.
+    if proporcion > 3.0:
+        alto = round(ancho / 3.0)
+    elif proporcion < 1 / 3:
+        ancho = round(alto / 3.0)
+
+    escala = min(1.0, LADO_MAXIMO / max(ancho, alto))
+    ancho = max(256, round(ancho * escala))
+    alto = max(256, round(alto * escala))
+
+    # Múltiplo de 16, que es lo que exige la API.
+    return (round(ancho / 16) * 16, round(alto / 16) * 16)
 
 
 def _mascara_invertida(mascara: Image.Image, tamano: tuple[int, int]) -> Image.Image:
@@ -304,12 +386,24 @@ def _mascara_invertida(mascara: Image.Image, tamano: tuple[int, int]) -> Image.I
 
     Nosotros: 255 = prenda. La API: transparente = lo que hay que cambiar.
     Así que la prenda tiene que quedar TRANSPARENTE.
+
+    Y BINARIA, QUE ES LO QUE ESTABA MAL
+    -----------------------------------
+    Nuestra máscara lleva difuminado de borde —medido, entre 13 y 25 px de
+    ancho, un 3% de los píxeles— porque lo necesita para componer sin que se
+    vea el empalme. Pero la API define UN solo caso: *«fully transparent areas
+    (where alpha is zero) indicate where image should be edited»*. Lo que valga
+    128 no está definido, y lo que no está definido pasa justo en el contorno,
+    que es donde más duele.
+
+    Así que aquí se manda binaria y el difuminado se queda para la composición
+    nuestra, que es donde sí significa algo.
     """
     gris = mascara.convert("L").resize(tamano, Image.Resampling.BILINEAR)
-    alfa = Image.eval(gris, lambda v: 255 - v)
+    dura = gris.point(lambda v: 0 if v >= 128 else 255)
 
     lienzo = Image.new("RGBA", tamano, (0, 0, 0, 0))
-    lienzo.putalpha(alfa)
+    lienzo.putalpha(dura)
     return lienzo
 
 
