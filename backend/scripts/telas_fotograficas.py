@@ -38,9 +38,12 @@ from app.textil.errores import ErrorDeMotor
 from app.textil.tejido_ia import medir_junta, sintetizar_mosaico
 
 #: Por encima de esto, la unión del mosaico se nota al repetir y no se guarda.
-#: Un mosaico bien cerrado da ~1: el salto entre sus bordes opuestos es como el
-#: salto entre dos columnas cualesquiera de dentro.
-JUNTA_MAXIMA = 2.5
+#:
+#: Calibrado MIRANDO y no a ojo de la fórmula: cinco mosaicos repetidos 3x3
+#: —dos vichy generados, uno procedural, unas rayas y un tafetán—, todos sin
+#: junta visible, dieron entre 0,59 y 2,22. Un borde crudo sin cerrar da un
+#: orden de magnitud más.
+JUNTA_MAXIMA = 3.0
 
 
 def main() -> int:
@@ -102,9 +105,21 @@ def main() -> int:
             tela.texture_key = almacen.save(
                 buffer.getvalue(), folder=FOLDER_FABRICS, extension=".png"
             )
+            # La foto de catálogo pasa a ser el mosaico nuevo si apuntaba al
+            # viejo: es la misma imagen de la tela, ahora mejor.
+            if tela.photo_key == clave_vieja:
+                tela.photo_key = tela.texture_key
             sesion.add(tela)
             sesion.commit()
-            if clave_vieja:
+
+            # NUNCA SE BORRA UN ARCHIVO QUE OTRA COLUMNA SIGA USANDO.
+            #
+            # En la semilla, la foto de catálogo y el mosaico de cada tela eran
+            # el MISMO archivo. La primera versión de este script borraba el
+            # mosaico viejo al sustituirlo — y con él la foto de once de las
+            # doce telas, que se quedaron apuntando a un archivo que ya no
+            # existía. El catálogo se veía roto y nada avisaba.
+            if clave_vieja and not _en_uso(sesion, clave_vieja):
                 almacen.delete(clave_vieja)
 
             hechas += 1
@@ -114,6 +129,18 @@ def main() -> int:
         return 0
     finally:
         sesion.close()
+
+
+def _en_uso(sesion, clave: str) -> bool:
+    """¿Sigue alguna tela apuntando a este archivo, por cualquier columna?"""
+    from sqlalchemy import or_
+
+    return (
+        sesion.query(Fabric)
+        .filter(or_(Fabric.photo_key == clave, Fabric.texture_key == clave))
+        .first()
+        is not None
+    )
 
 
 if __name__ == "__main__":

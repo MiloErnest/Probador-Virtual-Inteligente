@@ -91,6 +91,36 @@ def test_solo_probables_excluye_las_telas_sin_mosaico(
     assert not any(t["name"] == "Tela sin mosaico" for t in probables)
 
 
+def test_cambiar_el_mosaico_no_borra_la_foto_si_era_el_mismo_archivo(
+    auth_client: TestClient, fabric_with_texture: dict, db_session, storage
+) -> None:
+    """Regresión: once telas del catálogo se quedaron sin foto así.
+
+    La semilla guarda UN archivo para la foto y el mosaico de cada tela. Al
+    sustituir el mosaico se borraba el archivo viejo, y con él la foto, que
+    seguía apuntando a una ruta que ya no existía. Nada fallaba: el catálogo
+    simplemente se veía roto.
+    """
+    from app.models.fabric import Fabric
+
+    tela = db_session.get(Fabric, fabric_with_texture["id"])
+    tela.photo_key = tela.texture_key  # el caso de la semilla
+    db_session.commit()
+    compartido = tela.photo_key
+
+    respuesta = auth_client.post(
+        f"/api/fabrics/{tela.id}/texture",
+        files={"file": ("nuevo.png", make_image_bytes(), "image/png")},
+    )
+    assert respuesta.status_code == 200, respuesta.text
+
+    db_session.refresh(tela)
+    assert tela.texture_key != compartido
+    assert tela.photo_key == compartido
+    # Lo que importa: el archivo de la foto sigue ahí.
+    assert storage.read(compartido)
+
+
 # --- Prendas que sube el usuario --------------------------------------------
 
 

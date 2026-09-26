@@ -143,6 +143,12 @@ function FichaDeTela({ tela }: { tela: Fabric }) {
             {tela.width_cm && <span>{tela.width_cm} cm de ancho</span>}
             {tela.weight_gsm && <span>{tela.weight_gsm} g/m²</span>}
           </dd>
+          {/* Las telas digitalizadas de una foto no traen ficha: composición,
+              gramaje y precio no se leen en una imagen y no se inventan. Se
+              dice, para que el hueco no parezca un olvido. */}
+          {!tela.composition && !tela.weight_gsm && !tela.width_cm && tela.price_per_meter === null && (
+            <dd className="italic text-ink-40">Ficha técnica por completar en tienda</dd>
+          )}
         </dl>
 
         {tela.price_per_meter !== null && (

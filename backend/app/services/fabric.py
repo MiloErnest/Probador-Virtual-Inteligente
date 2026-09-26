@@ -108,7 +108,12 @@ class FabricService:
 
         # Se borra la anterior solo tras persistir la nueva, para no dejar la
         # tela sin imagen si la escritura en base de datos falla.
-        if anterior:
+        #
+        # Y SOLO si la otra imagen de la tela no es ese mismo archivo. La
+        # semilla usa un único archivo para foto y mosaico, y borrar uno se
+        # llevaba el otro: once telas del catálogo se quedaron sin foto así.
+        otra = tela.photo_key if es_mosaico else tela.texture_key
+        if anterior and anterior != otra:
             self.storage.delete(anterior)
 
         return self.to_read(tela)
