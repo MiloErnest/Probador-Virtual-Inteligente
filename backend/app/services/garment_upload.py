@@ -49,7 +49,7 @@ class GarmentUploadService:
         except Exception as exc:  # noqa: BLE001
             raise ValidationError("No se ha podido abrir la imagen.") from exc
 
-        recorte = segmentar_prenda(imagen)
+        recorte = segmentar_prenda(imagen, boceto=kind is GarmentKind.SKETCH)
 
         # El original y la máscara se guardan por separado. La máscara es un
         # PNG en escala de grises: comprime muy bien y conserva el borde

@@ -130,6 +130,7 @@ class MotorRetexturizado:
             peticion.mosaico,
             repeticiones=peticion.repeticiones,
             caja=peticion.caja,
+            acabado=acabado_de(peticion.descripcion),
         )
 
         aviso = None
@@ -141,6 +142,23 @@ class MotorRetexturizado:
             )
 
         return ResultadoDeTela(imagen=salida.imagen, proveedor=self.nombre, aviso=aviso)
+
+
+#: Palabras de la ficha que delatan una tela con brillo. La descripción que se
+#: construye de la ficha va en inglés (ver `_describir`), pero se aceptan las
+#: dos lenguas por si llega de otro sitio.
+TELAS_SATINADAS = ("silk", "satin", "sateen", "taffeta", "seda", "satén", "raso", "tafetán")
+
+
+def acabado_de(descripcion: str) -> str:
+    """"satinado" si la tela brilla, "mate" si no.
+
+    Decide cuánto brillo hereda la tela nueva de las luces de la foto: una
+    camiseta de algodón no debe salir con el brillo de la cazadora de cuero
+    que había en la foto; una seda, en cambio, brilla en las crestas.
+    """
+    texto = descripcion.lower()
+    return "satinado" if any(palabra in texto for palabra in TELAS_SATINADAS) else "mate"
 
 
 def motor_para(metodo: TrialMethod) -> MotorDeTela:

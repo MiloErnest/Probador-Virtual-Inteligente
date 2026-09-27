@@ -67,18 +67,39 @@ import numpy as np
 from PIL import Image
 
 from app.textil.filtros import desenfocar as _desenfocar, maximo_local, reescalar
+from app.textil.veta import coordenadas_de_la_veta
 
 #: Pesos de luminancia de la Rec. 709. El ojo no reparte por igual entre los
 #: tres canales, y aquí importa porque lo que se mide es luz, no color.
 LUMINANCIA = np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
 
-#: Hasta dónde se deja llegar la sombra y el brillo.
+#: Hasta dónde se deja llegar la sombra. Un pliegue muy cerrado da razones
+#: extremas que, sobre la tela nueva, se ven como manchas negras.
+SOMBRA_MINIMA = 0.25
+
+#: Hasta dónde se deja llegar la LUZ, según la tela nueva. Una tela mate no
+#: devuelve el brillo del cuero ni del raso que había; una satinada sí.
+LUZ_MATE = 1.35
+LUZ_SATINADA = 1.9
+
+#: Brillo extra en las crestas de los pliegues de una tela satinada.
+BRILLO_SATINADO = 0.25
+
+#: Rango natural de los pliegues, como dispersión del logaritmo del brillo.
 #:
-#: Un pliegue muy cerrado o un reflejo quemado dan razones extremas que, sobre
-#: la tela nueva, se ven como manchas negras o blancas. Recortarlas conserva el
-#: relieve y quita los artefactos.
-SOMBRA_MINIMA = 0.30
-LUZ_MAXIMA = 1.85
+#: Medido en el banco de pruebas: camiseta blanca 0,13 (aplastada por la
+#: sobreexposición), jersey 0,49 y camisa 0,47 (tono medio, bien capturados),
+#: vaquero 0,69, vestido negro 0,73, camiseta negra 0,82, cazadora de cuero
+#: 0,92 (hinchados: sobre un casi-negro cada variación es una razón enorme).
+#: Se lleva todo hacia el rango de las de tono medio.
+FORMA_MINIMA = 0.35
+FORMA_MAXIMA = 0.55
+#: Cuánto se puede estirar una prenda aplastada. Más, y se estiraría el ruido.
+GANANCIA_MAXIMA_DE_FORMA = 2.5
+
+#: Umbral del detalle, en unidades del nivel de textura de la propia prenda.
+#: Por debajo es la trama del material viejo; por encima, costuras y botones.
+UMBRAL_DE_TEXTURA = 1.5
 
 #: Cuánto detalle fino se conserva de la prenda original, de 0 a 1.
 #:
@@ -87,30 +108,26 @@ LUZ_MAXIMA = 1.85
 #: mismo desenfoque se lleva por delante las costuras, los botones y los
 #: pespuntes, que sí queremos conservar porque son la prenda y no la tela.
 #:
-#: Devolviendo una fracción del detalle se recuperan sin que vuelva la trama
-#: vieja. 0,35 es donde las costuras se ven y el tejido antiguo no.
-DETALLE_CONSERVADO = 0.35
+#: Con la trama vieja ya quitada por umbral, se puede devolver más detalle que
+#: antes (0,35) sin que reaparezca el tejido antiguo.
+DETALLE_CONSERVADO = 0.6
 
-#: Cuánto se dobla el estampado con el relieve, en fracciones del mosaico.
+#: Cuánto desplaza un pliegue el estampado, en fracción del ANCHO DE LA PRENDA.
 #:
-#: Es el único número de este módulo que hay que ajustar mirando, porque la
-#: relación entre sombra y pendiente depende de dónde estuviera la luz al hacer
-#: la foto, y eso no se sabe.
+#: SE MIDE EN LA PRENDA, NO EN EL MOSAICO, Y ESO COSTÓ DOS VECES
+#: -------------------------------------------------------------
+#: Estuvo en fracciones del mosaico. Primero en 0,10, medido con mosaicos
+#: procedurales suaves; al pasar a mosaicos fotográficos, un cuadro nítido se
+#: derretía en cintas y hubo que bajarlo a 0,03. Y aun así, un floral grande
+#: —dos mosaicos a lo ancho— salía ondulado en bandas: con el mosaico enorme, el
+#: mismo 0,03 eran ±63 px, cuando en el vichy eran ±16.
 #:
-#: RECALIBRADO AL PASAR A MOSAICOS FOTOGRÁFICOS
-#: -------------------------------------------
-#: Estuvo en 0,10, medido contra los mosaicos procedurales, que son suaves. Con
-#: un mosaico fotográfico —trama fina, cuadro nítido— el mismo valor desplaza
-#: hasta ±72 px y el dibujo se derrite: el vichy sale en cintas y el denim en
-#: vetas verticales. El parámetro no cambió; cambió la frecuencia de la textura
-#: sobre la que actúa, que es lo que estaba midiendo sin saberlo.
-#:
-#: Medido de nuevo, vichy fotográfico sobre camiseta (cuadro de 182 px en la
-#: prenda): a 0,10 se derrite; a 0,05 todavía ondula; **a 0,03 el cuadro sigue
-#: la curva del hombro y sigue siendo un cuadro**; a 0,015 apenas se nota; con 0
-#: sale una rejilla perfectamente recta sobre una manga curva, que es lo que
-#: delata el montaje.
-DOBLADO_DEL_ESTAMPADO = 0.03
+#: El error era de modelo, no de número: un pliegue desplaza la tela según su
+#: profundidad EN LA PRENDA, no según lo grande que sea el dibujo. Ahora se mide
+#: sobre el ancho de la prenda, calibrado para que el vichy sobre la camiseta
+#: —donde se midió: a 0,05 ondulaba, a 0,03 seguía el hombro conservando el
+#: cuadro— quede exactamente igual (0,03 × 182 px / 1435 px ≈ 0,0038).
+DOBLADO_DEL_ESTAMPADO = 0.0038
 
 #: Brillo de referencia mínimo. Una prenda negra sobre fondo negro tiene un
 #: brillo medio cercano a cero, y dividir por él manda la razón al infinito.
@@ -135,12 +152,38 @@ def retexturizar(
     *,
     repeticiones: int = 6,
     caja: tuple[int, int, int, int] | None = None,
+    acabado: str = "mate",
 ) -> Retexturizado:
     """Devuelve la prenda vestida con la tela.
 
     `repeticiones` es cuántas veces se repite el mosaico a lo ancho de la
-    prenda. Es la escala del estampado: en un liso da igual, en un cuadro
-    escocés lo es todo.
+    prenda: la escala del estampado. `acabado` es el de la tela NUEVA —"mate" o
+    "satinado"— y decide cuánto brillo se le permite: una tela mate no hereda
+    el brillo del cuero original.
+
+    LA CAPA DE SOMBREADO, COMO LA EXTRAEN LOS CONFIGURADORES DE TELA
+    ---------------------------------------------------------------
+    La primera versión dividía el brillo entre su mediana y recortaba. En el
+    banco de ocho prendas eso fallaba de cuatro maneras, y cada paso de aquí
+    abajo arregla una:
+
+    1. **El halo del borde.** En el canto, el píxel es mitad prenda y mitad
+       fondo; con el fondo claro mezclado, la razón de luz se disparaba y
+       pintaba un aro brillante fuera de la prenda. Ahora la luz se calcula
+       SOLO con píxeles de prenda pura y el borde se rellena desde dentro
+       (convolución normalizada).
+    2. **Contraste de pliegues fuera de rango.** Medido en logaritmo: la
+       camiseta blanca, 0,13 —aplastada por la sobreexposición—; la cazadora de
+       cuero, 0,92 —hinchada, porque cada variación sobre un casi-negro es una
+       razón enorme—. Las prendas de tono medio, que la cámara captura bien,
+       dan 0,47–0,49. Se normaliza hacia ese rango.
+    3. **La textura del material viejo.** La trama del vaquero o el grano del
+       cuero aparecían a través de la tela nueva. Son detalle denso y fino; una
+       costura es escasa y fuerte. Se mide el nivel de ese detalle fino en la
+       propia prenda y se umbraliza por él: la trama se va, la costura queda.
+    4. **Los brillos del material viejo.** El 35% de la cazadora está por
+       encima de 1,5 veces su mediana: es el brillo del cuero, no la forma de la
+       prenda. A una tela mate se le limitan las luces.
     """
     prenda = prenda.convert("RGB")
     if mascara.size != prenda.size:
@@ -158,23 +201,87 @@ def retexturizar(
     lineal = _a_luz_lineal(original)
     brillo = lineal @ LUMINANCIA
 
-    # El color propio de la prenda: la mediana del brillo dentro de ella. Se
-    # usa la mediana y no la media porque un fondo que se haya colado en la
-    # máscara, o un brillo especular, arrastran la media y no la mediana.
-    referencia = max(float(np.median(brillo[dentro])), BRILLO_MINIMO)
+    # 1. SOPORTE: solo la prenda pura. Donde la máscara no llega a 0,9 el píxel
+    #    mezcla prenda y fondo, y su brillo no dice nada de la luz de la prenda.
+    soporte = np.clip((alfa[..., 0] - 0.9) / 0.1, 0.0, 1.0)
+    if soporte.sum() < 64:
+        soporte = dentro.astype(np.float32)
+    puro = soporte > 0.99
 
-    razon = np.clip(brillo / referencia, SOMBRA_MINIMA, LUZ_MAXIMA)
-    contraste = float(razon[dentro].std())
+    # El color propio de la prenda: la mediana de su brillo. La mediana y no la
+    # media, porque un brillo especular arrastra la media y no la mediana.
+    referencia = max(float(np.median(brillo[puro])), BRILLO_MINIMO)
+    registro = np.log(np.maximum(brillo, referencia * 0.02) / referencia)
 
-    pendiente = _pendiente_de_la_prenda(razon)
-    razon = _separar_forma_de_trama(razon, prenda.size)
-    campo = _tender_la_tela(tela, prenda.size, repeticiones, caja, pendiente)
+    ancho = prenda.width
+    forma = _dentro(registro, soporte, max(1.0, ancho / 220.0))
+    fino = registro - _dentro(registro, soporte, 1.0)
+    textura = 1.4826 * float(np.median(np.abs(fino[puro])))
+
+    # 3. DETALLE sin la textura del material viejo: umbral blando en unidades
+    #    del propio nivel de textura. Fuera del soporte vale cero, así que el
+    #    borde no mete detalle del fondo.
+    detalle = (registro - forma) * soporte
+    detalle = np.sign(detalle) * np.maximum(np.abs(detalle) - UMBRAL_DE_TEXTURA * textura, 0.0)
+
+    # 2. CONTRASTE DE PLIEGUES, hacia el rango de una tela bien fotografiada.
+    forma = forma - float(np.median(forma[puro]))
+    q1, q3 = np.percentile(forma[puro], [25, 75])
+    dispersion = float(q3 - q1) / 1.349
+    forma = forma * _ganancia_de_forma(dispersion)
+
+    luz = forma + DETALLE_CONSERVADO * detalle
+    if acabado == "satinado":
+        # Una seda o un raso brillan donde da la luz: las crestas de los
+        # pliegues ganan algo más de lo que tenían.
+        luz = luz + BRILLO_SATINADO * np.maximum(forma, 0.0)
+
+    # 4. LUCES según la tela nueva. Techo suave (tangente hiperbólica): acerca
+    #    los brillos al límite sin cortarlos en seco, que dejaría manchas planas.
+    techo = float(np.log(LUZ_SATINADA if acabado == "satinado" else LUZ_MATE))
+    luz = np.where(luz > 0.0, techo * np.tanh(luz / techo), luz)
+    luz = np.maximum(luz, float(np.log(SOMBRA_MINIMA)))
+    razon = np.exp(luz).astype(np.float32)
+
+    # El estampado se dobla con la FORMA suave, no con el detalle: una costura
+    # no debe torcer un cuadro.
+    pendiente = _pendiente_de_la_prenda(np.exp(forma).astype(np.float32))
+    # Cada pieza con su veta: la raya corre a lo largo de la manga.
+    x, y, _ = coordenadas_de_la_veta(alfa[..., 0])
+    campo = _tender_la_tela(tela, prenda.size, repeticiones, caja, pendiente, (x, y))
 
     vestida = _a_srgb(_a_luz_lineal(campo) * razon[..., None])
     compuesta = vestida * alfa + original * (1.0 - alfa)
 
     imagen = Image.fromarray(np.clip(compuesta * 255.0, 0, 255).astype(np.uint8), mode="RGB")
-    return Retexturizado(imagen=imagen, contraste=contraste)
+    return Retexturizado(imagen=imagen, contraste=dispersion)
+
+
+def _dentro(campo: np.ndarray, peso: np.ndarray, radio: float) -> np.ndarray:
+    """Desenfoque que solo mira dentro de la prenda (convolución normalizada).
+
+    Se desenfoca el campo multiplicado por el peso y se divide por el peso
+    desenfocado: cada píxel es la media de sus vecinos QUE SON PRENDA. En el
+    borde y fuera, el valor sale de dentro — que es justo lo que quita el halo.
+    """
+    numerador = _desenfocar(campo * peso, radio)
+    denominador = _desenfocar(peso, radio)
+    lejos = denominador < 1e-4
+    resultado = numerador / np.maximum(denominador, 1e-4)
+    if lejos.any():
+        # Muy lejos de la prenda no llega ningún vecino: se rellena con la
+        # mediana, que es neutra (razón 1).
+        resultado[lejos] = 0.0
+    return resultado
+
+
+def _ganancia_de_forma(dispersion: float) -> float:
+    """Cuánto hay que estirar o encoger los pliegues para que parezcan de tela."""
+    if dispersion < FORMA_MINIMA:
+        return min(FORMA_MINIMA / max(dispersion, 1e-3), GANANCIA_MAXIMA_DE_FORMA)
+    if dispersion > FORMA_MAXIMA:
+        return FORMA_MAXIMA / dispersion
+    return 1.0
 
 
 #: Cuánto más oscuro queda el borde de un boceto respecto a su centro.
@@ -376,17 +483,6 @@ def _separar_trazo_de_sombreado(
     return trazo, sombreado
 
 
-def _separar_forma_de_trama(razon: np.ndarray, tamano: tuple[int, int]) -> np.ndarray:
-    """Quita el tejido viejo del mapa de luz y deja los pliegues y las costuras.
-
-    Los pliegues son formas grandes y suaves; la trama de un tejido es ruido
-    fino. Un desenfoque separa lo uno de lo otro: lo que sobrevive es la forma.
-    Después se devuelve una parte de lo fino, que es donde viven las costuras.
-    """
-    suave = _desenfocar(razon, max(1.0, tamano[0] / 220.0))
-    return suave + DETALLE_CONSERVADO * (razon - suave)
-
-
 #: Lado al que se reduce la imagen para calcular el modelado.
 LADO_DEL_MODELADO = 256
 
@@ -435,8 +531,13 @@ def _tender_la_tela(
     repeticiones: int,
     caja: tuple[int, int, int, int] | None,
     pendiente: tuple[np.ndarray, np.ndarray] | None = None,
+    coordenadas: tuple[np.ndarray, np.ndarray] | None = None,
 ) -> np.ndarray:
     """Repite el mosaico de tela hasta cubrir la imagen, doblándolo con la prenda.
+
+    `coordenadas` son las de textura de cada píxel, si no son las de la imagen:
+    las que da `veta.coordenadas_de_la_veta`, para que una raya corra a lo largo
+    de la manga y no en vertical por toda la foto.
 
     LA ESCALA SE MIDE SOBRE LA PRENDA, NO SOBRE LA IMAGEN
     -----------------------------------------------------
@@ -473,14 +574,17 @@ def _tender_la_tela(
         tela.convert("RGB").resize((lado, lado), Image.Resampling.LANCZOS), dtype=np.float32
     ) / 255.0
 
-    columnas = np.arange(tamano[0], dtype=np.float32)[None, :]
-    filas = np.arange(tamano[1], dtype=np.float32)[:, None]
-    x = np.broadcast_to(columnas, (tamano[1], tamano[0])).copy()
-    y = np.broadcast_to(filas, (tamano[1], tamano[0])).copy()
+    if coordenadas is not None:
+        x, y = coordenadas[0].copy(), coordenadas[1].copy()
+    else:
+        columnas = np.arange(tamano[0], dtype=np.float32)[None, :]
+        filas = np.arange(tamano[1], dtype=np.float32)[:, None]
+        x = np.broadcast_to(columnas, (tamano[1], tamano[0])).copy()
+        y = np.broadcast_to(filas, (tamano[1], tamano[0])).copy()
 
     if pendiente is not None:
         gx, gy = pendiente
-        empuje = lado * DOBLADO_DEL_ESTAMPADO
+        empuje = ancho_prenda * DOBLADO_DEL_ESTAMPADO
         x += gx * empuje
         y += gy * empuje
 

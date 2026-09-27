@@ -32,7 +32,7 @@ import sys
 from PIL import Image
 
 from app.core.database import SessionLocal
-from app.models.garment_upload import GarmentUpload
+from app.models.garment_upload import GarmentKind, GarmentUpload
 from app.services.storage import get_storage
 from app.textil.segmentar import segmentar_prenda
 
@@ -63,7 +63,7 @@ def main() -> int:
                 print(f"  #{prenda.id} {prenda.name}: falta el archivo original. Se salta.")
                 continue
 
-            recorte = segmentar_prenda(imagen)
+            recorte = segmentar_prenda(imagen, boceto=prenda.kind is GarmentKind.SKETCH)
             antes = prenda.mask_coverage or 0.0
             delta = recorte.cobertura - antes
 

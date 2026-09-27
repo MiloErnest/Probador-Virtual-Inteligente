@@ -39,3 +39,13 @@ numpy==2.5.3
 # CUIDADO: genera imágenes de pago. El valor por defecto es AI_PROVIDER=none
 # precisamente para que clonar el repositorio no empiece a gastar dinero.
 openai==3.15.0
+
+# Visión por computador para el recorte de la prenda y la veta de la tela:
+# GrabCut (corte de grafo con modelos de color) para separar prenda y fondo
+# donde un umbral no basta —una camiseta blanca sobre gris claro, el resplandor
+# del fondo de estudio alrededor de una cazadora—, transformada de distancia y
+# componentes conexas.
+#
+# La variante HEADLESS: sin interfaz gráfica, que en un servidor sobra y trae
+# dependencias de escritorio. Rama 4 y no la 5, que es un salto mayor y reciente.
+opencv-python-headless==4.14.0.94

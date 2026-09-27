@@ -107,6 +107,41 @@ def _maximo_en_eje(campo: np.ndarray, radio: int, eje: int) -> np.ndarray:
     return salida
 
 
+def media_de_caja(campo: np.ndarray, radio: int) -> np.ndarray:
+    """Media en una ventana cuadrada de lado 2·radio+1. Coste constante por píxel."""
+    return media_en_ventana(media_en_ventana(campo, radio, 0), radio, 1)
+
+
+def filtro_guiado(guia: np.ndarray, entrada: np.ndarray, radio: int, eps: float) -> np.ndarray:
+    """Filtro guiado (He, Sun y Tang, 2010): suaviza `entrada` respetando los bordes de `guia`.
+
+    PARA QUÉ SE USA AQUÍ
+    --------------------
+    La máscara de la prenda se calcula a 512 px y hay que llevarla al tamaño de
+    la foto. Ampliándola sin más, su borde queda donde caía en la imagen
+    pequeña: en una foto de 2048 px eso es hasta ±8 px fuera del contorno real,
+    y todo lo que cae en esa franja era tela pintada encima del fondo. Es el
+    halo que rodeaba a casi todas las prendas.
+
+    El filtro guiado modela la salida como una función LINEAL de la guía en cada
+    ventana, ajustada por mínimos cuadrados a la entrada. Donde la foto tiene
+    un borde, la máscara lo sigue; donde la foto es lisa, la máscara se
+    suaviza. Es el método estándar para refinar máscaras y para ampliar mapas
+    respetando los bordes, y todo son medias de caja: coste lineal.
+
+    `eps` decide cuánto borde hace falta para que se respete. Pequeño: se pega a
+    bordes débiles, como una camiseta blanca sobre fondo gris claro.
+    """
+    media_g = media_de_caja(guia, radio)
+    media_e = media_de_caja(entrada, radio)
+    varianza = media_de_caja(guia * guia, radio) - media_g * media_g
+    covarianza = media_de_caja(guia * entrada, radio) - media_g * media_e
+
+    a = covarianza / (varianza + eps)
+    b = media_e - a * media_g
+    return media_de_caja(a, radio) * guia + media_de_caja(b, radio)
+
+
 def desenfocar(campo: np.ndarray, radio: float) -> np.ndarray:
     """Desenfoque suave, sin pasar por 8 bits.
 

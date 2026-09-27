@@ -42,13 +42,12 @@ borde. No hay información que separar. Se detecta y se avisa (`dudoso`).
 
 from __future__ import annotations
 
-from collections import deque
 from dataclasses import dataclass
 
 import numpy as np
 from PIL import Image, ImageFilter
 
-from app.textil.filtros import desenfocar
+from app.textil.filtros import desenfocar, filtro_guiado
 
 # --- Parámetros, todos medidos contra fotografías reales --------------------
 
@@ -109,6 +108,43 @@ FRANJA_DEL_MARCO = 0.06
 #: la primera quita la prenda que toque el marco, la segunda afina.
 VUELTAS_DEL_AJUSTE = 2
 
+#: En un boceto, cuánto tiene que hundirse un píxel respecto a su entorno para
+#: ser TRAZO y frenar el relleno. Mismo criterio que el retexturizado: el
+#: contorno a lápiz hunde un 73%, el rayado de sombra un 11%.
+TRAZO_DE_BARRERA = 0.30
+
+#: Cuántas veces se engrosa el trazo para sellar los cortes del contorno.
+SELLADO_DEL_TRAZO = 1
+
+#: Hasta dónde puede entrar el relleno en la máscara de un boceto para comerse
+#: la sombra que rodea la figura, en píxeles de la imagen de trabajo. Medido: la
+#: sombra del croquis de referencia ocupa 10–15 px.
+ANCHO_DE_SOMBRA = 14
+
+#: GrabCut: qué parte de la máscara es prenda SEGURA (núcleo tras erosionar) y
+#: hasta dónde puede crecer (banda tras dilatar), en fracción del lado corto.
+NUCLEO_SEGURO = 0.02
+BANDA_DUDOSA = 0.06
+VUELTAS_DE_GRABCUT = 4
+
+#: Cuántas veces el umbral tiene que alejarse un píxel del fondo para contar
+#: como color CLARAMENTE distinto, y qué parte de la prenda tiene que serlo
+#: para fiarse del color al inicializar GrabCut.
+FACTOR_DE_COLOR_SEGURO = 2.5
+PRENDA_DISTINTA_MINIMA = 0.5
+
+#: Si GrabCut cambia la cobertura más que esto, se descarta su resultado.
+CAMBIO_MAXIMO = 0.40
+
+#: Anchura de la franja dudosa alrededor del borde ampliado, en píxeles de la
+#: imagen de trabajo: lo que se reclasifica con el color local. Cubre el error
+#: de ampliar la máscara y el de GrabCut, que trabaja a esa resolución.
+FRANJA_DEL_BORDE = 2.0
+
+#: Cuánto borde hace falta en la foto para que el filtro guiado lo respete. Bajo,
+#: para pegarse a bordes débiles como blanco sobre gris claro.
+EPS_DEL_BORDE = 1e-4
+
 #: Saturación a partir de la cual un píxel es FIGURA y no prenda.
 #:
 #: En un figurín hay una persona dibujada, y la persona no es la prenda. Si se
@@ -126,6 +162,10 @@ VUELTAS_DEL_AJUSTE = 2
 #: a fotografías y pide |R−G| > 15, que una piel dibujada en beige pálido no
 #: cumple. Detectaba el 0,2% de lo que hay que detectar.
 SATURACION_DE_LA_FIGURA = 0.10
+
+#: Croma mínimo (máximo menos mínimo de los canales, sobre 255) de la figura.
+#: Ver `_quitar_la_figura`.
+CROMA_DE_LA_FIGURA = 18.0
 
 #: Si la «figura» ocupa más que esto del recorte, NO es una figura.
 #:
@@ -169,8 +209,14 @@ class Recorte:
     caja: tuple[int, int, int, int]
 
 
-def segmentar_prenda(imagen: Image.Image) -> Recorte:
-    """Devuelve la máscara de la prenda dentro de la imagen."""
+def segmentar_prenda(imagen: Image.Image, *, boceto: bool = False) -> Recorte:
+    """Devuelve la máscara de la prenda dentro de la imagen.
+
+    `boceto` cambia el último paso. En una fotografía, GrabCut aprende los
+    colores de prenda y fondo y corta por el borde real; en un dibujo, el
+    contorno a lápiz ya es la mejor barrera que hay, y un modelo de color
+    confundiría el papel blanco con un vestido blanco.
+    """
     original = imagen.size
 
     # CAMINO RÁPIDO: la imagen ya trae transparencia.
@@ -182,7 +228,7 @@ def segmentar_prenda(imagen: Image.Image) -> Recorte:
         alfa = imagen.getchannel("A")
         trabajo = _reducir(imagen.convert("RGB"), LADO_DE_TRABAJO)
         alfa = alfa.resize(trabajo.size, Image.Resampling.BILINEAR)
-        return _empaquetar(_quitar_la_figura(alfa, trabajo), original)
+        return _empaquetar(_quitar_la_figura(alfa, trabajo, boceto), original, guia=imagen)
 
     trabajo = _reducir(imagen.convert("RGB"), LADO_DE_TRABAJO)
     px = np.asarray(trabajo, dtype=np.float32)
@@ -205,6 +251,8 @@ def segmentar_prenda(imagen: Image.Image) -> Recorte:
 
     similar = distancia <= umbral
     alcanzado = _rellenar_desde_el_borde(similar)
+    if boceto:
+        alcanzado = _fondo_de_boceto(px, alcanzado)
 
     borrado = float(alcanzado.mean())
     if borrado > MAXIMO_BORRADO:
@@ -235,10 +283,14 @@ def segmentar_prenda(imagen: Image.Image) -> Recorte:
     fuera = _rellenar_desde_el_borde(~solida)
     mascara = Image.fromarray((~fuera).astype(np.uint8) * 255, mode="L")
 
-    # PASO 3. Sacar a la persona dibujada, si la hay.
-    mascara = _quitar_la_figura(mascara, trabajo)
+    # PASO 3. En una foto, GrabCut: corte de grafo con modelos de color.
+    if not boceto:
+        mascara = _refinar_con_grabcut(trabajo, mascara, distancia > umbral * FACTOR_DE_COLOR_SEGURO)
 
-    return _empaquetar(mascara, original)
+    # PASO 4. Sacar a la persona dibujada, si la hay.
+    mascara = _quitar_la_figura(mascara, trabajo, boceto)
+
+    return _empaquetar(mascara, original, guia=imagen)
 
 
 def _campo_de_fondo(px: np.ndarray) -> np.ndarray:
@@ -315,7 +367,185 @@ def _campo_de_fondo(px: np.ndarray) -> np.ndarray:
     return campo
 
 
-def _quitar_la_figura(mascara: Image.Image, trabajo: Image.Image) -> Image.Image:
+def _pegar_al_borde(
+    mascara: Image.Image, guia: Image.Image, tamano: tuple[int, int]
+) -> Image.Image:
+    """Decide el borde a tamaño completo con el color de la propia foto.
+
+    DOS PASOS, Y EL PRIMERO ES EL QUE MUEVE EL BORDE
+    ------------------------------------------------
+    La máscara se calcula a 512 px y hay que llevarla a la foto entera. Solo
+    ampliándola, el borde queda donde caía en la imagen pequeña.
+
+    1. **Clasificación local en la franja dudosa.** Alrededor del borde
+       ampliado se toma una franja. Justo dentro de ella hay prenda segura, y
+       justo fuera, fondo seguro: de ahí se estima el COLOR LOCAL de cada uno,
+       con convolución normalizada. Cada píxel de la franja se queda con el
+       que más se le parece. Eso sí lleva el borde al contorno real.
+    2. **Filtro guiado** (He, Sun y Tang, 2010) para el canto: suave donde la
+       foto tiene un canto suave y seco donde lo tiene seco.
+
+    LO QUE SE CREYÓ Y NO ERA VERDAD
+    -------------------------------
+    La primera versión confiaba el paso 1 al filtro guiado, en dos pasadas, con
+    la idea de que la foto le diría dónde está el borde. Una prueba lo
+    desmintió: con la máscara pasada 6 px hacia el fondo, el borde quedaba a
+    −5; con 8, a −7. El filtro guiado conserva la media de la entrada donde la
+    guía es lisa, y la franja entre el borde falso y el real ES fondo liso: no
+    tiene de dónde saber que sobra.
+
+    Así que los halos que desaparecieron del banco de pruebas los quitaron
+    GrabCut, el modelo de fondo como superficie y el sombreado calculado solo
+    con prenda pura — no esto. Esto ajusta los últimos píxeles, que es lo que
+    queda por ajustar después de GrabCut.
+    """
+    import cv2
+
+    ancho, alto = tamano
+    color = np.asarray(
+        guia.convert("RGB").resize(tamano, Image.Resampling.BILINEAR), dtype=np.float32
+    ) / 255.0
+    entrada = np.asarray(mascara, dtype=np.float32) / 255.0
+    prenda = entrada > 0.5
+
+    escala = max(ancho, alto) / LADO_DE_TRABAJO
+    franja = max(2, int(np.ceil(escala * FRANJA_DEL_BORDE)))
+    disco = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * franja + 1, 2 * franja + 1))
+    segura = cv2.erode(prenda.astype(np.uint8), disco) > 0
+    fondo = cv2.dilate(prenda.astype(np.uint8), disco) == 0
+    dudosa = ~segura & ~fondo
+
+    if dudosa.any() and segura.any() and fondo.any():
+        radio = franja * 3
+        color_prenda = _media_local(color, segura, radio)
+        color_fondo = _media_local(color, fondo, radio)
+        a_prenda = np.linalg.norm(color - color_prenda, axis=2)
+        a_fondo = np.linalg.norm(color - color_fondo, axis=2)
+        prenda = segura | (dudosa & (a_prenda < a_fondo))
+
+    gris = color @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+    fino = max(1, round(escala * 0.75))
+    alfa = np.clip(filtro_guiado(gris, prenda.astype(np.float32), fino, EPS_DEL_BORDE), 0.0, 1.0)
+    # Lo que queda casi a 0 o casi a 1 es ruido del ajuste, no borde.
+    alfa[alfa < 0.03] = 0.0
+    alfa[alfa > 0.97] = 1.0
+    return Image.fromarray((alfa * 255.0 + 0.5).astype(np.uint8), mode="L")
+
+
+def _media_local(color: np.ndarray, donde: np.ndarray, radio: int) -> np.ndarray:
+    """Color medio de `donde` alrededor de cada píxel (convolución normalizada)."""
+    from app.textil.filtros import media_de_caja
+
+    peso = donde.astype(np.float32)
+    denominador = np.maximum(media_de_caja(peso, radio), 1e-6)
+    return np.stack(
+        [media_de_caja(color[..., c] * peso, radio) / denominador for c in range(3)], axis=-1
+    )
+
+
+def _refinar_con_grabcut(
+    trabajo: Image.Image, mascara: Image.Image, distinta: np.ndarray
+) -> Image.Image:
+    """Corrige el recorte con GrabCut: corte de grafo con modelos de color.
+
+    POR QUÉ, CON LAS MEDIDAS DEL BANCO DE PRUEBAS
+    ---------------------------------------------
+    El relleno desde el borde decide con UN umbral de color, y falla en los dos
+    sentidos. Los dos se vieron: a la camiseta blanca sobre fondo gris claro le
+    faltaba un trozo del bajo, y a la cazadora de cuero la rodeaba el
+    resplandor del fondo del estudio, que entraba como prenda.
+
+    GrabCut (Rother, Kolmogorov y Blake, 2004) aprende una mezcla de gaussianas
+    para el color de la prenda y otra para el del fondo, y resuelve un corte de
+    grafo que equilibra el color con la continuidad del borde: prefiere cortar
+    por donde la foto tiene un borde de verdad. Es el método clásico cuando un
+    umbral no basta.
+
+    SE INICIALIZA CON LO QUE YA SE SABE
+    -----------------------------------
+    Núcleo de la máscara: prenda segura. Resto de la máscara: prenda probable.
+    Una banda alrededor: fondo probable, para que pueda CRECER hacia un trozo
+    que faltaba. Lo lejano: fondo seguro. Así corrige errores de unos cuantos
+    píxeles sin poder inventarse una prenda en otra parte de la foto.
+
+    Y si cambia la cobertura más de lo razonable, se queda con el recorte de
+    antes: cuando prenda y fondo tienen colores casi iguales, GrabCut puede
+    derrumbarse, y un recorte mediocre es mejor que uno roto.
+
+    «PRENDA SEGURA» EXIGE DOS PRUEBAS
+    ---------------------------------
+    `distinta` marca los píxeles de color CLARAMENTE distinto del fondo. Con
+    solo la geometría —el núcleo de la máscara erosionada— la cazadora de cuero
+    seguía con fondo pegado a las mangas: el recorte inicial se pasaba 35 px, y
+    lo más hondo de ese halo quedaba marcado como prenda segura, que GrabCut no
+    puede corregir. Ahora la prenda segura tiene que estar dentro Y tener otro
+    color. El cuero negro lo cumple; el resplandor gris del estudio, no.
+
+    Si casi nada de la prenda es claramente distinto —una camiseta blanca sobre
+    gris claro—, no hay en qué apoyarse, y se vuelve al criterio geométrico.
+    """
+    import cv2
+
+    binaria = np.asarray(mascara, dtype=np.uint8) > 127
+    if binaria.mean() < 0.01:
+        return mascara
+
+    alto, ancho = binaria.shape
+    lado = min(alto, ancho)
+
+    def disco(radio: int) -> np.ndarray:
+        return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * radio + 1, 2 * radio + 1))
+
+    banda = max(3, round(lado * BANDA_DUDOSA))
+    nucleo = cv2.erode(binaria.astype(np.uint8), disco(max(2, round(lado * NUCLEO_SEGURO)))) > 0
+    interior = cv2.erode(binaria.astype(np.uint8), disco(max(2, banda // 2))) > 0
+    alcance = cv2.dilate(binaria.astype(np.uint8), disco(banda)) > 0
+
+    # TODO EL BORDE DUDOSO EMPIEZA COMO FONDO.
+    #
+    # La primera versión marcaba la máscara entera como prenda probable. En la
+    # cazadora de cuero eso incluía el resplandor del fondo del estudio, y el
+    # modelo de color de la prenda —cinco gaussianas— dedicó una a ese gris
+    # claro y lo conservó. Es el fallo clásico de GrabCut con una
+    # inicialización sesgada. Sin el sesgo, la franja del borde tiene que
+    # ganarse ser prenda por su color y por dónde está el borde de verdad.
+    marca = np.full((alto, ancho), cv2.GC_BGD, dtype=np.uint8)
+    marca[alcance] = cv2.GC_PR_BGD
+    if (binaria & distinta).sum() >= PRENDA_DISTINTA_MINIMA * binaria.sum():
+        marca[binaria & distinta] = cv2.GC_PR_FGD
+        marca[nucleo & distinta] = cv2.GC_FGD
+    else:
+        marca[interior] = cv2.GC_PR_FGD
+        marca[nucleo & interior] = cv2.GC_FGD
+
+    # El marco de la foto es fondo seguro, salvo donde la prenda lo toca: una
+    # foto recortada al ras no debe perder la manga.
+    m = max(2, round(lado * 0.01))
+    marco = np.zeros_like(binaria)
+    marco[:m, :] = True
+    marco[-m:, :] = True
+    marco[:, :m] = True
+    marco[:, -m:] = True
+    marca[marco & ~binaria] = cv2.GC_BGD
+
+    bgr = np.ascontiguousarray(np.asarray(trabajo.convert("RGB"))[:, :, ::-1])
+    fondo_gmm = np.zeros((1, 65), np.float64)
+    prenda_gmm = np.zeros((1, 65), np.float64)
+    cv2.grabCut(bgr, marca, None, fondo_gmm, prenda_gmm, VUELTAS_DE_GRABCUT, cv2.GC_INIT_WITH_MASK)
+
+    nueva = (marca == cv2.GC_FGD) | (marca == cv2.GC_PR_FGD)
+    antes, despues = float(binaria.mean()), float(nueva.mean())
+    if not (antes * (1 - CAMBIO_MAXIMO) <= despues <= antes * (1 + CAMBIO_MAXIMO)):
+        return mascara
+
+    # Lo que GrabCut deje encerrado dentro también es prenda.
+    nueva = ~_rellenar_desde_el_borde(~nueva)
+    return Image.fromarray(nueva.astype(np.uint8) * 255, mode="L")
+
+
+def _quitar_la_figura(
+    mascara: Image.Image, trabajo: Image.Image, boceto: bool = False
+) -> Image.Image:
     """Quita del recorte la piel y el pelo de la figura, si los hay.
 
     POR QUÉ HACE FALTA
@@ -350,7 +580,30 @@ def _quitar_la_figura(mascara: Image.Image, trabajo: Image.Image) -> Image.Image
 
     # Cálido además de saturado: descarta el azulado que deja una sombra de
     # lápiz sobre papel blanco, que también sube algo de saturación.
-    figura = (saturacion > SATURACION_DE_LA_FIGURA) & (px[..., 0] > px[..., 2]) & dentro
+    # Y con CROMA absoluto, no solo saturación relativa. La saturación divide por
+    # el brillo, y en un gris oscuro de grafito con un leve tinte cálido —por
+    # ejemplo (60, 52, 50)— sale 0,17: se quitaba un rectángulo del sombreado
+    # del vestido como si fuera piel. El pelo y la piel tienen croma de 30 para
+    # arriba; el grafito, 10–15.
+    figura = (
+        (saturacion > SATURACION_DE_LA_FIGURA)
+        & ((maximo - minimo) > CROMA_DE_LA_FIGURA)
+        & (px[..., 0] > px[..., 2])
+        & dentro
+    )
+
+    # LO QUE SE PROBÓ PARA LA PIEL PÁLIDA Y NO SIRVIÓ
+    #
+    # El escote y los hombros de un figurín se pintan en un beige tan pálido que
+    # este umbral no los ve (saturación 0,06 frente a 0,10). Se probó añadir un
+    # criterio de TONO (10–45°), que en el escote sí separa piel de corpiño. Y
+    # agujereaba la falda: su sombreado a lápiz tiene zonas de tinte cálido.
+    # Exigir que esa piel estuviera unida a la figura tampoco bastó: el brazo de
+    # la modelo baja pegado al vestido y conecta las manchas con el cuerpo.
+    #
+    # Separar piel y vestido en un dibujo de verdad necesita un modelo aprendido
+    # de análisis de personas. Hasta entonces, la tela sobre los hombros
+    # desnudos es una limitación conocida; es mejor que un vestido con agujeros.
 
     lienzo = Image.fromarray(figura.astype(np.uint8) * 255, mode="L")
 
@@ -376,6 +629,14 @@ def _quitar_la_figura(mascara: Image.Image, trabajo: Image.Image) -> Image.Image
         # No es una persona: es una prenda de color. Ver MAXIMO_DE_FIGURA.
         return mascara
 
+    # Se quita la figura MÁS el margen que el cierre morfológico había hecho
+    # crecer a la máscara hacia fuera. Sin esto quedaba un anillo de papel
+    # alrededor de la cabeza de la modelo, dentro de la máscara, y la tela lo
+    # pintaba: un halo rosa o de rayas rodeando el pelo.
+    margen = Image.fromarray(solida.astype(np.uint8) * 255, mode="L").filter(
+        ImageFilter.MaxFilter(RADIO_CIERRE * 2 + 3)
+    )
+    solida = np.asarray(margen, dtype=np.uint8) > 127
     quitada = dentro & ~solida
     return Image.fromarray(quitada.astype(np.uint8) * 255, mode="L").resize(
         mascara.size, Image.Resampling.BILINEAR
@@ -398,58 +659,90 @@ def _reducir(imagen: Image.Image, lado: int) -> Image.Image:
 def _rellenar_desde_el_borde(similar: np.ndarray) -> np.ndarray:
     """Marca todo lo que se alcanza desde el borde sin salir de `similar`.
 
-    Recorrido en anchura sobre índices planos. Se eligió esto y no una
-    propagación vectorizada porque es evidentemente correcto de leer, y a la
-    resolución de trabajo tarda una fracción de segundo. Optimizarlo sería
-    cambiar claridad por un tiempo que nadie va a notar: esto corre una vez por
-    imagen subida, en segundo plano.
+    Es lo mismo que un recorrido en anchura desde el marco con vecindad de 4,
+    hecho con componentes conexas: una componente de `similar` se alcanza desde
+    el borde si toca el marco. Antes era un recorrido en Python puro, píxel a
+    píxel; bastaba mientras se hacía una vez por imagen, y dejó de bastar
+    cuando el boceto pasó a necesitar varios rellenos para buscar su umbral.
     """
-    alto, ancho = similar.shape
-    alcanzado = np.zeros_like(similar, dtype=bool)
-    plano = similar.reshape(-1)
-    visto = alcanzado.reshape(-1)
+    import cv2
 
-    cola: deque[int] = deque()
+    cuantas, etiquetas = cv2.connectedComponents(similar.astype(np.uint8), connectivity=4)
+    if cuantas <= 1:
+        return np.zeros_like(similar, dtype=bool)
+    en_el_marco = np.unique(
+        np.concatenate([etiquetas[0], etiquetas[-1], etiquetas[:, 0], etiquetas[:, -1]])
+    )
+    en_el_marco = en_el_marco[en_el_marco > 0]
+    return np.isin(etiquetas, en_el_marco) & similar
 
-    def sembrar(indice: int) -> None:
-        if plano[indice] and not visto[indice]:
-            visto[indice] = True
-            cola.append(indice)
 
-    for x in range(ancho):
-        sembrar(x)
-        sembrar((alto - 1) * ancho + x)
-    for y in range(alto):
-        sembrar(y * ancho)
-        sembrar(y * ancho + ancho - 1)
+def _fondo_de_boceto(px: np.ndarray, por_color: np.ndarray) -> np.ndarray:
+    """El fondo de un dibujo: todo lo que se alcanza desde el borde sin cruzar un trazo.
 
-    while cola:
-        i = cola.popleft()
-        y, x = divmod(i, ancho)
-        if x > 0:
-            sembrar(i - 1)
-        if x < ancho - 1:
-            sembrar(i + 1)
-        if y > 0:
-            sembrar(i - ancho)
-        if y < alto - 1:
-            sembrar(i + ancho)
+    EL PROBLEMA, Y UNA SOLUCIÓN QUE NO SIRVIÓ
+    -----------------------------------------
+    Un figurín suele llevar una sombra suave alrededor de la figura. El umbral de
+    color se paraba en ella y la sombra entraba en la máscara: un anillo que, al
+    quitar el pelo y la piel, se quedaba solo y se pintaba de tela alrededor de
+    la cabeza de la modelo.
 
-    return alcanzado
+    Subir el umbral —buscando el último antes de que la cobertura se derrumbara—
+    quitaba la sombra (a 32 del papel, frente a 72 del sombreado del vestido),
+    pero se colaba por los tramos débiles del contorno y dejaba huecos en las
+    zonas claras de la cola. El derrumbe grande se veía; las fugas pequeñas, no.
+
+    LA FRONTERA DE UN DIBUJO ES LA LÍNEA
+    ------------------------------------
+    En una foto la prenda se separa del fondo por el color; en un dibujo, por la
+    línea de lápiz. Así que el relleno puede pasar por todo MENOS por el trazo
+    —detectado como en el retexturizado: estrecho y más oscuro que lo que lo
+    rodea—, engrosado un píxel para sellar los cortes del contorno. La sombra no
+    tiene líneas y se atraviesa entera; el interior queda protegido por su
+    contorno aunque sea claro.
+
+    SOLO POR LA FRANJA EXTERIOR
+    ---------------------------
+    Con la línea como única barrera se colaba casi siempre: el croquis de
+    referencia tiene el contorno abierto en varios tramos, y quedaba 0,16–0,22
+    de prenda frente a 0,37. Una regla local no puede cerrar un contorno que el
+    dibujante dejó abierto. Lo que sí puede es acotar el daño: la sombra es una
+    franja de 10–15 px por fuera del contorno, así que el relleno solo avanza
+    por la franja exterior de la máscara, `ANCHO_DE_SOMBRA` como mucho. Por un
+    corte del contorno entra esos píxeles, no un agujero en media cola.
+    """
+    import cv2
+
+    brillo = px @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+    radio = max(1, round(max(px.shape[:2]) / 256))
+    sin_trazo = cv2.dilate(brillo, np.ones((2 * radio + 1, 2 * radio + 1), np.uint8))
+    hundido = 1.0 - brillo / np.maximum(sin_trazo, 1.0)
+    trazo = (hundido > TRAZO_DE_BARRERA).astype(np.uint8)
+    trazo = cv2.dilate(trazo, np.ones((3, 3), np.uint8), iterations=SELLADO_DEL_TRAZO) > 0
+
+    prenda = (~por_color).astype(np.uint8)
+    hondura = cv2.distanceTransform(prenda, cv2.DIST_L2, 3)
+    franja = (prenda > 0) & (hondura <= ANCHO_DE_SOMBRA)
+    return _rellenar_desde_el_borde(por_color | (franja & ~trazo))
 
 
 def _empaquetar(
-    mascara: Image.Image, tamano_original: tuple[int, int], *, forzar_dudoso: bool = False
+    mascara: Image.Image,
+    tamano_original: tuple[int, int],
+    *,
+    forzar_dudoso: bool = False,
+    guia: Image.Image | None = None,
 ) -> Recorte:
-    """Devuelve la máscara al tamaño original, suavizada y medida."""
+    """Devuelve la máscara al tamaño original, con el borde pegado al real, y medida."""
     if mascara.size != tamano_original:
         mascara = mascara.resize(tamano_original, Image.Resampling.BILINEAR)
 
-    # Suavizado del borde. Sin él, la tela termina en un escalón dentado que
-    # delata el montaje; con un desenfoque de un píxel por cada 400 de ancho,
-    # el canto se funde y no se nota.
-    radio = max(1.0, tamano_original[0] / 400)
-    mascara = mascara.filter(ImageFilter.GaussianBlur(radio))
+    if guia is not None:
+        mascara = _pegar_al_borde(mascara, guia, tamano_original)
+    else:
+        # Sin foto de guía (una máscara de relleno total), basta un canto suave.
+        radio = max(1.0, tamano_original[0] / 400)
+        mascara = mascara.filter(ImageFilter.GaussianBlur(radio))
 
     datos = np.asarray(mascara, dtype=np.float32) / 255.0
     cobertura = float(datos.mean())
