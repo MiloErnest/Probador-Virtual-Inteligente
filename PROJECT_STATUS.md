@@ -25,6 +25,13 @@ funcionan bien.
   las demás prendas no se mueven ni un píxel.
 - **El probador por la API**: la cuota gratuita seguía agotada (se renueva a
   las 24 h del primer uso). La #42 sigue abierta.
+- **Las fichas del catálogo de las telas reales** llevaban debajo una tira de
+  la foto de la estantería, ampliada: al usuario le pareció, con razón, un
+  recorte mal hecho. Ahora la foto de ficha es solo la tela digitalizada
+  (`_ficha` en `scripts/seed_telas_reales.py`), también en el floral, que
+  enseñaba la foto con sus arrugas. Recargadas las 14 con el script, gratis.
+- **Acceso directo «Probador Virtual» en el escritorio** del usuario, al
+  lanzador. Es local: no está en el repositorio.
 
 ## Qué pasó el 2026-09-27
 

@@ -112,7 +112,7 @@ def main() -> int:
     ganancia = dig.ganancias_de_blanco(np.median(np.stack(blancas), axis=0))
     print(f"Rayas: balance de blancos {ganancia.round(3)} con {len(blancas)} franjas blancas.")
 
-    for (nombre, ref, color, _, foto), medida in zip(RAYAS, medidas):
+    for (nombre, ref, color, _, _foto), medida in zip(RAYAS, medidas):
         medida = {
             **medida,
             "oscuro": dig.aplicar_ganancias(medida["oscuro"], ganancia),
@@ -134,7 +134,7 @@ def main() -> int:
             # una raya ancha.
             "default_repeat": 3,
             "mosaico": dig.muestra_rayas(medida),
-            "foto": _ficha(dig.muestra_rayas(medida), estanteria.crop(foto)),
+            "foto": _ficha(dig.muestra_rayas(medida)),
         })
 
     # --- Lisos: balance de blancos con la tela blanca de la misma foto.
@@ -143,7 +143,7 @@ def main() -> int:
     ganancia = dig.ganancias_de_blanco(blanco)
     print(f"Lisos: balance de blancos {ganancia.round(3)} con la tela blanca.")
 
-    for (nombre, ref, color, _, foto), medido in zip(LISAS, colores):
+    for (nombre, ref, color, _, _foto), medido in zip(LISAS, colores):
         corregido = dig.aplicar_ganancias(medido, ganancia)
         altas.append({
             "name": nombre,
@@ -157,7 +157,7 @@ def main() -> int:
             "pattern": FabricPattern.SOLID,
             "default_repeat": 8,
             "mosaico": dig.muestra_lisa(corregido),
-            "foto": _ficha(dig.muestra_lisa(corregido), lisos.crop(foto)),
+            "foto": _ficha(dig.muestra_lisa(corregido)),
         })
 
     # --- Floral: la foto cubre tela de sobra, así que el mosaico ES la foto.
@@ -180,7 +180,7 @@ def main() -> int:
         # de tela, dos mosaicos en una prenda de medio metro.
         "default_repeat": 2,
         "mosaico": mosaico,
-        "foto": _corregir(floral.crop((0, 200, 899, 1400)), recorte),
+        "foto": _ficha(mosaico),
     })
 
     # --- Estampados reconstruidos por IA, con caché para no pagar dos veces.
@@ -204,7 +204,6 @@ def main() -> int:
             continue
         mosaico = hacer_repetible(crudo)
         print(f"   junta {medir_junta(mosaico):.2f}")
-        izquierda, arriba, derecha, abajo = franja
         altas.append({
             "name": nombre,
             "reference": ref,
@@ -218,7 +217,7 @@ def main() -> int:
             "pattern": FabricPattern.PRINT,
             "default_repeat": 2,
             "mosaico": mosaico,
-            "foto": _ficha(mosaico, estanteria.crop((izquierda, max(0, arriba - 20), derecha, abajo + 20))),
+            "foto": _ficha(mosaico),
         })
 
     _guardar(altas, almacen)
@@ -249,43 +248,20 @@ def _guardar(altas: list[dict], almacen) -> None:
             print(f"  {'alta' if nueva else 'actualizada'}: {tela.name} ({tela.color_hex})")
 
 
-#: Lado de la foto de ficha compuesta.
+#: Lado de la foto de ficha.
 LADO_FICHA = 800
 
 
-def _ficha(mosaico: Image.Image, rollo: Image.Image) -> Image.Image:
-    """Foto de catálogo cuadrada: la tela limpia arriba y el rollo real debajo.
+def _ficha(mosaico: Image.Image) -> Image.Image:
+    """Foto de catálogo: SOLO la tela digitalizada, cuadrada.
 
-    La tarjeta del catálogo es cuadrada y recorta con `object-cover`. Una tira
-    de 839x46 —el lomo del rollo en la estantería, que es lo que hay— se
-    ampliaba cinco veces en vertical y salía como una mancha. Así la ficha
-    enseña la tela entera y, debajo, cómo se ve el rollo de verdad en la tienda.
+    Antes llevaba debajo una tira de la foto de la estantería —el lomo del
+    rollo, 839x46 px—, para enseñar cómo se veía en la tienda. El usuario la
+    vio y tenía razón: ampliada y pegada bajo una tela limpia parecía un
+    recorte mal hecho. La foto original se queda en `scripts/muestras/` como
+    lo que es, la fuente de la que se mide la tela; al catálogo va la tela.
     """
-    lienzo = Image.new("RGB", (LADO_FICHA, LADO_FICHA), (255, 255, 255))
-    tira_alto = max(24, round(rollo.height * LADO_FICHA / rollo.width))
-    tira_alto = min(tira_alto, LADO_FICHA // 4)
-    tela_alto = LADO_FICHA - tira_alto - 8
-    lienzo.paste(
-        mosaico.resize((LADO_FICHA, LADO_FICHA), Image.Resampling.LANCZOS).crop((0, 0, LADO_FICHA, tela_alto)),
-        (0, 0),
-    )
-    lienzo.paste(rollo.resize((LADO_FICHA, tira_alto), Image.Resampling.LANCZOS), (0, tela_alto + 8))
-    return lienzo
-
-
-def _corregir(foto: Image.Image, referencia: Image.Image) -> Image.Image:
-    """La foto de catálogo, con el mismo balance de blancos que su mosaico.
-
-    Si no, la ficha enseñaría la foto gris del móvil al lado de un mosaico
-    corregido, y parecerían dos telas distintas.
-    """
-    px = np.asarray(referencia.convert("RGB"), dtype=np.float32) / 255.0
-    limpio = dig.quitar_luz(px, min(px.shape[:2]) * 0.25)
-    ganancia = dig.ganancias_de_blanco(dig.color_de_fondo(limpio))
-    foto_px = np.asarray(foto.convert("RGB"), dtype=np.float32) / 255.0
-    return Image.fromarray(
-        (np.clip(foto_px * ganancia[None, None, :], 0, 1) * 255).astype(np.uint8), mode="RGB"
-    )
+    return mosaico.convert("RGB").resize((LADO_FICHA, LADO_FICHA), Image.Resampling.LANCZOS)
 
 
 def _saturacion(color: np.ndarray) -> float:
