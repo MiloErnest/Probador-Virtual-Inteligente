@@ -68,6 +68,57 @@ def test_el_borde_se_lleva_al_contorno_real_de_la_foto() -> None:
         assert abs(primero - borde) <= 1, (desplazamiento, primero - borde)
 
 
+def test_el_canto_de_una_prenda_clara_no_se_agujerea() -> None:
+    """Una prenda blanca sobre fondo casi igual: el borde no se llena de huecos.
+
+    La camiseta blanca de ejemplo mide 217 en el canto de la manga, lo mismo
+    que el fondo, y 205 en su interior sombreado. Votando por color, el canto
+    se parecía más al fondo que a la prenda, y la máscara salía agujereada POR
+    DENTRO; vestida de terracota, asomaba un ribete blanco deshilachado.
+    """
+    lado, alto = 800, 400
+    borde_izq, borde_der = 200, 600
+    # Como en la foto: el interior en sombra (205) y un filo claro de 4 px en
+    # el canto (220), del color del fondo (217).
+    fila = np.full(lado, 217.0, dtype=np.float32)
+    fila[borde_izq:borde_der] = 205.0
+    fila[borde_izq : borde_izq + 4] = 220.0
+    fila[borde_der - 4 : borde_der] = 220.0
+    foto = np.broadcast_to(fila[None, :], (alto, lado))
+    guia = Image.fromarray(foto.astype(np.uint8)).convert("RGB")
+
+    mascara = np.zeros((alto, lado), dtype=np.uint8)
+    mascara[:, borde_izq:borde_der] = 255
+    alfa = np.asarray(_pegar_al_borde(Image.fromarray(mascara), guia, (lado, alto)), dtype=np.float32)
+    dentro = alfa[:, borde_izq + 3 : borde_der - 3] / 255.0
+    assert dentro.min() > 0.97, f"hay huecos dentro de la prenda (mínimo {dentro.min():.2f})"
+
+
+def test_el_canto_se_mezcla_con_el_fondo_y_no_con_la_prenda_vieja() -> None:
+    """En el canto, la tela nueva se funde con el FONDO de al lado.
+
+    Mezclarla con la foto tal cual volvía a meter la prenda vieja en el borde:
+    una camiseta blanca vestida de oscuro salía con un ribete blanco.
+    """
+    lado = 120
+    foto = np.full((lado, lado, 3), 128, dtype=np.uint8)  # fondo gris
+    foto[20:100, 20:100] = 250  # prenda blanca
+    mascara = np.zeros((lado, lado), dtype=np.uint8)
+    mascara[24:96, 24:96] = 255
+    # Un canto a medias sobre la propia prenda blanca, como el de una máscara
+    # que no llega del todo al borde.
+    mascara[20:100, 20:24] = 128
+    oscura = Image.new("RGB", (32, 32), (40, 40, 40))
+
+    salida = np.asarray(
+        retexturizar(Image.fromarray(foto), Image.fromarray(mascara), oscura, repeticiones=3).imagen,
+        dtype=np.float32,
+    )
+    canto = salida[40:80, 20:24].mean()
+    assert canto < 128, f"el canto trae el blanco de la prenda vieja ({canto:.0f})"
+    assert np.array_equal(salida[:, :18], foto[:, :18]), "el fondo sigue intacto"
+
+
 # --- Cerrar la junta de un mosaico -------------------------------------------
 
 

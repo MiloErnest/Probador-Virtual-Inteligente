@@ -252,10 +252,42 @@ def retexturizar(
     campo = _tender_la_tela(tela, prenda.size, repeticiones, caja, pendiente, (x, y))
 
     vestida = _a_srgb(_a_luz_lineal(campo) * razon[..., None])
-    compuesta = vestida * alfa + original * (1.0 - alfa)
+    compuesta = vestida * alfa + _fondo_del_canto(original, alfa[..., 0]) * (1.0 - alfa)
 
     imagen = Image.fromarray(np.clip(compuesta * 255.0, 0, 255).astype(np.uint8), mode="RGB")
     return Retexturizado(imagen=imagen, contraste=dispersion)
+
+
+def _fondo_del_canto(original: np.ndarray, alfa: np.ndarray) -> np.ndarray:
+    """Con qué se mezcla la tela nueva en el canto: el FONDO de al lado.
+
+    Un píxel del canto es, en la foto, parte prenda y parte fondo. Mezclar la
+    tela nueva con ese píxel tal cual mete otra vez la prenda VIEJA en el borde:
+    una camiseta blanca vestida de terracota salía con un ribete blanco. Lo que
+    hay que poner en la parte que no es prenda es el fondo, y el fondo de al
+    lado se sabe: la media de los píxeles de fondo puro cercanos (convolución
+    normalizada, igual que el color local del recorte).
+
+    Solo cambia el canto. Donde la máscara vale 0 la salida es la foto original
+    exacta —es la garantía del motor—, y donde vale 1 no entra nada del fondo.
+    """
+    from app.textil.filtros import media_de_caja
+
+    canto = (alfa > 0.0) & (alfa < 1.0)
+    if not canto.any():
+        return original
+    fondo_puro = (alfa <= 0.02).astype(np.float32)
+    radio = max(3, round(max(alfa.shape) / 150))
+    peso = media_de_caja(fondo_puro, radio)
+    if not (peso > 0.05).any():
+        return original
+    cerca = np.stack(
+        [media_de_caja(original[..., c] * fondo_puro, radio) for c in range(3)], axis=-1
+    ) / np.maximum(peso, 1e-6)[..., None]
+    # Un canto sin fondo puro cerca —la prenda pegada al marco de la foto— se
+    # queda como estaba.
+    usar = (canto & (peso > 0.05))[..., None]
+    return np.where(usar, cerca, original)
 
 
 def _dentro(campo: np.ndarray, peso: np.ndarray, radio: float) -> np.ndarray:

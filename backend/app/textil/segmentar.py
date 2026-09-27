@@ -160,6 +160,23 @@ CAMBIO_MAXIMO = 0.40
 #: de ampliar la máscara y el de GrabCut, que trabaja a esa resolución.
 FRANJA_DEL_BORDE = 2.0
 
+#: Por debajo de esta distancia de color (en 0–1) entre la prenda y el fondo de
+#: al lado, el borde NO se decide por color: se queda el del recorte a 512 px.
+#:
+#: Lo destapó una camiseta blanca probada en lino terracota. En el canto de la
+#: manga la camiseta mide 217 y el fondo 217, y su interior sombreado, 205. Un
+#: píxel del canto se parecía más al fondo que a la media de la prenda, así
+#: que el borde se llenaba de agujeros y medias transparencias por DENTRO de
+#: la prenda; con una tela oscura, por ahí asomaba el blanco original como un
+#: ribete deshilachado. Con las telas blancas o de rayas no se veía.
+#:
+#: Medido en el canto de las siete fotos del banco (distancia RGB en 0–1 entre
+#: el color local de prenda y el de fondo): la camiseta blanca da 0,088 de
+#: mediana y un 90% por debajo de 0,15. Las otras seis empiezan en 0,26 (el
+#: percentil 5 del jersey gris, la más parecida a su fondo); las oscuras pasan
+#: de 0,6. Con 0,15 queda un factor casi dos hasta la siguiente prenda.
+SEPARACION_MINIMA = 0.15
+
 #: Cuánto borde hace falta en la foto para que el filtro guiado lo respete. Bajo,
 #: para pegarse a bordes débiles como blanco sobre gris claro.
 EPS_DEL_BORDE = 1e-4
@@ -247,7 +264,9 @@ def segmentar_prenda(imagen: Image.Image, *, boceto: bool = False) -> Recorte:
         alfa = imagen.getchannel("A")
         trabajo = _reducir(imagen.convert("RGB"), LADO_DE_TRABAJO)
         alfa = alfa.resize(trabajo.size, Image.Resampling.BILINEAR)
-        return _empaquetar(_quitar_la_figura(alfa, trabajo, boceto), original, guia=imagen)
+        return _empaquetar(
+            _quitar_la_figura(alfa, trabajo, boceto), original, guia=imagen, boceto=boceto
+        )
 
     trabajo = _reducir(imagen.convert("RGB"), LADO_DE_TRABAJO)
     px = np.asarray(trabajo, dtype=np.float32)
@@ -313,7 +332,7 @@ def segmentar_prenda(imagen: Image.Image, *, boceto: bool = False) -> Recorte:
     # PASO 4. Sacar a la persona dibujada, si la hay.
     mascara = _quitar_la_figura(mascara, trabajo, boceto)
 
-    return _empaquetar(mascara, original, guia=imagen)
+    return _empaquetar(mascara, original, guia=imagen, boceto=boceto)
 
 
 def _campo_de_fondo(px: np.ndarray) -> np.ndarray:
@@ -391,7 +410,7 @@ def _campo_de_fondo(px: np.ndarray) -> np.ndarray:
 
 
 def _pegar_al_borde(
-    mascara: Image.Image, guia: Image.Image, tamano: tuple[int, int]
+    mascara: Image.Image, guia: Image.Image, tamano: tuple[int, int], *, boceto: bool = False
 ) -> Image.Image:
     """Decide el borde a tamaño completo con el color de la propia foto.
 
@@ -444,7 +463,19 @@ def _pegar_al_borde(
         color_fondo = _media_local(color, fondo, radio)
         a_prenda = np.linalg.norm(color - color_prenda, axis=2)
         a_fondo = np.linalg.norm(color - color_fondo, axis=2)
-        prenda = segura | (dudosa & (a_prenda < a_fondo))
+        # Donde la prenda de al lado y el fondo de al lado tienen casi el mismo
+        # color, el color no decide nada: cada píxel caería de un lado o del
+        # otro por ruido. Ver `SEPARACION_MINIMA`.
+        #
+        # En un boceto no: papel y vestido son el mismo blanco a los dos lados
+        # del trazo, y es el trazo —más oscuro que los dos— lo que el voto por
+        # color sí sabe encontrar. Con el recorte a 512 px, el borde quedaba
+        # 1–3 px por fuera de la línea de lápiz.
+        separables = boceto | (
+            np.linalg.norm(color_prenda - color_fondo, axis=2) > SEPARACION_MINIMA
+        )
+        por_color = a_prenda < a_fondo
+        prenda = segura | (dudosa & np.where(separables, por_color, prenda))
 
     gris = color @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
     fino = max(1, round(escala * 0.75))
@@ -782,13 +813,14 @@ def _empaquetar(
     *,
     forzar_dudoso: bool = False,
     guia: Image.Image | None = None,
+    boceto: bool = False,
 ) -> Recorte:
     """Devuelve la máscara al tamaño original, con el borde pegado al real, y medida."""
     if mascara.size != tamano_original:
         mascara = mascara.resize(tamano_original, Image.Resampling.BILINEAR)
 
     if guia is not None:
-        mascara = _pegar_al_borde(mascara, guia, tamano_original)
+        mascara = _pegar_al_borde(mascara, guia, tamano_original, boceto=boceto)
     else:
         # Sin foto de guía (una máscara de relleno total), basta un canto suave.
         radio = max(1.0, tamano_original[0] / 400)
