@@ -3,9 +3,42 @@
 > Documento vivo. Se actualiza al cerrar cada etapa.
 
 **Etapa actual:** prueba virtual de telas, el producto del Product Vision Board.
-**Última actualización:** 2026-09-18
+**Última actualización:** 2026-09-26
 
 ---
+
+## Qué pasó el 2026-09-26
+
+El usuario pidió cuatro cosas: dar de alta las telas reales de la tienda a
+partir de tres fotos; arreglar las telas que se veían mal; que el retexturizado
+funcionara con cualquier prenda y no solo con algunas; y que la IA funcionara
+«al 100%, sin devolver otra prenda». Y pidió investigar cómo lo resuelven los
+probadores que funcionan.
+
+### Lo que dice la investigación, y lo que decide
+
+Ningún sistema que funcione conserva la geometría con un prompt. Los
+configuradores de tela del comercio electrónico (Style3D, Imagine.io, NunoX) y
+la investigación sobre retexturizado de prendas (Pattern Guided UV Recovery,
+arXiv 2407.10137) NO generan la prenda: extraen máscara, sombreado y relieve, y
+componen la tela de forma determinista. Los generativos que sí conservan la
+forma (ZeST, IDM-VTON, CatVTON) usan condicionamiento estructural duro —
+profundidad por ControlNet, codificadores de prenda— que la API de OpenAI no
+ofrece. De ahí la arquitectura de esta etapa.
+
+### Lo que se hizo
+
+| Pieza | Qué es |
+|---|---|
+| Catálogo reparado | 11 telas con la foto borrada por un fallo del script de mosaicos (foto y mosaico eran el mismo archivo). Vichy fantasmales rehechos: el cierre de junta ahora mide el período y corta por el camino de mínimo error. |
+| 14 telas reales | `app/textil/digitalizar.py` + `scripts/seed_telas_reales.py`: 5 rayas, 6 lisos, el floral y 2 estampados reconstruidos por IA, desde las fotos de la tienda (`scripts/muestras/`). |
+| Recorte robusto | GrabCut para fotos; borde decidido con el color local; barrera de lápiz en bocetos; figura por croma. |
+| Sombreado robusto | Solo con prenda pura, pliegues normalizados, textura del material viejo quitada, brillos según la tela nueva. |
+| Veta | `app/textil/veta.py`: la raya corre a lo largo de las mangas. |
+| Bloqueo estructural | `app/textil/bloqueo.py`: la IA ya no puede devolver otra prenda. |
+
+Todo medido en un banco de 8 prendas × 3 telas: las tres subidas del usuario y
+cinco fotos reales (camisa, camiseta blanca, cazadora de cuero, vaquero, jersey).
 
 ## Qué pasó el 2026-09-18
 
@@ -147,11 +180,14 @@ Dos cosas que solo se ven con un dibujo real:
 
 | # | Descripción | Impacto | Plan |
 |---|---|---|---|
-| 37 | **Los mosaicos fotográficos solo están hechos para 3 de las 12 telas** (tafetán, denim y vichy). Las otras nueve siguen siendo procedurales. | Medio | `python -m scripts.telas_fotograficas --aplicar`. Son 9 llamadas, ~27.000 tokens, una sola vez. |
+| 39 | **El aporte visible de la IA al render es pequeño.** Con el bloqueo, la prenda está garantizada, pero de la IA solo entra la textura fina donde coincide. En la prueba real sobre la camiseta coincidió en un 17% — y el modelo había vuelto a devolver la ESPALDA de la camiseta. | Medio | Es el límite de la API: sin condicionamiento estructural no hay más que tomar sin arriesgar la prenda. Un proveedor con ControlNet de profundidad (ver «Próximos pasos») lo cambiaría. |
+| 40 | **Una prueba con IA sobre una foto grande tarda más de un minuto** (71 s en 2048 px). El render determinista ya se optimizó: de 13,5 s a 3,3 s en 3 MP, con el mismo resultado (diferencia máxima de 4 niveles sobre 255). | Bajo | El corte del sondeo se subió a 150 s. Casi todo el minuto es la llamada al modelo. |
+| 41 | **Los mosaicos IA de las telas de demostración viejas exageran la trama** (la franela sale como cestería). | Bajo | Son telas de demostración; las reales de la tienda salen de sus fotos. Rehacer con una instrucción por tipo de tela, o retirarlas. |
+| 37 | ~~**Los mosaicos fotográficos solo están hechos para 3 de las 12 telas**~~ **RESUELTO**: el usuario los generó todos. Y el script tenía un fallo grave, ya corregido: borraba la foto de catálogo. Texto original: (tafetán, denim y vichy). Las otras nueve siguen siendo procedurales. | Medio | `python -m scripts.telas_fotograficas --aplicar`. Son 9 llamadas, ~27.000 tokens, una sola vez. |
 | 38 | **La síntesis del mosaico no siempre acierta el ligamento.** El tafetán volvió con una trama más gruesa de lo que es una seda de 90 g. | Medio | La ficha ya le da gramaje y ligamento; falta iterar el texto de `_instruccion` y medir. O fotografiar el rollo real, que sigue siendo mejor. |
 | 35 | ~~**La sombra proyectada de una prenda entra en el recorte y se pinta.**~~ **RESUELTO, y no era una sombra.** Medido, el manchón tiene brillo 235 y el fondo 223: es MÁS claro. Era el degradado del ciclorama, no una sombra. | — | El fondo se modela con una superficie cuadrática ajustada al marco, de forma robusta, en vez de con un color de las esquinas. Cobertura de la camiseta 0,613 → 0,520; el boceto no se mueve. |
-| 36 | **En el croquis, la tela invade el escote y los hombros desnudos.** La exclusión de figura acierta con el pelo, la cara y los brazos, pero el pecho descubierto queda dentro del recorte. | Medio | El sombreado del escote es casi acromático en un dibujo a lápiz. Se arregla cerrando la figura hacia abajo desde el cuello, o dejando que el usuario retoque la máscara. |
-| 30 | **El camino generativo no conserva el diseño.** Medido **cinco** veces: los dos modelos, con `input_fidelity=high`, una camisa y un vestido, y las dos últimas **partiendo del retexturizado ya correcto y pidiendo solo pulir**. Rediseña igual. Es una limitación del modelo, no de la integración. | Alto | Por eso la IA es opt-in y el camino por defecto es determinista. La interfaz lo advierte. Si aparece un modelo que sí lo conserve, es cambiar `OPENAI_IMAGE_MODEL`. |
+| 36 | **En el croquis, la tela invade el escote y los hombros desnudos.** Sigue abierto. La exclusión de figura acierta con el pelo, la cara y los brazos, pero el pecho descubierto queda dentro del recorte. | Medio | Se probó detectar la piel pálida por TONO (10–45°, saturación 0,06 frente a 0,023 del corpiño): agujereaba la falda, cuyo sombreado tiene zonas cálidas. Exigir que estuviera unida a la figura tampoco: el brazo baja pegado al vestido. Hace falta un modelo aprendido de análisis de personas, o que el usuario retoque la máscara. |
+| 30 | **El camino generativo no conserva el diseño** — pero su SALIDA ya sí, por el bloqueo estructural. Medido **siete** veces, la última devolvió la espalda de la camiseta: los dos modelos, con `input_fidelity=high`, una camisa y un vestido, y las dos últimas **partiendo del retexturizado ya correcto y pidiendo solo pulir**. Rediseña igual. Es una limitación del modelo, no de la integración. | Alto | Por eso la IA es opt-in y el camino por defecto es determinista. La interfaz lo advierte. Si aparece un modelo que sí lo conserve, es cambiar `OPENAI_IMAGE_MODEL`. |
 | 34 | ~~**En un croquis de moda, el recorte pinta también a la modelo.**~~ **RESUELTO.** La máscara es «todo lo que no es fondo», y en un dibujo de figurín eso incluye la cara, el pelo y los brazos, que salen del color de la tela. Se vio con el boceto del usuario. | — | Se separa por saturación: el lápiz es acromático (0,02) y la figura no (0,10+). Con salvaguarda: si lo detectado pasa del 30% del recorte es una prenda de color, no una persona, y no se quita nada. Medido: el croquis pierde un 4,3%; la fotografía de camiseta, 0,0%. |
 | 31 | **El retexturizado no cambia cómo CAE la tela.** Si la foto es de un vestido fluido, una lona rígida caerá como el vestido: los pliegues son los de la foto. | Medio | Es el límite de la técnica. Simular el tejido es otro problema y bastante mayor. Se dice en la portada. |
 | 32 | **Los mosaicos del catálogo son generados, no fotografías de tela real.** Son creíbles y seamless por construcción, pero no son telas de verdad. | Medio | Para el producto real, la tienda aliada fotografía sus rollos y se recorta un cuadrado limpio. Sale mejor y es gratis. |
@@ -218,6 +254,12 @@ Dos cosas que solo se ven con un dibujo real:
 ---
 
 ## Próximos pasos
+
+0. **Si la IA tiene que hacer más que acabado**: un proveedor con
+   condicionamiento estructural de verdad (inpainting con ControlNet de
+   profundidad e IP-Adapter para la tela, como ZeST). Fal.ai o Replicate lo
+   ofrecen por API. Hace falta una cuenta y una clave del usuario, y la
+   costura `motor_para` ya está preparada para añadir un proveedor.
 
 1. **Terminar los mosaicos fotográficos** de las nueve telas que faltan
    (limitación #37). Es una orden y ~27.000 tokens.

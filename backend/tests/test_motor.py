@@ -10,6 +10,7 @@ import numpy as np
 from PIL import Image
 
 from app.textil import digitalizar
+from app.textil.bloqueo import bloquear_estructura
 from app.textil.retexturizar import retexturizar
 from app.textil.segmentar import _pegar_al_borde, _rellenar_desde_el_borde
 from app.textil.tejido_ia import hacer_repetible, medir_junta, medir_periodo
@@ -176,3 +177,66 @@ def test_la_tela_no_se_sale_de_la_prenda() -> None:
     ).imagen
     fuera = mascara == 0
     assert np.array_equal(np.asarray(salida)[fuera], foto[fuera])
+
+
+# --- El bloqueo estructural de la IA ------------------------------------------
+
+
+def _prenda_de_prueba() -> tuple[Image.Image, Image.Image]:
+    """Una camiseta sintética con pliegues y una costura, y su máscara."""
+    alto, ancho = 240, 200
+    yy, xx = np.mgrid[0:alto, 0:ancho].astype(np.float32)
+    pliegues = 0.75 + 0.2 * np.sin(xx / 9.0) + 0.05 * np.sin(yy / 23.0)
+    px = np.stack([0.8 * pliegues, 0.15 * pliegues, 0.2 * pliegues], axis=-1)
+    px[:, 98:102] *= 0.5  # una costura
+    mascara = np.zeros((alto, ancho), dtype=np.uint8)
+    mascara[20:220, 30:170] = 255
+    fondo = np.full((alto, ancho, 3), 0.9, dtype=np.float32)
+    dentro = (mascara > 0)[..., None]
+    img = np.where(dentro, px, fondo)
+    return (
+        Image.fromarray((np.clip(img, 0, 1) * 255).astype(np.uint8), mode="RGB"),
+        Image.fromarray(mascara, mode="L"),
+    )
+
+
+def test_si_la_ia_devuelve_otra_prenda_sale_la_prenda_exacta() -> None:
+    """La garantía: una salida de IA que no es la prenda se descarta entera.
+
+    Medido con salidas reales: la espalda de la camiseta, un vestido de punto
+    sin abertura, un vestido de cuello cerrado. Aquí, una imagen sin nada que
+    ver.
+    """
+    render, mascara = _prenda_de_prueba()
+    otra = np.random.default_rng(7).random((240, 200, 3))
+    bloqueado = bloquear_estructura(
+        render, Image.fromarray((otra * 255).astype(np.uint8), mode="RGB"), mascara
+    )
+    assert bloqueado.aportado == 0.0
+    assert np.array_equal(np.asarray(bloqueado.imagen), np.asarray(render))
+
+
+def test_la_ia_no_puede_mover_una_costura_ni_un_pliegue() -> None:
+    """Aunque la IA coincida y se acepte, la estructura sigue siendo la del render.
+
+    La IA aquí es el render con textura fina encima y una costura INVENTADA.
+    La textura puede entrar; la costura nueva no, porque es estructura.
+    """
+    render, mascara = _prenda_de_prueba()
+    base = np.asarray(render, dtype=np.float32) / 255.0
+    rng = np.random.default_rng(11)
+    ia = base * (1.0 + 0.04 * rng.standard_normal(base.shape[:2]))[..., None]
+    ia[:, 140:143] *= 0.4  # un corte que no existe en la prenda
+    bloqueado = bloquear_estructura(
+        render, Image.fromarray((np.clip(ia, 0, 1) * 255).astype(np.uint8), mode="RGB"), mascara
+    )
+    salida = np.asarray(bloqueado.imagen, dtype=np.float32) / 255.0
+
+    # Se compara con el RENDER en las mismas columnas: la prenda tiene pliegues,
+    # y comparar con columnas vecinas mediría el pliegue, no el corte.
+    referencia = base[40:200, :]
+    trozo = salida[40:200, :]
+    en_el_corte = float((trozo[:, 140:143] / referencia[:, 140:143]).mean())
+    assert en_el_corte > 0.93, f"el corte inventado no aparece ({en_el_corte:.2f})"
+    en_la_costura = float((trozo[:, 98:102] / referencia[:, 98:102]).mean())
+    assert 0.9 < en_la_costura < 1.1, "la costura de la prenda sigue como estaba"

@@ -190,7 +190,8 @@ def retexturizar(
         mascara = mascara.resize(prenda.size, Image.Resampling.BILINEAR)
 
     alfa = np.asarray(mascara.convert("L"), dtype=np.float32)[..., None] / 255.0
-    original = np.asarray(prenda, dtype=np.float32) / 255.0
+    ocho_bits = np.asarray(prenda)
+    original = ocho_bits.astype(np.float32) / 255.0
 
     dentro = alfa[..., 0] > 0.5
     if not dentro.any():
@@ -198,7 +199,7 @@ def retexturizar(
         # es más honesto que pintarla entera.
         return Retexturizado(imagen=prenda, contraste=0.0)
 
-    lineal = _a_luz_lineal(original)
+    lineal = _a_luz_lineal_8(ocho_bits)
     brillo = lineal @ LUMINANCIA
 
     # 1. SOPORTE: solo la prenda pura. Donde la máscara no llega a 0,9 el píxel
@@ -598,17 +599,20 @@ def _tender_la_tela(
     # interpolación cruza la costura del mosaico sin partirse: el píxel que
     # sigue al último es el primero, que es exactamente lo que significa que un
     # mosaico sea repetible.
-    x0 = np.floor(x).astype(np.int32)
-    y0 = np.floor(y).astype(np.int32)
-    fx = (x - x0)[..., None]
-    fy = (y - y0)[..., None]
+    #
+    # Se hace con `remap` de OpenCV y borde en envoltura, que es exactamente
+    # esa interpolación bilineal cruzando la costura del mosaico, en C: la
+    # versión con índices de numpy eran 2,2 s de una prueba de 3 megapíxeles.
+    # Las coordenadas se reducen antes al mosaico para que no se pierda
+    # precisión con valores grandes.
+    import cv2
 
-    ix0, ix1 = np.mod(x0, lado), np.mod(x0 + 1, lado)
-    iy0, iy1 = np.mod(y0, lado), np.mod(y0 + 1, lado)
-
-    arriba = mosaico[iy0, ix0] * (1.0 - fx) + mosaico[iy0, ix1] * fx
-    abajo = mosaico[iy1, ix0] * (1.0 - fx) + mosaico[iy1, ix1] * fx
-    return arriba * (1.0 - fy) + abajo * fy
+    x = np.mod(x, lado).astype(np.float32)
+    y = np.mod(y, lado).astype(np.float32)
+    return cv2.remap(
+        np.ascontiguousarray(mosaico, dtype=np.float32), x, y,
+        interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_WRAP,
+    )
 
 
 # --- Conversión de color ----------------------------------------------------
@@ -618,10 +622,36 @@ def _tender_la_tela(
 # haría una potencia pura.
 
 
+#: La curva sRGB, tabulada. Las imágenes llegan en 8 bits, así que pasar a luz
+#: lineal es consultar una tabla de 256 valores en vez de elevar a 2,4 cada
+#: píxel. Y la vuelta a sRGB se hace con una tabla fina de 16 384 valores: el
+#: resultado se guarda en 8 bits de todas formas, y con este paso el error
+#: queda por debajo de medio nivel. Las dos potencias eran 1,8 s de una prueba.
+_TABLA_LINEAL = np.where(
+    np.arange(256) / 255.0 <= 0.04045,
+    (np.arange(256) / 255.0) / 12.92,
+    ((np.arange(256) / 255.0 + 0.055) / 1.055) ** 2.4,
+).astype(np.float32)
+_PASOS_SRGB = 16384
+_TABLA_SRGB = (lambda c: np.where(c <= 0.0031308, c * 12.92, 1.055 * c ** (1 / 2.4) - 0.055))(
+    np.linspace(0.0, 1.0, _PASOS_SRGB)
+).astype(np.float32)
+
+
+def _a_luz_lineal_8(imagen: np.ndarray) -> np.ndarray:
+    """De 8 bits a luz lineal por tabla. `imagen` es uint8."""
+    return _TABLA_LINEAL[imagen]
+
+
 def _a_luz_lineal(c: np.ndarray) -> np.ndarray:
     return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
 
 
 def _a_srgb(c: np.ndarray) -> np.ndarray:
+    indice = np.clip(c, 0.0, 1.0) * (_PASOS_SRGB - 1)
+    return _TABLA_SRGB[(indice + 0.5).astype(np.int32)]
+
+
+def _a_srgb_exacto(c: np.ndarray) -> np.ndarray:
     c = np.clip(c, 0.0, 1.0)
     return np.where(c <= 0.0031308, c * 12.92, 1.055 * c ** (1 / 2.4) - 0.055)

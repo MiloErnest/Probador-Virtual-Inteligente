@@ -42,8 +42,12 @@ import {
 
 /** Cada cuánto se pregunta por una prueba en marcha. */
 const SONDEO_MS = 1500
-/** Cuándo dejar de esperar. El motor generativo puede tardar medio minuto. */
-const CORTE_MS = 120_000
+/**
+ * Cuándo dejar de esperar. Tiene que pasar de la suma del corte de la llamada
+ * al modelo (100 s en el backend) más el render exacto y el bloqueo que van
+ * antes y después: una prueba real con IA sobre una foto de 2048 px tardó 71 s.
+ */
+const CORTE_MS = 150_000
 
 export default function TrialPage() {
   const { id } = useParams()
@@ -410,8 +414,8 @@ function SelectorDeMotor({
       </div>
       <p className="text-[11px] text-ink-60">
         {valor === 'retexture'
-          ? 'Instantáneo, gratis, y siempre el mismo resultado.'
-          : 'Unos 45 s, y consume tokens de OpenAI.'}
+          ? 'En segundos, gratis, y siempre el mismo resultado.'
+          : 'Alrededor de un minuto, y consume tokens de OpenAI.'}
       </p>
     </div>
   )
@@ -420,27 +424,27 @@ function SelectorDeMotor({
 /**
  * Lo que va a pasar, dicho ANTES de que cueste dinero.
  *
- * No es un descargo de responsabilidad de relleno. Está medido contra la API
- * real, y lo que dice es incómodo: el motor generativo devuelve una prenda
- * parecida, no la tuya. Para una herramienta que promete «mira TU diseño con
- * otra tela», eso es justo el resultado equivocado — y se cobra. Quien lo pulse
- * tiene derecho a saberlo antes, no a descubrirlo en la factura.
+ * Antes este aviso decía que la IA devolvía otra prenda, porque era verdad. Lo
+ * sigue siendo del modelo —medido siete veces, la última devolvió la espalda
+ * de la camiseta—, pero ya no de la salida: el bloqueo estructural
+ * (`app/textil/bloqueo.py`) toma de la IA solo la textura fina donde coincide
+ * con la prenda. Lo que el aviso tiene que dejar claro ahora es lo contrario:
+ * que la prenda está garantizada, y que el aporte de la IA es de acabado, no
+ * de diseño — para que nadie pague esperando otra cosa.
  */
 function AvisoDeIA() {
   return (
-    <Notice title="La IA vuelve a dibujar la prenda; no le cambia la tela">
+    <Notice title="Tu prenda está garantizada; la IA solo aporta acabado">
       <p>
-        Probado contra la API real con un boceto de camisa que tenía cartera de
-        botones, cinco botones, bolsillo de pecho y cuello camisero: volvió
-        convertido en una túnica lisa. Las dos veces, también con la fidelidad
-        alta y con el modelo grande.
+        La silueta, los pliegues, las costuras y el color salen siempre de tu
+        prenda y de la ficha de la tela. De la IA se toma solo la textura fotográfica
+        más fina, y únicamente donde coincide con tu prenda.
       </p>
       <p>
-        Sirve para ver un boceto <strong>como fotografía</strong>, que es algo
-        que el otro motor no sabe hacer. Para comparar telas sobre tu diseño sin
-        que el diseño cambie, usa el retexturizado.
+        Si la IA devuelve otra cosa —otro corte, o la prenda de espaldas, que pasa—
+        se descarta entera y ves tu prenda exacta. La prueba te dirá qué parte aportó.
       </p>
-      <p>Tarda unos 45 s, gasta tokens de tu cuenta, y el tope son 20 pruebas cada 24 h.</p>
+      <p>Tarda alrededor de un minuto, gasta tokens de tu cuenta, y el tope son 20 pruebas cada 24 h.</p>
     </Notice>
   )
 }

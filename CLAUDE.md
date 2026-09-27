@@ -81,7 +81,9 @@ Base `vfit`, rol de aplicación `vfit` / `vfit_dev_password`. Son las mismas
 credenciales que `docker-compose.yml`, a propósito.
 
 Ejecutar pruebas: `pytest` desde `backend/` con el venv activo. Usan SQLite en
-memoria — **no necesitan PostgreSQL levantado**. Son 71 y tardan unos 35 s.
+memoria — **no necesitan PostgreSQL levantado**. Son 82: las del contrato de la
+API y, en `tests/test_motor.py`, las propiedades medidas del motor — cada una
+es un caso que falló de verdad antes de arreglarse.
 
 **El esquema lo gobierna Alembic, no `create_all`.** Sobre una base nueva:
 
@@ -119,8 +121,15 @@ Y para que los mosaicos del catálogo sean fotográficos en vez de procedurales
 python -m scripts.telas_fotograficas --aplicar
 ```
 
-El primero carga 12 telas con su ficha técnica y su mosaico. El segundo carga
-el catálogo del probador con cámara.
+Las telas REALES de la tienda, sacadas de sus fotos (`scripts/muestras/`). Sin
+`--con-ia` no cuesta nada; los dos estampados reconstruidos ya están en caché:
+
+```powershell
+python -m scripts.seed_telas_reales
+```
+
+El primero carga 12 telas de demostración con su ficha técnica y su mosaico. El
+segundo carga el catálogo del probador con cámara.
 
 ---
 
@@ -215,9 +224,13 @@ corregido los errores más caros.
 |---|---|
 | `segmentar.py` | Qué píxeles son prenda. Se calcula UNA vez al subir y se guarda. |
 | `retexturizar.py` | El motor determinista: dos caminos, foto y boceto. |
-| `filtros.py` | Desenfoque y reescalado en coma flotante. |
+| `veta.py` | Por dónde corre el hilo en cada pieza: la raya sigue la manga. |
+| `bloqueo.py` | Lo que hace fiable a la IA: solo aporta textura donde coincide. |
+| `digitalizar.py` | De la foto de un rollo a un mosaico limpio: lisos, rayas, estampados. |
+| `tejido_ia.py` | Mosaicos sintetizados con IA y el cierre de juntas. |
+| `filtros.py` | Desenfoque, reescalado, filtro guiado; todo en coma flotante. |
 | `provider.py` | El contrato y el selector. |
-| `openai_provider.py` | El motor generativo. |
+| `openai_provider.py` | El motor generativo, siempre detrás del bloqueo. |
 
 ### La idea, en una frase
 
@@ -292,6 +305,33 @@ que queda se traslada a la tela nueva.
    la costura del mosaico sin partirse.
 9. **La máscara de OpenAI va al revés que la nuestra.** Ahí lo TRANSPARENTE es
    lo que se edita. Mandarla sin invertir da una imagen plausible y equivocada.
+10. **El halo de las fotos tenía tres causas, y el filtro guiado no era la
+    cura.** Fondo que entraba como prenda (lo quita GrabCut, con la prenda
+    SEGURA exigiendo además color distinto del fondo), el fondo mezclado del
+    canto disparando la razón de luz (el sombreado se calcula ahora solo con
+    prenda pura), y el borde de una máscara hecha a 512 px. Para eso último se
+    confió primero en el filtro guiado y una prueba lo desmintió: con 6 px de
+    error dejaba el borde a −5. Conserva la media donde la foto es lisa, y la
+    franja sobrante ES fondo liso. El borde lo decide ahora el color local de
+    prenda y fondo en una franja dudosa; el filtro guiado solo suaviza el canto.
+11. **Las prendas oscuras no tienen poco contraste: tienen demasiado.** Medido
+    en logaritmo: cazadora de cuero 0,92, camiseta negra 0,82, jersey 0,49,
+    camiseta blanca 0,13. Se normalizan los pliegues hacia el rango de las de
+    tono medio, se quita la textura del material viejo umbralizando por su
+    propio nivel, y se limitan los brillos según la tela nueva.
+12. **El doblado del estampado se mide en la PRENDA, no en el mosaico.** En
+    fracciones del mosaico, un floral grande se ondulaba ±63 px.
+13. **La veta se deduce del GROSOR, no de la dirección del borde.** El tensor de
+    estructura daba «mangas» junto a cualquier borde recto. Una manga es una
+    pieza estrecha (grosor local), alargada (≥2,5) y en diagonal (10–60°).
+14. **En un boceto, la barrera es la línea de lápiz.** La sombra alrededor del
+    figurín entraba como prenda; subir el umbral de color se colaba por los
+    tramos débiles del contorno. El relleno puede comerse la franja exterior
+    (14 px) sin cruzar trazos. Y la figura se detecta con CROMA absoluto: la
+    saturación relativa se dispara en el grafito oscuro y agujereaba el vestido.
+15. **Cerrar la junta de un mosaico periódico: desplazar un múltiplo del
+    período y cortar por el camino de mínimo error.** Fundir a media anchura
+    dejó fantasmales los vichy; fundir con rampa, hojas dobles en las palmeras.
 
 ### Los parámetros están medidos, no elegidos a ojo
 
@@ -308,6 +348,22 @@ se nota, y 0 deja una rejilla recta sobre una manga curva.
 ---
 
 ## La IA: dónde está y por qué está AHÍ y no en otro sitio
+
+### Resumen, porque es lo primero que se pregunta
+
+La IA está en tres sitios y en ninguno puede cambiar la prenda:
+
+1. **Los materiales**: sintetiza el mosaico fotográfico de cada tela y
+   reconstruye los estampados de los que la foto solo enseña una franja. Una
+   vez por tela; lo usan todas las pruebas.
+2. **El acabado de una prueba** (opción «IA generativa»): detrás del BLOQUEO
+   ESTRUCTURAL (`bloqueo.py`). Forma, estructura y color salen del render
+   exacto; de la IA solo la textura fina donde coincide, y un tono monótono.
+   Si coincide en menos de un 15% de la prenda —es otra prenda— se descarta
+   entera. Medido: las cuatro salidas antiguas que eran otra prenda quedan
+   descartadas al 100%; la prueba real sobre la camiseta, en la que el modelo
+   devolvió la ESPALDA, sale como el frente con su etiqueta.
+3. No en la geometría. Nunca.
 
 **`AI_PROVIDER=openai`.** El valor por defecto del repositorio es `none`, porque
 que clonarlo empiece a gastar dinero de alguien sería una trampa. Un valor

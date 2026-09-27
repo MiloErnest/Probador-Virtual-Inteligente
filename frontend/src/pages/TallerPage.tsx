@@ -3,10 +3,11 @@
  *
  * LA DECISIÓN FOTO/BOCETO SE PIDE AL SUBIR, Y SE EXPLICA
  * ------------------------------------------------------
- * No es una etiqueta para ordenar la galería: decide qué motor puede vestir la
- * prenda, y de ahí sale que la prueba sea gratis e instantánea o que cueste
- * dinero y tarde medio minuto. Preguntarlo sin explicarlo llevaría a que la
- * gente marcara «boceto» en una foto y se gastara el presupuesto sin saberlo.
+ * No es una etiqueta para ordenar la galería: decide cómo se recorta la prenda
+ * y cómo se le pone la tela. En una foto se reutilizan la luz y los pliegues;
+ * en un dibujo se conserva el trazo y se usa el sombreado a lápiz. Los dos
+ * caminos son gratis e instantáneos: el texto antiguo decía que un boceto
+ * necesitaba IA, y dejó de ser verdad cuando el boceto tuvo su propio camino.
  */
 
 import { useCallback, useRef, useState } from 'react'
@@ -105,7 +106,7 @@ export default function TallerPage() {
               actual={tipo}
               onChange={setTipo}
               titulo="Un boceto"
-              detalle="Un dibujo no tiene sombras que reutilizar, así que hay que generar la imagen con IA. Tarda y consume presupuesto."
+              detalle="Se conserva tu trazo y la tela toma los pliegues de tu sombreado a lápiz. Gratis e instantáneo, igual que una foto."
             />
           </fieldset>
 

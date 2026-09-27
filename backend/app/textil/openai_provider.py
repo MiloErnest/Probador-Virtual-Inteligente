@@ -64,6 +64,7 @@ import io
 from PIL import Image
 
 from app.core.config import settings
+from app.textil.bloqueo import bloquear_estructura
 from app.textil.errores import ErrorDeMotor
 from app.textil.provider import PeticionDeTela, ResultadoDeTela
 
@@ -190,20 +191,18 @@ class MotorOpenAI:
 
         imagen = _componer_con_el_original(imagen, peticion.prenda, peticion.mascara)
 
+        # EL BLOQUEO ESTRUCTURAL. Es lo que hace que esta salida sea fiable: la
+        # forma, la estructura y el color salen del render determinista, que es
+        # la prenda exacta, y de la IA solo se toma la textura fina donde
+        # coincide con ella. Ver `app/textil/bloqueo.py`.
+        bloqueado = bloquear_estructura(partida, imagen, peticion.mascara)
+
         tokens = respuesta.usage.total_tokens if respuesta.usage else None
-        aviso = (
-            "Fuera de la prenda no se ha tocado nada: el fondo y la figura son tu "
-            "imagen original. Dentro, el modelo reinterpreta el diseño aunque se le "
-            "dé ya hecho — está medido cinco veces, con los dos modelos y con "
-            "fidelidad alta. Úsalo para ver la tela como fotografía, y compara "
-            "siempre con el original de al lado."
-            if desde_retexturizado
-            else "Esta tela no tiene mosaico, así que el modelo ha partido de tu "
-            "imagen y ha tenido que inventarse la tela entera. Es el caso en el "
-            "que más se desvía del diseño."
-        )
         return ResultadoDeTela(
-            imagen=imagen, proveedor=self.nombre, tokens=tokens, aviso=aviso
+            imagen=bloqueado.imagen,
+            proveedor=self.nombre,
+            tokens=tokens,
+            aviso=_aviso(bloqueado.aportado),
         )
 
 
@@ -245,6 +244,23 @@ def _tamano_de_catalogo(tamano: tuple[int, int]) -> str:
     return "1024x1024"
 
 
+def _aviso(aportado: float) -> str:
+    """Qué ha hecho la IA en esta prueba, dicho con el número."""
+    if aportado <= 0.0:
+        return (
+            "La IA devolvió una prenda distinta de la tuya —otra forma, otros cortes "
+            "o vista de espaldas— y se ha descartado entera. Lo que ves es tu prenda "
+            "exacta con la tela. La llamada se hizo y se cobró; su resultado no se usó "
+            "porque cambiaba la prenda."
+        )
+    return (
+        f"La IA ha aportado textura fotográfica en el {aportado:.0%} de la prenda, "
+        "donde coincidía con ella. La silueta, los pliegues, las costuras y el color "
+        "son los de tu prenda y los de la tela: están garantizados, la IA no puede "
+        "cambiarlos."
+    )
+
+
 def _punto_de_partida(peticion: PeticionDeTela) -> tuple[Image.Image, bool]:
     """Qué imagen se le manda al modelo, y si ya lleva la tela puesta.
 
@@ -259,7 +275,14 @@ def _punto_de_partida(peticion: PeticionDeTela) -> tuple[Image.Image, bool]:
     se nota: es el caso en el que más se aleja del diseño. Se avisa.
     """
     if peticion.mosaico is None:
-        return peticion.prenda, False
+        # Sin mosaico no hay render exacto con el que bloquear la estructura, y
+        # una salida del modelo sin bloquear no tiene ninguna garantía: puede
+        # ser otra prenda. Mejor decirlo que entregarla.
+        raise ErrorDeMotor(
+            "Esta tela no tiene mosaico, y sin él no se puede garantizar que la IA "
+            "respete tu prenda. Súbele una imagen de la tela desde el catálogo, o "
+            "genera su mosaico con scripts/telas_fotograficas."
+        )
 
     # Import aquí: `provider` importa este módulo de forma perezosa, así que a
     # la hora de llamar ya está cargado y no hay ciclo.

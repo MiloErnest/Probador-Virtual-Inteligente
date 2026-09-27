@@ -19,32 +19,31 @@ import numpy as np
 
 
 def media_en_ventana(campo: np.ndarray, radio: int, eje: int) -> np.ndarray:
-    """Media móvil en un eje, en tiempo constante por píxel.
+    """Media móvil en un eje, en coma flotante, con el borde replicado.
 
-    Con sumas acumuladas, la suma de cualquier ventana es una resta de dos
-    valores ya calculados. El coste no depende del radio, que es lo que permite
-    usar radios de decenas de píxeles sin que el desenfoque domine el tiempo.
+    PRIMERO FUE CON SUMAS ACUMULADAS, Y ERA EL 60% DEL TIEMPO
+    --------------------------------------------------------
+    La primera versión usaba sumas acumuladas en doble precisión: coste
+    constante por píxel y sin pérdida de dígitos, que importa porque de este
+    campo se calculan después gradientes. En una foto de 3 megapíxeles eso eran
+    8 de los 13 segundos de una prueba.
 
-    El acumulado va en doble precisión: sumar mil cuatrocientos valores en coma
-    flotante de 32 bits pierde dígitos justo donde después vamos a derivar.
+    Ahora es el filtro de caja de OpenCV, en C, sobre coma flotante de 32 bits.
+    Se midió antes de cambiarlo: entre 15 y 35 veces más rápido, error máximo
+    de 1e-7 frente a la versión en doble precisión, y en el gradiente también de
+    1e-7 frente a un gradiente típico de 5e-3. La precisión que protegía la
+    regla de «no cuantizar lo que se va a derivar» se conserva.
     """
+    import cv2
+
     if radio < 1:
         return campo
-
-    ancho = 2 * radio + 1
-    relleno = [(0, 0), (0, 0)]
-    relleno[eje] = (radio, radio)
-    extendido = np.pad(campo.astype(np.float64), relleno, mode="edge")
-
-    acumulado = np.cumsum(extendido, axis=eje)
-    forma_cero = list(acumulado.shape)
-    forma_cero[eje] = 1
-    acumulado = np.concatenate([np.zeros(forma_cero), acumulado], axis=eje)
-
-    n = campo.shape[eje]
-    superior = np.take(acumulado, np.arange(ancho, ancho + n), axis=eje)
-    inferior = np.take(acumulado, np.arange(0, n), axis=eje)
-    return ((superior - inferior) / ancho).astype(np.float32)
+    lado = 2 * radio + 1
+    tamano = (lado, 1) if eje == 1 else (1, lado)
+    return cv2.boxFilter(
+        np.ascontiguousarray(campo, dtype=np.float32), -1, tamano,
+        normalize=True, borderType=cv2.BORDER_REPLICATE,
+    )
 
 
 def reescalar(campo: np.ndarray, ancho: int, alto: int) -> np.ndarray:
