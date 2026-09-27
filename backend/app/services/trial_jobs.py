@@ -48,3 +48,22 @@ def run_trial_job(trial_id: int) -> None:
         # excepción. Sin el registro, la prueba se quedaría en `processing`
         # para siempre y no habría ni rastro de por qué.
         logger.exception("Falló el procesado de la prueba %s", trial_id)
+
+
+def run_try_on_job(try_on_id: int) -> None:
+    """Procesa una prueba sobre persona. Mismas reglas que `run_trial_job`."""
+    from app.repositories.person_photo import PersonPhotoRepository
+    from app.repositories.try_on import TryOnRepository
+    from app.services.try_on import TryOnService
+
+    try:
+        with SessionLocal() as session:
+            TryOnService(
+                TryOnRepository(session),
+                PersonPhotoRepository(session),
+                FabricTrialRepository(session),
+                GarmentUploadRepository(session),
+                get_storage(),
+            ).process(try_on_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("Falló el procesado de la prueba sobre persona %s", try_on_id)

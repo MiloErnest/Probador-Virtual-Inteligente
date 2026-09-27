@@ -38,6 +38,25 @@ class GarmentUploadRepository:
         )
         return list(self.session.execute(stmt).scalars())
 
+    def claves_de_sus_pruebas(self, upload_id: int) -> list[str]:
+        """Las imágenes de las pruebas de tela de una prenda.
+
+        La base borra esas pruebas en cascada con la prenda, pero sus archivos
+        no: sin esto, cada prenda borrada dejaba sus resultados huérfanos en
+        el almacén.
+        """
+        from app.models.fabric_trial import FabricTrial
+
+        return [
+            clave
+            for clave in self.session.execute(
+                select(FabricTrial.output_image_key).where(
+                    FabricTrial.garment_upload_id == upload_id
+                )
+            ).scalars()
+            if clave
+        ]
+
     def create(self, **campos) -> GarmentUpload:
         upload = GarmentUpload(**campos)
         self.session.add(upload)

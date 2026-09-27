@@ -2,10 +2,56 @@
 
 > Documento vivo. Se actualiza al cerrar cada etapa.
 
-**Etapa actual:** prueba virtual de telas, el producto del Product Vision Board.
-**Última actualización:** 2026-09-26
+**Etapa actual:** prueba virtual de telas, y el probador sobre la foto de una persona.
+**Última actualización:** 2026-09-27
 
 ---
+
+## Qué pasó el 2026-09-27
+
+El usuario pidió revisar el proyecto entero y dejarlo funcionando, y redefinió
+el probador: **no una cámara en vivo, sino un probador por imágenes**. Sube una
+foto suya, elige una prenda de su taller —la que ya editó con una tela, tal
+cual, sin volver a generarla— y ve cómo le queda, en cualquier postura,
+conservando a la persona y sin que la IA rediseñe la prenda. Y que no fuera un
+flujo aparte que duplicara el taller. Antes había dicho que no quiere seguir
+pagando APIs.
+
+### Lo que se construyó
+
+| Pieza | Qué es |
+|---|---|
+| `app/probador/` | Encuadrar a la persona, vestirla con FASHN VTON 1.5 (Space gratuito de Hugging Face) y conservarla. |
+| Conservación | Un analizador de personas en CPU dice qué es cada píxel; del modelo solo entra la ropa de la categoría y la piel que cambie. |
+| `person_photos`, `try_ons` | Migración `32d71eca2214`. La prenda sale de una prueba de tela o de una prenda subida. |
+| `/probador` | Tu foto, la prenda (con tela o tal cual, o subir una nueva con el alta del taller), la categoría, y el resultado junto al original y a la prenda enviada. |
+| Enlaces | «Probármela» en cada prueba de tela y en cada prenda del taller. |
+| Retirado | La cámara, su catálogo `garments`, `scripts/seed.py` y MediaPipe (el modelo de 5,6 MB salió del repositorio). |
+
+### Lo que se midió con el modelo real
+
+Dos pruebas reales antes de que se agotara la cuota: una persona sentada con la
+camiseta de rayas azul rey del usuario, y otra frente a un espejo con la de
+palmeras. Las dos veces la prenda salió con su dibujo y su color, siguiendo la
+postura, en ~28 s. **Y las dos veces el modelo cambió cosas fuera de la
+prenda** (6% y 2% de la foto): una ventana, un cuadro de la pared, un
+cinturón. La conservación los devuelve a la foto original; verificado sobre
+esas dos salidas.
+
+### La revisión encontró, y se arregló
+
+- **El hueco entre el brazo y el cuerpo se pintaba de tela** (el vestido negro
+  del usuario): lo sellaba el cierre morfológico. Ver CLAUDE.md, lección 16.
+- **Costuras en escalera y serrucho en el filo de las mangas** de las rayas:
+  paneles de la veta ampliados por vecino más próximo. Lección 17.
+- **Borrar una prenda dejaba huérfanas las imágenes de sus pruebas.**
+- **Textos que no eran verdad**: la cuenta «no guarda ni una foto» (guarda
+  prendas y pruebas), «tu cámara no sale de tu equipo», «un boceto necesita
+  IA», el `.env.example` recomendando `gpt-image-1-mini`, y un README que
+  documentaba endpoints `/api/try-on-sessions` que ya no existían.
+- **El probador tardaba 175 s en fallar**: preguntar a huggingface.co desde
+  Python tarda 168 s en esta red (IPv6 anunciado y no encaminado). Con la
+  dirección directa del Space, 6 s.
 
 ## Qué pasó el 2026-09-26
 
@@ -106,8 +152,14 @@ siendo el catálogo del probador con cámara.
 - [x] Prendas del usuario: subir, listar, ver, borrar. Todo filtrado por token.
 - [x] Pruebas: crear (202 + sondeo), listar, filtrar por prenda, borrar.
 - [x] Techo de gasto por usuario y ventana móvil de 24 h.
-- [x] **71 pruebas automatizadas, en verde.** Y **no pueden gastar dinero**:
-      un fixture `autouse` fuerza `AI_PROVIDER="none"`.
+- [x] **94 pruebas automatizadas, en verde.** Y **no pueden gastar dinero ni
+      cuota**: un fixture `autouse` fuerza `AI_PROVIDER="none"` y
+      `VTO_PROVIDER="none"`.
+- [x] Fotos de persona: subir (enderezada, a 2048 px y sin metadatos), listar,
+      borrar con todas sus pruebas.
+- [x] Pruebas sobre persona: crear (202 + sondeo), listar, borrar. La prenda
+      sale de una prueba de tela terminada o de una prenda subida, y siempre
+      del usuario del token.
 
 ### Frontend
 
@@ -119,8 +171,10 @@ siendo el catálogo del probador con cámara.
       estaba integrada y era **inalcanzable desde la interfaz**: el cliente
       aceptaba `method` y la pantalla nunca lo mandaba. Al elegir IA sale
       antes lo que va a pasar y lo que cuesta.
-- [x] Probador con cámara, intacto.
-- [x] Build de producción verificado: 236 KB.
+- [x] **Probador por fotos** (`/probador`), verificado en el navegador hasta la
+      llamada al modelo: sube, elige, lanza, sondea y enseña el error de cuota
+      traducido. En móvil, sin desbordamiento lateral.
+- [x] Build de producción verificado: 222 KB (sin MediaPipe).
 
 ---
 
@@ -180,6 +234,12 @@ Dos cosas que solo se ven con un dibujo real:
 
 | # | Descripción | Impacto | Plan |
 |---|---|---|---|
+| 42 | **La generación con éxito por la aplicación entera no se ha podido ver todavía.** Las dos pruebas reales se hicieron con un script, y la conservación se verificó sobre sus salidas; por la API y la interfaz solo se llegó al error de cuota, porque sin cuenta son dos pruebas al día y se gastaron midiendo. | Alto | Con `HF_TOKEN` (cuenta gratuita) o al día siguiente: lanzar una prueba desde `/probador` y mirarla. |
+| 43 | **Cuota gratuita pequeña**: ~2 pruebas al día sin cuenta. Con cuenta gratuita, más, pero sigue siendo una cuota diaria compartida por todos los usuarios de la instalación. | Medio | Suficiente para una demostración. Para un uso real, cuenta PRO de Hugging Face o un servidor con GPU propio. |
+| 44 | **La prenda sale más blanda que el resto de la foto** en fotos grandes: el modelo trabaja a 864 px de alto y la foto se conserva a su resolución. El encuadre de la persona lo reduce, no lo elimina. | Medio | Es el límite del modelo. |
+| 45 | **El analizador de personas es de uso no comercial** (pesos derivados de SegFormer de NVIDIA). | Bajo | Vale para el proyecto universitario. Para venderlo, otro analizador. |
+| 46 | **La foto sale del servidor** hacia un Space público de Hugging Face. Se avisa en pantalla antes de subirla, y se guarda aquí sin metadatos. | Medio | Asumido y dicho. La alternativa es alojar el modelo. |
+| 47 | **Las pruebas de tela antiguas siguen con los defectos de su momento** (el vestido negro con los bloques junto al torso). Se decidió no reescribir el historial. Como el probador usa la imagen guardada, una prueba vieja lleva sus defectos a la persona. | Bajo | Repetir la prueba de tela: sale ya con el motor corregido. |
 | 39 | **El aporte visible de la IA al render es pequeño.** Con el bloqueo, la prenda está garantizada, pero de la IA solo entra la textura fina donde coincide. En la prueba real sobre la camiseta coincidió en un 17% — y el modelo había vuelto a devolver la ESPALDA de la camiseta. | Medio | Es el límite de la API: sin condicionamiento estructural no hay más que tomar sin arriesgar la prenda. Un proveedor con ControlNet de profundidad (ver «Próximos pasos») lo cambiaría. |
 | 40 | **Una prueba con IA sobre una foto grande tarda más de un minuto** (71 s en 2048 px). El render determinista ya se optimizó: de 13,5 s a 3,3 s en 3 MP, con el mismo resultado (diferencia máxima de 4 niveles sobre 255). | Bajo | El corte del sondeo se subió a 150 s. Casi todo el minuto es la llamada al modelo. |
 | 41 | **Los mosaicos IA de las telas de demostración viejas exageran la trama** (la franela sale como cestería). | Bajo | Son telas de demostración; las reales de la tienda salen de sus fotos. Rehacer con una instrucción por tipo de tela, o retirarlas. |
@@ -193,8 +253,8 @@ Dos cosas que solo se ven con un dibujo real:
 | 32 | **Los mosaicos del catálogo son generados, no fotografías de tela real.** Son creíbles y seamless por construcción, pero no son telas de verdad. | Medio | Para el producto real, la tienda aliada fotografía sus rollos y se recorta un cuadrado limpio. Sale mejor y es gratis. |
 | 33 | **El volumen de un boceto es inventado.** Sale de la distancia al borde, no de información del dibujo. | Bajo | Es honesto y se avisa. No hay forma de deducir volumen de un dibujo de líneas. |
 | 27 | **Una prenda casi del color del fondo no se puede recortar**, y no es cuestión de ajustar el umbral. Medido: fondo (217,218,212) contra tela en sombra (217,217,217). | Alto | Se detecta y se avisa. La solución es una fotografía sobre fondo que contraste. |
-| 24 | **El probador con cámara no se ha probado con una persona real.** La cámara arranca y detecta; falta juzgar cómo queda la prenda puesta. | Alto | Pendiente de la etapa anterior. |
-| 25 | **El probador con cámara no tiene oclusión**: si pones la mano delante del pecho, la prenda la tapa. | Medio | Pendiente de la etapa anterior. |
+| 24 | ~~El probador con cámara no se ha probado con una persona real.~~ **RETIRADO**: la cámara se sustituyó por el probador por fotos. | — | — |
+| 25 | ~~El probador con cámara no tiene oclusión.~~ **RETIRADO** con la cámara. En el probador por fotos, una mano delante de la prenda conserva sus píxeles originales. | — | — |
 | 15 | **`BackgroundTasks` no sobrevive a un reinicio.** Si el proceso se para mientras una prueba está en `processing`, se queda ahí. Con el motor determinista son 500 ms de ventana; con el generativo, 45 s. | Medio | `status` está modelado, así que meter una cola no obliga a rehacer la tabla. |
 | 4 | Los tests usan SQLite, no PostgreSQL. | Medio | Se activaron las claves ajenas (`PRAGMA foreign_keys=ON`); sin eso no se validaba ninguna restricción de integridad. |
 | 5 | **El proyecto está dentro de OneDrive.** | Medio | Mover a `C:\dev\` o excluir `node_modules` y `.venv`. |
@@ -255,23 +315,19 @@ Dos cosas que solo se ven con un dibujo real:
 
 ## Próximos pasos
 
-0. **Si la IA tiene que hacer más que acabado**: un proveedor con
-   condicionamiento estructural de verdad (inpainting con ControlNet de
-   profundidad e IP-Adapter para la tela, como ZeST). Fal.ai o Replicate lo
-   ofrecen por API. Hace falta una cuenta y una clave del usuario, y la
-   costura `motor_para` ya está preparada para añadir un proveedor.
-
-1. **Terminar los mosaicos fotográficos** de las nueve telas que faltan
-   (limitación #37). Es una orden y ~27.000 tokens.
-2. **Rematar el escote en el croquis** (limitación #36).
-3. **Fotografiar telas reales.** Los mosaicos generados funcionan, pero la
-   tienda aliada tiene los rollos. Un cuadrado limpio de cada uno mejora el
+1. **Ver una prueba sobre persona con éxito de punta a punta** (limitación
+   #42): con `HF_TOKEN` de una cuenta gratuita en `backend/.env`.
+2. **Acabados sin IA generativa, gratis**: mapas de relieve y de brillo por
+   tela, calculados desde su mosaico —como los configuradores profesionales—.
+   El usuario descartó pagar Fal.ai o Replicate.
+3. **Rematar el escote en el croquis** (limitación #36). El analizador de
+   personas del probador está entrenado con fotos; habría que medir si
+   reconoce la piel de una figura dibujada antes de usarlo ahí.
+4. **Fotografiar telas reales.** Un cuadrado limpio de cada rollo mejora el
    resultado más que cualquier ajuste del motor, y es gratis.
-4. **Probar con prendas y bocetos reales de un taller.** Lo que hay está
-   medido contra cinco fotografías de catálogo y un boceto sintético.
-5. **La conversión prueba→compra.** El Vision Board la pone como métrica y hoy
+5. **Probar con prendas, bocetos y personas reales de un taller.** Lo que hay
+   está medido contra ocho prendas y dos fotos de persona.
+6. **La conversión prueba→compra.** El Vision Board la pone como métrica y hoy
    no se mide nada. Un botón de «pedir esta tela» con su referencia sería el
    primer paso, y cierra el círculo del producto.
-6. **Terminar de verificar el probador con cámara** (limitación #24), que quedó
-   pendiente de la etapa anterior.
 7. **Acceso con Google**, que el usuario ya pidió. De paso resuelve la #14.

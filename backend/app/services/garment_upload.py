@@ -74,6 +74,7 @@ class GarmentUploadService:
     def delete(self, upload_id: int, user_id: int) -> None:
         upload = self._get_or_fail(upload_id, user_id)
         claves = [upload.image_key, upload.mask_key]
+        claves += self.repository.claves_de_sus_pruebas(upload.id)
 
         # Primero la fila y después los archivos: al revés, un fallo al borrar
         # de la base dejaría una prenda en el catálogo apuntando a un archivo

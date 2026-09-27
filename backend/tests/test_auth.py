@@ -199,8 +199,13 @@ def test_a_deactivated_user_loses_access_with_a_still_valid_token(
     [
         ("GET", "/api/auth/me"),
         ("GET", "/api/users/1"),
-        ("POST", "/api/garments"),
-        ("POST", "/api/garments/1/image"),
+        ("GET", "/api/person-photos"),
+        ("POST", "/api/person-photos"),
+        ("DELETE", "/api/person-photos/1"),
+        ("GET", "/api/try-ons"),
+        ("POST", "/api/try-ons"),
+        ("GET", "/api/try-ons/1"),
+        ("DELETE", "/api/try-ons/1"),
     ],
 )
 def test_protected_endpoints_reject_anonymous_requests(
@@ -221,7 +226,7 @@ def test_protected_endpoints_reject_anonymous_requests(
     ("method", "path"),
     [
         ("GET", "/api/health"),
-        ("GET", "/api/garments"),
+        ("GET", "/api/fabrics"),
     ],
 )
 def test_public_endpoints_stay_public(

@@ -55,8 +55,8 @@ export function EmptyBlock({ title, detail, action }: MessageProps) {
 }
 
 /**
- * Aviso informativo. Se usa para lo que el probador tiene que dejar claro:
- * qué hace con tu cámara, y hasta dónde llega la vista previa.
+ * Aviso informativo. Se usa para lo que una pantalla tiene que dejar claro
+ * antes de actuar: a dónde va tu foto, o qué aporta la IA y qué no.
  */
 export function Notice({ title, children }: { title: string; children: ReactNode }) {
   return (

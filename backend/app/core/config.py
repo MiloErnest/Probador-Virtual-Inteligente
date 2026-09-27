@@ -128,6 +128,38 @@ class Settings(BaseSettings):
     # todos. Se cuenta por usuario y día natural.
     AI_TRIALS_PER_USER_PER_DAY: int = 20
 
+    # --- Probador: la persona de la foto con la prenda puesta ---
+    #
+    # "fashn" = FASHN VTON 1.5 en su Space de Hugging Face. GRATUITO, con la
+    #           cuota diaria de ZeroGPU. Por eso es el valor por defecto, al
+    #           revés que AI_PROVIDER: aquí clonar el repositorio no le cuesta
+    #           dinero a nadie. Lo que sí hace es mandar la foto a Hugging
+    #           Face, y la interfaz lo dice antes de subirla.
+    # "none"  = sin probador; la prueba falla diciendo cómo activarlo.
+    VTO_PROVIDER: str = "fashn"
+
+    #: La dirección DIRECTA del Space `fashn-ai/fashn-vton-1.5`, no su nombre.
+    #: Con el nombre, el cliente pregunta antes a la API de huggingface.co
+    #: dónde está, y en el equipo de desarrollo esa pregunta tardaba 168 s
+    #: —huggingface.co anuncia IPv6, la red no lo encamina, y Python espera a
+    #: que caduque antes de probar IPv4—, mientras el Space respondía en 0,6 s.
+    #: Con la dirección no hay pregunta, y el token se sigue enviando.
+    VTO_SPACE: str = "https://fashn-ai-fashn-vton-1-5.hf.space"
+
+    #: Token de LECTURA de una cuenta gratuita de Hugging Face. Opcional: sin
+    #: él, la cuota de ZeroGPU se agota en unas dos pruebas al día. Se crea en
+    #: https://huggingface.co/settings/tokens y va en el .env, nunca en código.
+    HF_TOKEN: str = ""
+
+    #: Pasos del modelo (10–50). Medido: 30 pasos, unos 28 s por prueba.
+    VTO_STEPS: int = 30
+    VTO_TIMEOUT_SECONDS: int = 240
+
+    #: Lado mayor con que se guarda la foto de una persona. Por encima, el
+    #: modelo no aporta más detalle, y una foto de 12 megapíxeles de alguien
+    #: no tiene por qué quedarse en el servidor a tamaño completo.
+    PERSON_PHOTO_MAX_SIDE: int = 2048
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:

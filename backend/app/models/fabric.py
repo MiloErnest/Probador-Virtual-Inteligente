@@ -7,9 +7,9 @@ distribuidores de telas, cuyos usuarios son diseñadores, modistas y talleres
 que tienen que **elegir tela para una prenda**. El catálogo, por tanto, no es
 de ropa: es de TELA. La ropa la pone el usuario.
 
-Eso invierte el modelo respecto al probador con cámara, donde el catálogo sí
-era de prendas. Las dos cosas conviven: `garments` sigue siendo el catálogo del
-probador y no se toca.
+Eso invertía el modelo respecto al probador con cámara de una etapa anterior,
+donde el catálogo era de prendas. Aquel catálogo se retiró con la cámara: el
+probador de ahora viste a la persona con las prendas de SU taller.
 
 POR QUÉ TANTOS CAMPOS DE FICHA
 ------------------------------

@@ -2,7 +2,7 @@
  * Perfil del usuario autenticado.
  *
  * Enseña la cuenta y el estado del sistema. Lo segundo no es relleno: cuando
- * el probador no carga las prendas, lo primero que hay que saber es si el
+ * el taller no carga las prendas, lo primero que hay que saber es si el
  * backend responde y si la base de datos está levantada.
  */
 

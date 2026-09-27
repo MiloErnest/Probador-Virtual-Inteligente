@@ -15,15 +15,17 @@ probarlas una por una.
   determinista los reutiliza: la tela nueva cae por donde caía la original. Es
   instantáneo, gratis, y da siempre el mismo resultado — que es lo único que
   hace honesta una comparación entre cuatro telas.
-- Un **boceto** no tiene sombras. Se rellena conservando el trazo intacto, para
-  que siga siendo tu diseño.
-- La **IA generativa** (OpenAI) está integrada y es opcional: convierte un
-  boceto en una imagen fotorrealista. Se pide a conciencia, porque cuesta dinero
-  y porque reinterpreta el diseño — está medido, ver §6h.
+- Un **boceto** va sombreado a lápiz, y ese sombreado es dónde caen los
+  pliegues: la tela lo toma como luz y el trazo se conserva intacto encima.
+- La **IA generativa** (OpenAI) está integrada y es opcional, detrás de un
+  bloqueo estructural que le impide cambiar la prenda: solo aporta acabado.
+  Cuesta dinero, ver §6h.
 
-**Funcionalidad adicional:** un probador con cámara que superpone prendas sobre
-el cuerpo en vivo, con MediaPipe Pose corriendo en el navegador. La imagen de la
-cámara no sale de tu equipo.
+**El probador.** Subes una foto tuya, eliges una prenda del taller —con la tela
+que escogiste— y la ves puesta, en tu postura. La viste FASHN VTON 1.5, un
+modelo abierto, gratis con cuota diaria en Hugging Face; y del resultado solo se
+toma la prenda: la cara, el pelo, el resto de la ropa y el fondo son los de tu
+foto original. Ver §6i.
 
 **Estado actual: funciona de punta a punta.**
 Ver [PROJECT_STATUS.md](PROJECT_STATUS.md) para el detalle de lo que funciona y
@@ -244,14 +246,18 @@ Es el único modo correcto de crear el esquema. La aplicación ya **no** crea
 tablas al arrancar: `create_all` solo añade tablas nuevas y no aplica cambios a
 las que ya tienen datos, así que un cambio de esquema se perdía en silencio.
 
-Carga el catálogo de ejemplo:
+Carga el catálogo de telas de ejemplo y las telas reales de la tienda:
 
 ```powershell
-python -m scripts.seed
+python -m scripts.seed_telas
 ```
 
-Debe imprimir `Prendas creadas: 8 | ya existentes: 0`. Si la base no está
-migrada, el script se detiene y te lo dice en vez de fallar con un error de SQL.
+```powershell
+python -m scripts.seed_telas_reales
+```
+
+Ninguno de los dos cuesta dinero. Si la base no está migrada, se detienen y te
+lo dicen en vez de fallar con un error de SQL.
 
 Arranca el servidor:
 
@@ -366,14 +372,12 @@ Qué exige token y qué no:
 | Endpoint | Acceso |
 |---|---|
 | `GET /api/health` | público |
-| `GET /api/garments`, `GET /api/garments/{id}` | público |
+| `GET /api/fabrics`, `GET /api/fabrics/{id}` | público |
 | `POST /api/users` (registro) | público |
 | `POST /api/auth/login` | público |
 | `GET /api/auth/me` | token |
 | `GET /api/users/{id}` | token, y solo tu propia cuenta |
-| `GET /api/try-on-sessions` | token (el usuario sale del token) |
-| `GET /api/try-on-sessions/{id}` | token, y solo tus pruebas |
-| `POST /api/garments`, `POST /api/garments/{id}/image` | token |
+| Todo lo demás (prendas, pruebas, fotos, probador) | token, y solo lo tuyo: lo ajeno responde 404 |
 
 El token dura 12 horas (`ACCESS_TOKEN_EXPIRE_MINUTES`). No hay refresh token ni
 lista de revocación: cerrar sesión descarta el token en el navegador, pero
@@ -401,8 +405,9 @@ El puerto del frontend es 3000 y no 5173, a proposito: asi se puede tener a la
 vez el servidor de desarrollo de Vite.
 
 El contenedor del backend ejecuta `alembic upgrade head` al arrancar, asi que
-el esquema se crea solo. No hace falta ninguna cuenta externa ni ninguna clave:
-el proyecto no llama a ningun servicio de terceros.
+el esquema se crea solo. No hace falta ninguna cuenta ni ninguna clave para
+arrancar. El probador si llama a un servicio de terceros —el Space gratuito de
+FASHN VTON en Hugging Face, ver §6i—, y la IA de OpenAI solo si se activa.
 
 Para parar:
 
@@ -426,7 +431,7 @@ docker compose --profile full down
 | `/telas` | Catalogo de telas, con ficha tecnica y filtro por dibujo | Publica |
 | `/taller` | Tus prendas y bocetos. Subir, ver, borrar | Requiere cuenta |
 | `/taller/:id` | **Probar telas y compararlas.** Es la pantalla del producto | Requiere cuenta |
-| `/probador` | Probador con camara (funcionalidad adicional) | Requiere cuenta |
+| `/probador` | **Pruebatela**: tu foto con una prenda del taller puesta | Requiere cuenta |
 | `/entrar`, `/registro` | Acceso y alta | Publicas |
 | `/perfil` | Tu cuenta y estado del sistema | Requiere cuenta |
 
@@ -447,7 +452,12 @@ docker compose --profile full down
 | `GET /api/trials` | Tus pruebas. `?garment_upload_id=` para comparar | Token |
 | `POST /api/trials` | Probar una tela (202 + sondeo) | Token |
 | `DELETE /api/trials/{id}` | Borrar una prueba | Token |
-| `GET /api/garments` | Catalogo del probador con camara | Publico |
+| `GET /api/person-photos` | Tus fotos | Token |
+| `POST /api/person-photos` | Subir una foto (se guarda sin metadatos) | Token |
+| `DELETE /api/person-photos/{id}` | Borrar la foto y todas sus pruebas | Token |
+| `GET /api/try-ons` | Tus pruebas sobre persona | Token |
+| `POST /api/try-ons` | Ponerte una prenda del taller (202 + sondeo) | Token |
+| `DELETE /api/try-ons/{id}` | Borrar una prueba sobre persona | Token |
 
 ---
 
@@ -487,8 +497,11 @@ Esta integrada con la **API de OpenAI** y se activa en `backend/.env`:
 ```
 AI_PROVIDER=openai
 OPENAI_API_KEY=sk-...
-OPENAI_IMAGE_MODEL=gpt-image-1-mini
+OPENAI_IMAGE_MODEL=gpt-image-2.5-sunburst
 ```
+
+No uses `gpt-image-1-mini`: es el único que rechaza `input_fidelity`, y la
+llamada acababa saliendo sin fidelidad sin que se notara.
 
 El valor por defecto del repositorio es `AI_PROVIDER=none`, a proposito: que
 clonarlo empiece a gastar dinero de alguien seria una trampa. Un valor
@@ -514,8 +527,9 @@ y con el completo tampoco basto.
 
 Para un producto que promete «mira TU diseno con otra tela», un motor que
 redibuja el diseno esta haciendo lo contrario de lo que se le pide. Asi que el
-camino por defecto es el determinista, y la IA se pide a conciencia para lo que
-si sabe hacer: convertir un dibujo en algo fotorrealista.
+camino por defecto es el determinista, y la salida de la IA pasa por un bloqueo
+estructural (`app/textil/bloqueo.py`): forma, costuras y color salen siempre de
+la prenda, y de la IA solo la textura fina donde coincide con ella.
 
 ### Control de gasto
 
@@ -527,6 +541,35 @@ si sabe hacer: convertir un dibujo en algo fotorrealista.
 Y **sin reintentos automaticos**, con una excepcion documentada: si la API
 rechaza `input_fidelity` con un 400, se reintenta sin ese parametro. Un 400 se
 rechaza antes de generar imagen, asi que no ha costado nada.
+
+---
+
+## 6i. El probador: tu foto con la prenda puesta
+
+Vive en `backend/app/probador/` y en la pantalla `/probador`.
+
+1. **La prenda sale del taller**, nunca de un catalogo aparte: una prueba de
+   tela —y se usa la imagen YA generada, no una nueva— o una prenda subida. Se
+   recorta con la mascara que ya se calculo al subirla y se manda sobre blanco.
+2. **La persona se encuadra** con un analizador de personas (SegFormer B2 para
+   ropa, ONNX, en CPU, 0,8 s por foto). El modelo trabaja a 864 px de alto:
+   encuadrada, la persona llena el cuadro.
+3. **La viste FASHN VTON 1.5** en su Space gratuito de Hugging Face (Apache
+   2.0, pensado para conservar a la persona, acepta cualquier postura).
+4. **Se conserva a la persona.** Medido con salidas reales: el modelo regenera
+   una caja alrededor del torso e inventa dentro de ella —cambio una ventana,
+   un cuadro de la pared, anadio un cinturon—. El analizador dice que es cada
+   pixel, y del resultado solo entra la ropa de la categoria y la piel que esa
+   ropa destapa o tapa. Lo demas son los pixeles originales.
+
+**Cuota.** Es gratis, pero ZeroGPU tiene cuota diaria: sin cuenta, unas dos
+pruebas al dia. Con una cuenta gratuita de Hugging Face hay mas: crea un token
+de LECTURA en <https://huggingface.co/settings/tokens> y ponlo en
+`backend/.env` como `HF_TOKEN=...`. Nunca en el codigo ni en un chat.
+
+**Privacidad.** La foto se guarda sin metadatos (ni GPS ni telefono) y
+enderezada. Para vestirla se envia al Space de Hugging Face; la pantalla lo dice
+antes de subirla. Borrar una foto borra todas las pruebas hechas con ella.
 
 ---
 
@@ -542,8 +585,9 @@ backend/
     repositories/ Acceso a datos
     services/     Lógica de negocio + almacenamiento de archivos
     textil/       El motor: recorte, retexturizado y proveedor generativo
+    probador/     Tu foto con la prenda puesta: encuadre, modelo y conservación
   alembic/        Migraciones de esquema
-  scripts/        Utilidades (seed)
+  scripts/        Utilidades (siembra de telas, recortes, mosaicos)
   storage/        Imágenes subidas (fuera de git)
   tests/
 
@@ -555,7 +599,6 @@ frontend/
     services/     Cliente HTTP y llamadas a la API
     hooks/        Lógica de React reutilizable
     types/        Espejo del contrato de la API
-    probador/     Probador con cámara: pose, medidas del cuerpo y encaje
 ```
 
 El motor textil, que es donde está la matemática del producto:
@@ -566,21 +609,25 @@ backend/app/textil/
   retexturizar.py      Dos caminos: fotografía (reutiliza su luz) y boceto
                        (rellena conservando el trazo).
   filtros.py           Desenfoque y reescalado en coma flotante.
+  veta.py              Por dónde corre el hilo: la raya sigue la manga.
+  bloqueo.py           Lo que hace fiable a la IA: solo aporta textura.
+  digitalizar.py       De la foto de un rollo a un mosaico limpio.
+  tejido_ia.py         Mosaicos sintetizados con IA y el cierre de juntas.
   provider.py          El contrato y el selector de motor.
-  openai_provider.py   El motor generativo.
+  openai_provider.py   El motor generativo, siempre detrás del bloqueo.
   errores.py           `ErrorDeMotor`: el motor no conoce la capa de servicios.
 ```
 
-El probador es el único sitio con algo de complejidad, y está partido en
-cuatro archivos con una responsabilidad cada uno:
+El probador:
 
 ```
-probador/
-  usePoseScanner.ts    Cámara + MediaPipe. Devuelve puntos y silueta.
-  cuerpo.ts            Medidas del cuerpo, suavizado y contorno real.
-  vestir.ts            Dónde va la prenda, cuánto mide, cómo se deforma.
-  dibujo.ts            Silueta, esqueleto y máscara de recorte.
-  removeBackground.ts  Recorta el fondo de la foto de producto.
+backend/app/probador/
+  prenda.py            La prenda recortada del taller: los mismos píxeles.
+  partes.py            Qué es cada píxel de una persona (analizador en CPU).
+  proveedor.py         El contrato del modelo y el selector.
+  fashn.py             FASHN VTON 1.5 en su Space de Hugging Face.
+  conservar.py         Qué se toma del modelo y qué vuelve a ser tu foto.
+  vestir.py            El camino entero.
 ```
 
 El flujo de una petición es siempre el mismo:
@@ -624,5 +671,7 @@ Los archivos `.env.example` documentan cada variable y sí se versionan.
 | Al arrancar: `La base de datos responde pero no tiene migraciones aplicadas` | Falta crear el esquema | `alembic upgrade head` desde `backend/` |
 | `relation "users" does not exist` | Igual que el anterior | `alembic upgrade head` |
 | `alembic` no se reconoce como comando | Instalado después de abrir la terminal, o entorno virtual sin activar | Reabre la terminal, o usa `.\start-backend.ps1` |
+| El probador tarda minutos en fallar, o no conecta | La red no encamina IPv6 y `huggingface.co` lo anuncia: Python espera a que caduque | `VTO_SPACE` ya apunta a la dirección directa del Space; no la cambies por el nombre `fashn-ai/fashn-vton-1.5` |
+| «Se ha agotado la cuota gratuita de Hugging Face» | Sin cuenta, la cuota de ZeroGPU son unas dos pruebas al día | Crea un token de lectura gratuito y ponlo como `HF_TOKEN` en `backend/.env` |
 | Todas las peticiones responden 401 | El token caducó (12 h) o cambió `SECRET_KEY` | Vuelve a entrar en la aplicación |
 | Al arrancar en producción: `SECRET_KEY sigue siendo un valor de ejemplo` | `ENVIRONMENT=production` con la clave del `.env.example` | Genera una real: `python -c "import secrets; print(secrets.token_urlsafe(48))"` |

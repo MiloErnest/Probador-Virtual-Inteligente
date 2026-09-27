@@ -33,6 +33,11 @@ const PASOS = [
     detalle:
       'Todas las opciones a la vez, sobre tu diseño. Sin pedir muestras, sin esperar días y sin gastar tela.',
   },
+  {
+    titulo: 'Pruébatela',
+    detalle:
+      'Sube una foto tuya y mira la prenda puesta, con la tela elegida, en tu postura. Tu cara y el fondo no se tocan.',
+  },
 ]
 
 export default function HomePage() {
@@ -105,7 +110,7 @@ export default function HomePage() {
         <div className="wrap">
           <p className="rotulo text-paper/50">Cómo funciona</p>
 
-          <ol className="mt-10 grid gap-px border-t border-paper/15 sm:grid-cols-3">
+          <ol className="mt-10 grid gap-px border-t border-paper/15 sm:grid-cols-2 lg:grid-cols-4">
             {PASOS.map((paso, i) => (
               <li key={paso.titulo} className="border-b border-paper/15 py-8 sm:border-b-0 sm:pr-8">
                 <span className="font-display text-5xl text-paper/25">
@@ -143,9 +148,15 @@ export default function HomePage() {
               único que hace honesta una comparación entre cuatro telas.
             </p>
             <p>
-              <strong className="font-medium">Con un boceto es otra cosa.</strong> Un dibujo
-              de líneas no tiene sombras que reutilizar: el volumen y la caída hay que
-              inventarlos, y ahí sí entra la inteligencia artificial generativa.
+              <strong className="font-medium">Con un boceto, igual.</strong> Un figurín va
+              sombreado a lápiz, y ese sombreado es dónde caen los pliegues: la tela lo toma
+              como luz y tu trazo se conserva por encima.
+            </p>
+            <p>
+              <strong className="font-medium">Y en una persona.</strong> Para verte la prenda
+              puesta, un modelo abierto de prueba virtual la adapta a tu cuerpo y a tu postura.
+              De su resultado solo se toma la prenda: tu cara, tu pelo y el fondo son los de tu
+              foto.
             </p>
             <p className="text-ink-60">
               Lo que no hace, y conviene saberlo: no cambia cómo <em>cae</em> la tela. Si la

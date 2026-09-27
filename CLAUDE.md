@@ -18,9 +18,11 @@ y galería e historial.
 elegir la tela. Eso invierte el catálogo: el catálogo es de **telas**, y las
 prendas las pone el usuario.
 
-**Funcionalidad adicional:** un probador con cámara que superpone prendas sobre
-el cuerpo en vivo. Es de otra etapa, funciona, y se mantiene — pero no es el
-producto y no aparece en el Vision Board.
+**El probador:** la otra pregunta, «¿cómo me queda a mí?». El usuario sube una
+foto suya y se pone una prenda de SU taller —con la tela que eligió— en su
+postura. Sustituyó en 2026-09-27 a un probador con cámara en vivo que tenía su
+propio catálogo de ropa: el usuario pidió explícitamente que no fuera cámara, y
+que no fuera un flujo aparte que duplicara el taller. Ver «El probador» abajo.
 
 Ver [PROJECT_STATUS.md](PROJECT_STATUS.md) para el detalle vivo: qué funciona,
 qué falta, errores conocidos, decisiones técnicas y próximos pasos.
@@ -81,9 +83,11 @@ Base `vfit`, rol de aplicación `vfit` / `vfit_dev_password`. Son las mismas
 credenciales que `docker-compose.yml`, a propósito.
 
 Ejecutar pruebas: `pytest` desde `backend/` con el venv activo. Usan SQLite en
-memoria — **no necesitan PostgreSQL levantado**. Son 84: las del contrato de la
-API y, en `tests/test_motor.py`, las propiedades medidas del motor — cada una
-es un caso que falló de verdad antes de arreglarse.
+memoria — **no necesitan PostgreSQL levantado**. Son 94: las del contrato de la
+API; en `tests/test_motor.py`, las propiedades medidas del motor — cada una
+es un caso que falló de verdad antes de arreglarse—; y en
+`tests/test_probador.py`, la garantía del probador con un modelo que inventa
+fondo, como el de verdad.
 
 **El esquema lo gobierna Alembic, no `create_all`.** Sobre una base nueva:
 
@@ -101,10 +105,6 @@ Datos de ejemplo:
 
 ```powershell
 python -m scripts.seed_telas
-```
-
-```powershell
-python -m scripts.seed --con-prendas-reales
 ```
 
 Y si `app/textil/segmentar.py` cambia, hay que recalcular los recortes ya
@@ -128,8 +128,9 @@ Las telas REALES de la tienda, sacadas de sus fotos (`scripts/muestras/`). Sin
 python -m scripts.seed_telas_reales
 ```
 
-El primero carga 12 telas de demostración con su ficha técnica y su mosaico. El
-segundo carga el catálogo del probador con cámara.
+El primero carga 12 telas de demostración con su ficha técnica y su mosaico.
+Las prendas de ejemplo (`assets/prendas-de-ejemplo/`) se suben desde el taller
+como cualquier otra; no hay script que las siembre.
 
 ---
 
@@ -171,7 +172,7 @@ Para revisar una pantalla protegida, abrir la ruta temporalmente fuera de
 
 **Y nunca pegar la clave de API en el chat.** Ocurrió una vez y hubo que
 revocarla. El código la lee de `OPENAI_API_KEY` en `backend/.env`, que está en
-`.gitignore`; el asistente no necesita verla nunca.
+`.gitignore`; el asistente no necesita verla nunca. Lo mismo con `HF_TOKEN`.
 
 ---
 
@@ -182,7 +183,7 @@ Monolito modular. Una app FastAPI, un proceso, una base de datos.
 ```
 Ruta (HTTP) → Servicio (negocio) → Repositorio (SQL) → Modelo
                     ↓
-              app/textil/  (el motor, por debajo)
+     app/textil/  y  app/probador/  (los motores, por debajo)
 ```
 
 - Las rutas no ejecutan SQL. Solo llaman a servicios.
@@ -203,15 +204,64 @@ Ruta (HTTP) → Servicio (negocio) → Repositorio (SQL) → Modelo
   en un usuario.
 - `app/textil/provider.py::motor_para` — **único** punto que decide qué motor
   corre.
+- `app/probador/proveedor.py::modelo_configurado` — ídem para el modelo que
+  viste a la persona.
 
-### Dos catálogos, dos productos
+### Las tablas
 
 | Tabla | Qué es |
 |---|---|
 | `fabrics` | El catálogo de la tienda textil. **El centro del producto.** |
 | `garment_uploads` | La prenda o el boceto que sube el usuario. |
 | `fabric_trials` | Una prueba: prenda × tela → imagen. La unidad de negocio. |
-| `garments` | El catálogo del probador con cámara. Otra cosa, no se mezcla. |
+| `person_photos` | La foto de una persona. Sin metadatos; borrarla borra sus pruebas. |
+| `try_ons` | Esa persona con una prenda del taller puesta. |
+
+`garments` —el catálogo del probador con cámara— se eliminó en la migración
+`32d71eca2214`, con la cámara.
+
+---
+
+## El probador — lo que hay que saber antes de tocarlo
+
+`backend/app/probador/`. La foto de una persona con una prenda del taller.
+
+| Archivo | Qué hace |
+|---|---|
+| `prenda.py` | Recorta la prenda del taller: los MISMOS píxeles de la prueba de tela. |
+| `partes.py` | Analizador de personas (SegFormer B2 ropa, ONNX, CPU, 0,8 s). |
+| `proveedor.py` | El contrato del modelo y el selector (`VTO_PROVIDER`). |
+| `fashn.py` | FASHN VTON 1.5 en su Space gratuito de Hugging Face. |
+| `conservar.py` | Qué se toma del modelo y qué vuelve a ser la foto original. |
+| `vestir.py` | El camino: encuadrar, vestir, conservar. |
+
+### Lo que costó encontrar
+
+1. **Se eligió FASHN VTON 1.5** entre los modelos abiertos con demo viva:
+   Apache 2.0 (IDM-VTON y CatVTON son no comerciales; CatVTON estaba caído),
+   pensado para conservar a la persona, genera en píxeles. Medido: persona
+   sentada y persona frente a un espejo, prenda con su dibujo y su color, ~28 s.
+2. **El modelo NO se limita a la prenda.** Regenera una caja alrededor del
+   torso e inventa: en la foto del espejo cambió la ventana, un cuadro de la
+   pared y los objetos del tocador, y añadió un cinturón. Por eso existe
+   `conservar.py`: del resultado solo entra la ropa de la categoría (en la foto
+   original Y en la generada) y la piel de la categoría que haya cambiado. Lo
+   demás son los píxeles originales. La diferencia de píxeles sola no basta:
+   el fondo inventado también es distinto del original.
+3. **Sin cuenta, la cuota de ZeroGPU se agota en DOS pruebas al día** (medido:
+   la tercera da «You have exceeded your ZeroGPU runs limit»). Con `HF_TOKEN`
+   de una cuenta gratuita hay más. Los tests fuerzan `VTO_PROVIDER="none"`.
+4. **`VTO_SPACE` es la dirección directa del Space, no su nombre.** Con el
+   nombre, gradio_client pregunta a la API de huggingface.co, y en este equipo
+   eso tardaba 168 s: huggingface.co anuncia IPv6, la red no lo encamina y
+   Python espera a que caduque. El Space responde en 0,6 s. Por lo mismo, el
+   analizador se carga primero de la caché local.
+5. **Se encuadra a la persona antes de mandarla**: el modelo trabaja a 864 px
+   de alto, y en una foto de cuerpo entero la prenda salía con un tercio de los
+   píxeles.
+6. **Licencias**: FASHN y onnxruntime son libres; los pesos del analizador
+   derivan de SegFormer de NVIDIA, de uso NO comercial. Vale para un proyecto
+   universitario, no para venderlo.
 
 ---
 

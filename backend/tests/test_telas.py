@@ -7,6 +7,7 @@ Lo que se fija aquí es el CONTRATO y las reglas que no se deben romper sin
 darse cuenta.
 """
 
+import pytest
 from fastapi.testclient import TestClient
 
 from tests.conftest import auth_headers, make_image_bytes, make_prenda_bytes, register_and_login
@@ -321,20 +322,29 @@ def test_comparar_varias_telas_sobre_la_misma_prenda(
 
 
 def test_borrar_la_prenda_se_lleva_sus_pruebas(
-    auth_client: TestClient, uploaded_garment: dict, fabric_with_texture: dict
+    auth_client: TestClient, uploaded_garment: dict, fabric_with_texture: dict, storage
 ) -> None:
-    """Las pruebas cuelgan de la prenda: sin ella no significan nada."""
-    auth_client.post(
+    """Las pruebas cuelgan de la prenda: sin ella no significan nada.
+
+    Y sus imágenes tampoco se quedan: la base borraba las filas en cascada,
+    pero los archivos se quedaban huérfanos en el almacén.
+    """
+    creada = auth_client.post(
         "/api/trials",
         json={
             "garment_upload_id": uploaded_garment["id"],
             "fabric_id": fabric_with_texture["id"],
         },
-    )
+    ).json()
+    prueba = auth_client.get(f"/api/trials/{creada['id']}").json()
+    clave = prueba["output_image_url"].split("/media/")[1]
+    assert storage.read(clave)
 
     borrada = auth_client.delete(f"/api/garment-uploads/{uploaded_garment['id']}")
     assert borrada.status_code == 200
     assert auth_client.get("/api/trials").json() == []
+    with pytest.raises(FileNotFoundError):
+        storage.read(clave)
 
 
 def test_las_pruebas_de_otro_responden_404(client: TestClient, user_token) -> None:

@@ -3,28 +3,30 @@
 Todos los modelos se reexportan aquí para que `Base.metadata` los conozca
 con una sola importación (`from app.models import Base`).
 
-DOS PRODUCTOS, DOS CATÁLOGOS
-----------------------------
-- `Fabric` es el catálogo de la tienda textil: el producto que describe el
-  Product Vision Board. Sus usuarios son diseñadores y modistas que eligen
-  tela, y suben su prenda (`GarmentUpload`) para verla (`FabricTrial`).
-- `Garment` es el catálogo del probador con cámara, que es la funcionalidad
-  adicional. Son tablas distintas a propósito: una es inventario de la tienda
-  y la otra es ropa para probarse delante del espejo.
+UN PRODUCTO, DOS PREGUNTAS
+--------------------------
+- «¿Cómo queda ESTA prenda con otra tela?»: `Fabric` es el catálogo de la
+  tienda, `GarmentUpload` la prenda o el boceto del usuario, y `FabricTrial`
+  la prueba.
+- «¿Cómo me queda a MÍ?»: `PersonPhoto` es la foto de la persona y `TryOn` la
+  prueba sobre ella. La prenda sale del taller —una prueba de tela o una
+  prenda subida—, nunca de un catálogo aparte: antes había uno para el
+  probador con cámara, y se retiró junto con la cámara.
 """
 
 from app.models.base import Base, TimestampMixin
 from app.models.fabric import Fabric, FabricPattern
 from app.models.fabric_trial import FabricTrial, TrialMethod, TrialStatus
-from app.models.garment import Garment, GarmentCategory, GarmentFabric
 from app.models.garment_upload import GarmentKind, GarmentUpload
+from app.models.person_photo import PersonPhoto
+from app.models.try_on import GarmentCategory, TryOn
 from app.models.user import User
 
 __all__ = [
     "Base",
     "TimestampMixin",
     "User",
-    # Producto principal: probar telas sobre una prenda.
+    # Probar telas sobre una prenda.
     "Fabric",
     "FabricPattern",
     "GarmentUpload",
@@ -32,8 +34,8 @@ __all__ = [
     "FabricTrial",
     "TrialStatus",
     "TrialMethod",
-    # Funcionalidad adicional: el probador con cámara.
-    "Garment",
+    # Probarse la prenda.
+    "PersonPhoto",
+    "TryOn",
     "GarmentCategory",
-    "GarmentFabric",
 ]

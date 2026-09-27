@@ -362,13 +362,25 @@ function ResultadoDePrueba({
           <p className="text-[11px] leading-relaxed text-ink-80">{prueba.notice}</p>
         )}
 
-        <button
-          type="button"
-          onClick={() => onBorrar(prueba.id)}
-          className="text-[11px] text-ink-60 underline underline-offset-4 hover:text-ink"
-        >
-          Quitar
-        </button>
+        <div className="flex gap-3">
+          {/* A la persona va ESTA imagen, la que se está viendo: el probador
+              recorta la prenda de ella en vez de volver a generarla. */}
+          {prueba.status === 'completed' && (
+            <Link
+              to={`/probador?prueba=${prueba.id}`}
+              className="text-[11px] text-ink underline underline-offset-4"
+            >
+              Probármela
+            </Link>
+          )}
+          <button
+            type="button"
+            onClick={() => onBorrar(prueba.id)}
+            className="text-[11px] text-ink-60 underline underline-offset-4 hover:text-ink"
+          >
+            Quitar
+          </button>
+        </div>
       </figcaption>
     </figure>
   )

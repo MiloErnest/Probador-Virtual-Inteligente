@@ -1,743 +1,648 @@
 /**
- * El probador. Es la aplicación entera.
+ * El probador: tu foto, con una prenda de tu taller puesta.
  *
- * QUÉ PASA AQUÍ Y DÓNDE
+ * NO ES UN FLUJO APARTE
  * ---------------------
- * Todo en el navegador. `usePoseScanner` abre la cámara y pasa cada fotograma
- * por MediaPipe Pose, que devuelve los puntos del cuerpo y la silueta
- * recortada. `cuerpo.ts` convierte eso en medidas, `vestir.ts` coloca la
- * prenda encima y `dibujo.ts` pinta las guías.
+ * La prenda sale del taller: una prueba de tela —y entonces se usa la imagen
+ * que ya se generó, no una nueva— o una prenda subida tal cual. Subir una
+ * prenda nueva desde aquí usa el mismo `POST /garment-uploads` del taller, con
+ * su recorte, y queda en el taller para probarle telas después.
  *
- * Al servidor solo se le piden dos cosas: la lista de prendas y sus
- * fotografías. Ninguna imagen tuya sale de aquí, y no porque se borre después
- * —es que nunca se envía—.
+ * Antes esta pantalla era una cámara en vivo con su propio catálogo de ropa.
+ * Se retiró: lo que se pedía era ver a una persona real, en su postura, con la
+ * prenda que ha elegido para su tela.
  *
- * POR QUÉ YA NO HAY BOTÓN DE CAPTURAR
- * -----------------------------------
- * Lo había: mandaba el fotograma a un modelo de IA que generaba la versión
- * realista. Se ha quitado con el resto de la IA generativa. Lo que queda es lo
- * que se ve en vivo, y eso obliga a que la superposición esté bien hecha en
- * lugar de servir de borrador para otra cosa.
+ * LO QUE SE DICE ANTES DE SUBIR LA FOTO
+ * -------------------------------------
+ * Que la foto sale del servidor hacia Hugging Face, y que del resultado solo se
+ * toma la prenda. Lo primero porque es una foto de una persona; lo segundo
+ * porque es la garantía que hace útil el resultado.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 
-import {
-  dibujarEsqueleto,
-  dibujarMedidas,
-  dibujarSilueta,
-  siluetaParaRecortar,
-} from '@/probador/dibujo'
-import type { Cuerpo, Mascara, Orientacion } from '@/probador/cuerpo'
-import {
-  medirContorno,
-  medirCuerpo,
-  medirOrientacion,
-  suavizarCuerpo,
-  suavizarOrientacion,
-} from '@/probador/cuerpo'
-import type { Muelle } from '@/probador/inercia'
-import { avanzarMuelle, crearMuelle } from '@/probador/inercia'
-import { removeBackground } from '@/probador/removeBackground'
-import { usePoseScanner } from '@/probador/usePoseScanner'
-import type { Ajuste, Prenda } from '@/probador/vestir'
-import {
-  AJUSTE_NEUTRO,
-  MUESTRAS_DE_CONTORNO,
-  TEJIDOS,
-  caminoDeLaPrenda,
-  opacidadPorGiro,
-  perfilarPrenda,
-  tejidoDe,
-  vestir,
-} from '@/probador/vestir'
-import { ErrorBlock, LoadingBlock, Notice } from '@/components/StateBlocks'
+import { EmptyBlock, ErrorBlock, LoadingBlock, Notice } from '@/components/StateBlocks'
 import { useApi } from '@/hooks/useApi'
-import { fetchGarments } from '@/services/endpoints'
-import { CATEGORY_LABELS, FABRIC_LABELS, type Garment, type GarmentFabric } from '@/types'
+import {
+  createTryOn,
+  deletePersonPhoto,
+  deleteTryOn,
+  fetchFabrics,
+  fetchGarmentUploads,
+  fetchPersonPhotos,
+  fetchTrials,
+  fetchTryOns,
+  uploadGarment,
+  uploadPersonPhoto,
+} from '@/services/endpoints'
+import {
+  CATEGORY_LABELS,
+  type GarmentCategory,
+  type GarmentUpload,
+  type PersonPhoto,
+  type Trial,
+  type TryOn,
+} from '@/types'
 
-/** Color de las guías. Blanco sobre la imagen de la cámara: se ve siempre. */
-const COLOR_GUIA = '#FFFFFF'
-const COLOR_SILUETA: [number, number, number] = [255, 255, 255]
+/** Cada cuánto se pregunta por una prueba en marcha. */
+const SONDEO_MS = 2000
+/** Por encima del corte del modelo en el backend (240 s) más el análisis. */
+const CORTE_MS = 300_000
 
-/** Opacidad de la prenda. Un punto por debajo de opaca, para que se intuya el cuerpo. */
-const OPACIDAD_PRENDA = 0.94
-
-const TELAS = Object.keys(TEJIDOS) as GarmentFabric[]
+/** La prenda elegida: de una prueba de tela, o subida tal cual. */
+type Eleccion = { tipo: 'prueba'; id: number } | { tipo: 'prenda'; id: number }
 
 export default function ProbadorPage() {
-  const { videoRef, status, error: errorCamara, frame, start, stop } = usePoseScanner()
+  const [params] = useSearchParams()
 
-  const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const prendaRef = useRef<Prenda | null>(null)
-  const cuerpoRef = useRef<Cuerpo | null>(null)
-  const orientacionRef = useRef<Orientacion | null>(null)
+  const fotosFetcher = useCallback((signal: AbortSignal) => fetchPersonPhotos(signal), [])
+  const fotos = useApi(fotosFetcher)
+  const prendasFetcher = useCallback((signal: AbortSignal) => fetchGarmentUploads(signal), [])
+  const prendas = useApi(prendasFetcher)
+  const pruebasTelaFetcher = useCallback((signal: AbortSignal) => fetchTrials({ signal }), [])
+  const pruebasTela = useApi(pruebasTelaFetcher)
+  const telasFetcher = useCallback((signal: AbortSignal) => fetchFabrics({ signal }), [])
+  const telas = useApi(telasFetcher)
+  const probadasFetcher = useCallback((signal: AbortSignal) => fetchTryOns(signal), [])
+  const probadasIniciales = useApi(probadasFetcher)
 
-  // El muelle que le da inercia a la prenda. Vive en un ref y se MUTA: es
-  // estado de simulación que cambia treinta veces por segundo, y meterlo en el
-  // estado de React repintaría la pantalla entera en cada fotograma.
-  const muelleRef = useRef<Muelle>(crearMuelle())
-  const ultimoInstanteRef = useRef(performance.now())
+  const [foto, setFoto] = useState<number | null>(null)
+  const [eleccion, setEleccion] = useState<Eleccion | null>(() => {
+    const prueba = Number(params.get('prueba'))
+    const prenda = Number(params.get('prenda'))
+    if (prueba) return { tipo: 'prueba', id: prueba }
+    if (prenda) return { tipo: 'prenda', id: prenda }
+    return null
+  })
+  const [categoria, setCategoria] = useState<GarmentCategory>('top')
+  const [probadas, setProbadas] = useState<TryOn[]>([])
+  const [fallo, setFallo] = useState<string | null>(null)
+  const [lanzando, setLanzando] = useState(false)
 
-  const [parametros, setParametros] = useSearchParams()
-
-  const fetcher = useCallback((signal: AbortSignal) => fetchGarments({ signal }), [])
-  const { data: prendas } = useApi(fetcher)
-
-  const [elegida, setElegida] = useState<Garment | null>(null)
-  const [prendaLista, setPrendaLista] = useState(false)
-  const [recorteDudoso, setRecorteDudoso] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const [tela, setTela] = useState<GarmentFabric | null>(null)
-  const [ajuste, setAjuste] = useState<Ajuste>(AJUSTE_NEUTRO)
-  const [verGuias, setVerGuias] = useState(false)
-  const [recortarAlCuerpo, setRecortarAlCuerpo] = useState(true)
-  const [deEspaldas, setDeEspaldas] = useState(false)
-
-  const escaneando = status === 'scanning'
-  const vestibles = (prendas ?? []).filter((g) => g.image_url !== null)
-
-  // Prenda que llega desde el catálogo (`/probador?prenda=7`). Solo se aplica
-  // una vez, cuando la lista ya está cargada.
   useEffect(() => {
-    const id = Number(parametros.get('prenda'))
-    if (!id || elegida !== null || vestibles.length === 0) return
-    const encontrada = vestibles.find((g) => g.id === id)
-    if (encontrada) elegir(encontrada)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [parametros, vestibles.length])
+    if (probadasIniciales.data) setProbadas(probadasIniciales.data)
+  }, [probadasIniciales.data])
 
-  function elegir(prenda: Garment) {
-    setElegida(prenda)
-    setTela(prenda.fabric)
-    setAjuste(AJUSTE_NEUTRO)
-    // La URL sigue a la elección: así se puede compartir o recargar sin
-    // perder la prenda.
-    setParametros({ prenda: String(prenda.id) }, { replace: true })
-  }
-
-  // Recorte del fondo de la prenda elegida. Se hace una vez por prenda y se
-  // guarda: recortar recorre la imagen entera y no cabe en un fotograma.
+  // La foto más reciente, elegida de entrada: casi siempre es la que se quiere.
   useEffect(() => {
-    if (elegida === null || elegida.image_url === null) {
-      prendaRef.current = null
-      setPrendaLista(false)
-      setRecorteDudoso(false)
-      return
-    }
+    if (foto === null && fotos.data && fotos.data.length > 0) setFoto(fotos.data[0].id)
+  }, [fotos.data, foto])
 
+  const prendaPorId = useMemo(
+    () => new Map((prendas.data ?? []).map((p) => [p.id, p] as const)),
+    [prendas.data],
+  )
+  const nombreDeTela = useMemo(
+    () => new Map((telas.data ?? []).map((t) => [t.id, t.name] as const)),
+    [telas.data],
+  )
+  const conTela = useMemo(
+    () => (pruebasTela.data ?? []).filter((p) => p.status === 'completed' && p.output_image_url),
+    [pruebasTela.data],
+  )
+
+  // Al elegir prenda se propone la categoría por su nombre. Es solo una
+  // propuesta: se ve y se cambia con un toque.
+  useEffect(() => {
+    if (!eleccion) return
+    const subida =
+      eleccion.tipo === 'prenda'
+        ? prendaPorId.get(eleccion.id)
+        : prendaPorId.get(conTela.find((p) => p.id === eleccion.id)?.garment_upload_id ?? -1)
+    if (subida) setCategoria(adivinarCategoria(subida.name))
+  }, [eleccion, prendaPorId, conTela])
+
+  const enMarcha = probadas.some((p) => p.status === 'pending' || p.status === 'processing')
+
+  useEffect(() => {
+    if (!enMarcha) return
+    const empezado = Date.now()
+    const controlador = new AbortController()
     let activo = true
-    let objectUrl: string | null = null
-    setPrendaLista(false)
-    setError(null)
-
-    // POR QUE FETCH Y NO `new Image()` CON crossOrigin
-    // ------------------------------------------------
-    // `removeBackground` necesita leer los pixeles, y para eso la imagen no
-    // puede "contaminar" el canvas: tiene que venir con CORS.
-    //
-    // Pero poner `img.crossOrigin = 'anonymous'` NO basta, y falla de una
-    // forma que cuesta encontrar: el navegador guarda en cache si una imagen
-    // se pidio con CORS o sin el. El catalogo ya la ha mostrado en un <img>
-    // normal, o sea SIN CORS. Cuando despues se pide la misma URL con CORS, el
-    // navegador encuentra la entrada cacheada sin CORS, la rechaza, y dispara
-    // `onerror` -- aunque el servidor mande las cabeceras correctas y aunque
-    // recargando funcione.
-    //
-    // Descargandola con `fetch` y convirtiendola en un blob, la imagen pasa a
-    // ser del MISMO origen (`blob:`), asi que nunca contamina el canvas.
-    //
-    // `cache: 'reload'` NO es opcional, y costo encontrarlo: `fetch` comparte
-    // la cache HTTP con las <img> de la pagina, asi que se encuentra la misma
-    // entrada guardada sin cabeceras CORS y falla con un escueto "Failed to
-    // fetch". Medido en el navegador: la misma URL da error tal cual, y HTTP
-    // 200 con `cache: 'reload'` o con un parametro anti-cache.
-    fetch(elegida.image_url, { mode: 'cors', cache: 'reload' })
-      .then((respuesta) => {
-        if (!respuesta.ok) throw new Error(`El servidor respondió ${respuesta.status}.`)
-        return respuesta.blob()
-      })
-      .then(
-        (blob) =>
-          new Promise<HTMLImageElement>((resolve, reject) => {
-            const img = new Image()
-            objectUrl = URL.createObjectURL(blob)
-            img.onload = () => resolve(img)
-            img.onerror = () => reject(new Error('El archivo no es una imagen válida.'))
-            img.src = objectUrl
-          }),
-      )
-      .then((img) => {
-        if (!activo) return
-        const recorte = removeBackground(img)
-        prendaRef.current = {
-          lienzo: recorte.canvas,
-          caja: recorte.bounds,
-          perfil: perfilarPrenda(recorte.canvas, recorte.bounds),
-        }
-        setRecorteDudoso(recorte.recorteDudoso)
-        setPrendaLista(true)
-      })
-      .catch((causa: unknown) => {
-        if (!activo) return
-        setError(
-          causa instanceof Error
-            ? `No se pudo preparar la prenda: ${causa.message}`
-            : 'No se pudo preparar la prenda.',
-        )
-      })
-      .finally(() => {
-        // El blob se libera SIEMPRE: ya se ha volcado a un canvas y mantener
-        // la URL viva solo retendría memoria.
-        if (objectUrl !== null) URL.revokeObjectURL(objectUrl)
-      })
-
+    const temporizador = window.setInterval(async () => {
+      if (Date.now() - empezado > CORTE_MS) {
+        window.clearInterval(temporizador)
+        if (activo) setFallo('La prueba está tardando demasiado. Recarga la página en un rato.')
+        return
+      }
+      try {
+        const frescas = await fetchTryOns(controlador.signal)
+        if (activo) setProbadas(frescas)
+      } catch {
+        // Un corte puntual de red no debe abortar el sondeo.
+      }
+    }, SONDEO_MS)
     return () => {
       activo = false
+      controlador.abort()
+      window.clearInterval(temporizador)
     }
-  }, [elegida])
+  }, [enMarcha])
 
-  // Bucle de dibujo. Separado del de detección a propósito: la detección la
-  // marca MediaPipe y el dibujo lo marca el navegador.
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (canvas === null || frame === null) return
-
-    const ctx = canvas.getContext('2d')
-    if (ctx === null) return
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-
-    // TIEMPO REAL TRANSCURRIDO, no un número fijo por fotograma.
-    //
-    // Todo lo que se mueve solo —el suavizado del cuerpo y el muelle de la
-    // prenda— se integra con esto. Sin medirlo, el comportamiento queda atado
-    // a la tasa de refresco: a 120 Hz la prenda respondería el doble de rápido
-    // que a 60, y en un portátil que baja a 30 cuando se calienta cambiaría de
-    // carácter sola.
-    const ahora = performance.now()
-    const dt = (ahora - ultimoInstanteRef.current) / 1000
-    ultimoInstanteRef.current = ahora
-
-    const medido = medirCuerpo(frame.landmarks, canvas.width, canvas.height)
-    if (medido === null) {
-      cuerpoRef.current = null
-      // El muelle se desactiva: cuando la persona vuelva a aparecer, la prenda
-      // se coloca donde toca en lugar de llegar volando desde donde estaba.
-      muelleRef.current.activo = false
-      return
-    }
-
-    const cuerpo = suavizarCuerpo(cuerpoRef.current, medido, dt)
-    cuerpoRef.current = cuerpo
-
-    const orientacion = suavizarOrientacion(
-      orientacionRef.current,
-      medirOrientacion(frame.worldLandmarks, frame.landmarks),
-      dt,
-    )
-    orientacionRef.current = orientacion
-    // El aviso de espaldas es estado de React porque lo pinta la interfaz, no
-    // el lienzo. Se compara antes de escribir: en otro caso, cada fotograma
-    // provocaría un renderizado nuevo de la pantalla entera.
-    if (orientacion.deEspaldas !== deEspaldas) setDeEspaldas(orientacion.deEspaldas)
-
-    const mascara: Mascara | null =
-      frame.mask === null
-        ? null
-        : { datos: frame.mask, ancho: frame.maskWidth, alto: frame.maskHeight }
-
-    if (mascara !== null && verGuias) {
-      ctx.save()
-      ctx.globalAlpha = 0.18
-      dibujarSilueta(ctx, mascara, COLOR_SILUETA)
-      ctx.restore()
-    }
-
-    // Declarado fuera para que las guías puedan enseñar el descuelgue.
-    let dx = 0
-    let dy = 0
-
-    const prenda = prendaRef.current
-    if (prenda !== null && elegida !== null) {
-      const camino = caminoDeLaPrenda(cuerpo, elegida.category)
-      const tejido = tejidoDe(tela)
-
-      // --- Inercia ---
-      //
-      // El muelle persigue el punto del que CUELGA la prenda: los hombros en
-      // una camiseta, la cintura en un pantalón. Ese punto es `camino[0]`, y
-      // sale ya calculado de la categoría.
-      //
-      // Lo que se pasa a `vestir` es cuánto se ha quedado atrás el muelle
-      // respecto al cuerpo. Al moverte es negativo —la tela va detrás—; al
-      // parar se pasa de largo y cambia de signo, y eso es el rebote.
-      const ancla = camino[0]
-      avanzarMuelle(
-        muelleRef.current,
-        ancla.x,
-        ancla.y,
-        dt,
-        tejido.frecuencia,
-        tejido.amortiguacion,
-      )
-
-      // Tope al descuelgue. Un fallo de seguimiento —la detección salta a otra
-      // persona, o te tapas un segundo— produce un objetivo lejísimos, y sin
-      // tope la prenda saldría disparada fuera de la pantalla antes de que el
-      // muelle tenga tiempo de recuperarse.
-      const maximo = cuerpo.torso * tejido.vuelo
-      dx = muelleRef.current.x - ancla.x
-      dy = muelleRef.current.y - ancla.y
-      const distancia = Math.hypot(dx, dy)
-      if (distancia > maximo && distancia > 0) {
-        dx = (dx / distancia) * maximo
-        dy = (dy / distancia) * maximo
-      }
-
-      // El radio del barrido se ata al cuerpo, no a la pantalla: buscar el
-      // borde de la persona a dos anchos de hombro de distancia solo sirve
-      // para encontrar a otra que pase por detrás.
-      const contorno =
-        mascara === null
-          ? null
-          : medirContorno(
-              mascara,
-              canvas.width,
-              canvas.height,
-              camino,
-              MUESTRAS_DE_CONTORNO,
-              cuerpo.anchoHombros * 1.4,
-            )
-
-      const recorte =
-        mascara !== null && recortarAlCuerpo
-          ? siluetaParaRecortar(mascara, Math.max(2, mascara.ancho * 0.035))
-          : null
-
-      vestir(ctx, prenda, cuerpo, {
-        categoria: elegida.category,
-        tejido,
-        ajuste,
-        contorno,
-        recorteAlCuerpo: recorte,
-        // Se desvanece al girarte: de la espalda de la prenda no tenemos foto.
-        opacidad: OPACIDAD_PRENDA * opacidadPorGiro(orientacion),
-        desfase: { x: dx, y: dy },
-        orientacion,
+  async function probar() {
+    if (foto === null || eleccion === null) return
+    setFallo(null)
+    setLanzando(true)
+    try {
+      const nueva = await createTryOn({
+        personPhotoId: foto,
+        category: categoria,
+        ...(eleccion.tipo === 'prueba'
+          ? { fabricTrialId: eleccion.id }
+          : { garmentUploadId: eleccion.id }),
       })
+      setProbadas((actuales) => [nueva, ...actuales])
+    } catch (causa) {
+      setFallo(causa instanceof Error ? causa.message : 'No se pudo lanzar la prueba.')
+    } finally {
+      setLanzando(false)
     }
+  }
 
-    if (verGuias) {
-      dibujarEsqueleto(ctx, frame.landmarks, COLOR_GUIA)
-      dibujarMedidas(ctx, [
-        ['frontalidad', orientacion.frontalidad.toFixed(2)],
-        ['giro', orientacion.giro.toFixed(2)],
-        ['de espaldas', orientacion.deEspaldas ? 'sí' : 'no'],
-        ['descuelgue', `${Math.round(Math.hypot(dx, dy))} px`],
-        ['fotograma', `${Math.round(dt * 1000)} ms`],
-      ])
+  async function borrarProbada(id: number) {
+    try {
+      await deleteTryOn(id)
+      setProbadas((actuales) => actuales.filter((p) => p.id !== id))
+    } catch (causa) {
+      setFallo(causa instanceof Error ? causa.message : 'No se pudo borrar.')
     }
-  }, [frame, elegida, tela, ajuste, verGuias, recortarAlCuerpo, deEspaldas])
+  }
 
-  const dimensionarCanvas = useCallback(() => {
-    const canvas = canvasRef.current
-    const video = videoRef.current
-    if (canvas === null || video === null || video.videoWidth === 0) return
-    // Resolución real del vídeo, no la que le da el CSS: mezclarlas deforma
-    // todo lo que se pinte encima.
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
-  }, [videoRef])
+  async function borrarFoto(id: number) {
+    try {
+      await deletePersonPhoto(id)
+      if (foto === id) setFoto(null)
+      setProbadas((actuales) => actuales.filter((p) => p.person_photo_id !== id))
+      fotos.reload()
+    } catch (causa) {
+      setFallo(causa instanceof Error ? causa.message : 'No se pudo borrar la foto.')
+    }
+  }
 
-  const hayPersona = frame !== null && cuerpoRef.current !== null
+  const listo = foto !== null && eleccion !== null
 
   return (
-    <div className="wrap space-y-8">
-      <header className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4 border-b border-ink-10 pb-6">
-        <div>
-          <p className="rotulo">Probador</p>
-          <h1 className="mt-3 font-display text-titulo">Pruébatelo</h1>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <span className={`pill ${hayPersona ? 'pill-solida' : ''}`}>
-            <span
-              className={`h-1.5 w-1.5 rounded-full ${
-                hayPersona ? 'bg-paper' : 'bg-ink-40 animate-latido'
-              }`}
-              aria-hidden
-            />
-            {escaneando
-              ? hayPersona
-                ? 'Te veo'
-                : 'Buscándote'
-              : 'Cámara apagada'}
-          </span>
-          {escaneando && (
-            <button type="button" className="btn-ghost px-4 py-1.5" onClick={stop}>
-              Apagar
-            </button>
-          )}
+    <div className="wrap space-y-12">
+      <header>
+        <p className="rotulo">Probador</p>
+        <div className="mt-4 border-b border-ink-10 pb-6">
+          <h1 className="font-display text-titulo">Pruébatela</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-60">
+            Sube una foto tuya y elige una prenda de tu taller, con la tela que escogiste. La
+            prenda es exactamente la de tu prueba de tela: no se vuelve a dibujar. Da igual
+            la postura: de pie, sentada, de lado.
+          </p>
         </div>
       </header>
 
-      {(error || errorCamara) && (
-        <ErrorBlock title="Algo ha fallado" detail={error ?? errorCamara ?? ''} />
-      )}
+      <Notice title="Qué pasa con tu foto">
+        <p>
+          Se guarda sin metadatos: ni la ubicación ni el teléfono. Para vestirte se envía a{' '}
+          <strong className="font-medium">FASHN VTON</strong>, un modelo abierto que corre en
+          Hugging Face.
+        </p>
+        <p>
+          Del resultado solo se toma la prenda, y la piel que la prenda nueva destapa o tapa.
+          Tu cara, tu pelo, el resto de tu ropa y el fondo son los de tu foto original, píxel a
+          píxel. Es gratis, con un número limitado de pruebas al día, y tarda alrededor de
+          medio minuto.
+        </p>
+      </Notice>
 
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-10">
-        {/* --- Escenario --- */}
-        <div className="space-y-4">
-          <div className="relative overflow-hidden rounded-marco bg-ink">
-            {/* `-scale-x-100`: efecto espejo. Sin él, moverte a la derecha te
-                mueve a la izquierda en pantalla y resulta desconcertante. */}
-            <video
-              ref={videoRef}
-              playsInline
-              // `autoPlay` no es decorativo: `play()` se llama mientras el
-              // elemento todavia esta oculto y el navegador puede rechazarlo.
-              // Con esto, la imagen arranca igual en cuanto se hace visible.
-              autoPlay
-              muted
-              // El canvas se dimensiona AQUÍ y no en el bucle de dibujo: aquel
-              // solo corre cuando hay una persona detectada, así que mientras
-              // no te viera, el canvas se quedaba en su tamaño por defecto
-              // (300x150) y el CSS lo estiraba.
-              onLoadedMetadata={dimensionarCanvas}
-              className="w-full -scale-x-100"
-              style={{ display: escaneando ? 'block' : 'none' }}
-            />
-            <canvas
-              ref={canvasRef}
-              className="pointer-events-none absolute inset-0 h-full w-full -scale-x-100"
-              style={{ display: escaneando ? 'block' : 'none' }}
-            />
+      {fallo && <ErrorBlock title="Algo ha fallado" detail={fallo} />}
 
-            {!escaneando && (
-              <div className="sobre-negro flex aspect-[4/3] items-center justify-center p-8 text-center sm:aspect-video">
-                {status === 'idle' && (
-                  <div className="max-w-sm">
-                    <h2 className="font-display text-2xl text-paper">Enciende la cámara</h2>
-                    <p className="mt-2 text-sm leading-relaxed text-paper/60">
-                      Apártate hasta que se te vea de la cabeza a la cadera. Cuanto más entero
-                      salgas, mejor se coloca la prenda.
-                    </p>
-                    <button type="button" className="btn-inverso mt-6" onClick={start}>
-                      Encender
-                    </button>
-                  </div>
-                )}
+      <section className="space-y-4">
+        <h2 className="rotulo">1 · Tu foto</h2>
+        <ElegirFoto
+          fotos={fotos.data}
+          cargando={fotos.loading}
+          error={fotos.error}
+          elegida={foto}
+          onElegir={setFoto}
+          onBorrar={borrarFoto}
+          onSubida={(nueva) => {
+            setFoto(nueva.id)
+            fotos.reload()
+          }}
+          onFallo={setFallo}
+        />
+      </section>
 
-                {(status === 'loading' || status === 'requesting-camera') && (
-                  <div className="text-paper/70">
-                    <LoadingBlock
-                      label={
-                        status === 'loading'
-                          ? 'Cargando el modelo (unos 28 MB la primera vez)…'
-                          : 'Esperando permiso de la cámara…'
-                      }
-                    />
-                  </div>
-                )}
+      <section className="space-y-4">
+        <h2 className="rotulo">2 · La prenda</h2>
+        <ElegirPrenda
+          conTela={conTela}
+          prendas={prendas.data}
+          cargando={prendas.loading || pruebasTela.loading}
+          nombreDeTela={nombreDeTela}
+          prendaPorId={prendaPorId}
+          elegida={eleccion}
+          onElegir={setEleccion}
+          onSubida={(nueva) => {
+            setEleccion({ tipo: 'prenda', id: nueva.id })
+            prendas.reload()
+          }}
+          onFallo={setFallo}
+        />
+      </section>
 
-                {status === 'error' && (
-                  // El motivo se repite AQUI, aunque ya salga arriba en el
-                  // bloque de error: cuando la camara no arranca, la mirada
-                  // esta en el recuadro negro, no en lo de encima.
-                  <div className="max-w-sm">
-                    <h2 className="font-display text-2xl text-paper">
-                      La cámara no ha arrancado
-                    </h2>
-                    <p className="mt-2 text-sm leading-relaxed text-paper/70">
-                      {errorCamara ?? 'No se pudo iniciar la cámara.'}
-                    </p>
-                    <button type="button" className="btn-inverso mt-6" onClick={start}>
-                      Reintentar
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {escaneando && !hayPersona && (
-              <p className="pointer-events-none absolute inset-x-0 bottom-4 mx-auto w-fit rounded-full bg-ink/80 px-4 py-2 text-xs text-paper backdrop-blur">
-                No te veo entero: apártate de la cámara
-              </p>
-            )}
-
-            {escaneando && hayPersona && deEspaldas && elegida !== null && (
-              // Del reverso de la prenda no hay fotografía, así que dibujarla
-              // sobre una espalda sería enseñar el pecho de la camisa por
-              // detrás. Se retira y se dice por qué.
-              <p className="pointer-events-none absolute inset-x-0 bottom-4 mx-auto w-fit rounded-full bg-ink/80 px-4 py-2 text-xs text-paper backdrop-blur">
-                Te veo de espaldas · solo tengo la foto del frente de la prenda
-              </p>
-            )}
-          </div>
-
-          {escaneando && (
-            <div className="flex flex-wrap gap-2">
-              <Interruptor activo={verGuias} onClick={() => setVerGuias((v) => !v)}>
-                Guías de detección
-              </Interruptor>
-              <Interruptor
-                activo={recortarAlCuerpo}
-                onClick={() => setRecortarAlCuerpo((v) => !v)}
-              >
-                Recortar a tu silueta
-              </Interruptor>
-            </div>
-          )}
+      <section className="space-y-4">
+        <h2 className="rotulo">3 · Qué parte del cuerpo cubre</h2>
+        <div role="radiogroup" className="flex flex-wrap gap-2">
+          {(Object.keys(CATEGORY_LABELS) as GarmentCategory[]).map((valor) => (
+            <button
+              key={valor}
+              type="button"
+              role="radio"
+              aria-checked={categoria === valor}
+              onClick={() => setCategoria(valor)}
+              className={`rounded-full border px-4 py-1.5 text-sm transition ${
+                categoria === valor
+                  ? 'border-ink bg-ink text-paper'
+                  : 'border-ink-20 text-ink-60 hover:border-ink hover:text-ink'
+              }`}
+            >
+              {CATEGORY_LABELS[valor]}
+            </button>
+          ))}
         </div>
+        <p className="text-xs text-ink-60">
+          Decide qué ropa de tu foto se cambia: una camisa no toca el pantalón; un vestido
+          sustituye las dos.
+        </p>
+      </section>
 
-        {/* --- Panel --- */}
-        <aside className="space-y-8">
-          <section>
-            <div className="flex items-baseline justify-between gap-4">
-              <h2 className="rotulo">Prenda</h2>
-              {elegida && !prendaLista && (
-                <span className="text-[11px] text-ink-40">Recortando…</span>
-              )}
-            </div>
-
-            {vestibles.length === 0 ? (
-              <p className="mt-3 text-sm text-ink-60">
-                No hay prendas con fotografía en el catálogo del probador. Se cargan
-                con <code className="text-[11px]">python -m scripts.seed --con-prendas-reales</code>{' '}
-                desde la carpeta backend.
-              </p>
-            ) : (
-              // Con un catálogo largo, la rejilla empujaba el tejido y el
-              // ajuste fuera de la pantalla. Limitada en alto, los tres
-              // controles del panel caben juntos y se llega a ellos sin
-              // recorrer la página entera.
-              <ul className="mt-3 grid max-h-[42vh] grid-cols-4 gap-2 overflow-y-auto pr-1 lg:max-h-[300px] lg:grid-cols-3">
-                {vestibles.map((prenda) => {
-                  const activa = elegida?.id === prenda.id
-                  return (
-                    <li key={prenda.id}>
-                      <button
-                        type="button"
-                        onClick={() => elegir(prenda)}
-                        aria-pressed={activa}
-                        title={prenda.name}
-                        className={`block w-full overflow-hidden rounded border transition ${
-                          activa
-                            ? 'border-ink ring-1 ring-ink'
-                            : 'border-ink-10 hover:border-ink-40'
-                        }`}
-                      >
-                        <span className="block aspect-[3/4] bg-bone">
-                          <img
-                            src={prenda.image_url as string}
-                            alt={prenda.name}
-                            className="h-full w-full object-cover"
-                          />
-                        </span>
-                      </button>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-
-            {elegida && (
-              <p className="mt-3 text-sm">
-                <span className="font-medium">{elegida.name}</span>
-                <span className="text-ink-60"> · {CATEGORY_LABELS[elegida.category]}</span>
-              </p>
-            )}
-
-            {recorteDudoso && (
-              <div className="mt-3">
-                <Notice title="Esta fotografía se recorta mal">
-                  <p>
-                    La prenda es casi del mismo color que el fondo de su foto, así que al
-                    separarla se rompe y se verá a tiras. No es un fallo del probador: hace
-                    falta una fotografía sobre un fondo que contraste.
-                  </p>
-                </Notice>
-              </div>
-            )}
-          </section>
-
-          {elegida && (
-            <section>
-              <h2 className="rotulo">Tejido</h2>
-              <p className="mt-2 text-xs leading-relaxed text-ink-60">
-                Cambia cuánto se ciñe la prenda a tu contorno. No simula la tela: el cuero
-                mantiene su forma, el punto se pega.
-              </p>
-
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                <BotonTela activo={tela === null} onClick={() => setTela(null)}>
-                  Sin ficha
-                </BotonTela>
-                {TELAS.map((t) => (
-                  <BotonTela key={t} activo={tela === t} onClick={() => setTela(t)}>
-                    {FABRIC_LABELS[t]}
-                  </BotonTela>
-                ))}
-              </div>
-
-              {elegida.fabric !== null && tela !== elegida.fabric && (
-                <button
-                  type="button"
-                  className="mt-2 text-[11px] text-ink-60 underline underline-offset-4 hover:text-ink"
-                  onClick={() => setTela(elegida.fabric)}
-                >
-                  Volver a su tejido real ({FABRIC_LABELS[elegida.fabric]})
-                </button>
-              )}
-            </section>
-          )}
-
-          {elegida && (
-            <section>
-              <h2 className="rotulo">Ajuste fino</h2>
-              <p className="mt-2 text-xs leading-relaxed text-ink-60">
-                El tamaño sale de tus medidas, no hay que buscarlo. Esto es para casos que
-                una categoría no distingue: un abrigo largo pesa lo mismo que una chaqueta.
-              </p>
-
-              <div className="mt-4 space-y-4">
-                <Deslizador
-                  etiqueta="Ancho"
-                  valor={ajuste.ancho}
-                  min={0.7}
-                  max={1.4}
-                  paso={0.01}
-                  formato={(v) => `${v.toFixed(2)}×`}
-                  onChange={(ancho) => setAjuste((a) => ({ ...a, ancho }))}
-                />
-                <Deslizador
-                  etiqueta="Largo"
-                  valor={ajuste.largo}
-                  min={0.6}
-                  max={1.6}
-                  paso={0.01}
-                  formato={(v) => `${v.toFixed(2)}×`}
-                  onChange={(largo) => setAjuste((a) => ({ ...a, largo }))}
-                />
-                <Deslizador
-                  etiqueta="Altura"
-                  valor={ajuste.alto}
-                  min={-0.3}
-                  max={0.3}
-                  paso={0.01}
-                  formato={(v) => `${v > 0 ? '+' : ''}${Math.round(v * 100)}%`}
-                  onChange={(alto) => setAjuste((a) => ({ ...a, alto }))}
-                />
-              </div>
-
-              <button
-                type="button"
-                className="mt-4 text-[11px] text-ink-60 underline underline-offset-4 hover:text-ink"
-                onClick={() => setAjuste(AJUSTE_NEUTRO)}
-              >
-                Restablecer
-              </button>
-            </section>
-          )}
-
-          <Notice title="Tu cámara no sale de tu equipo">
-            <p>
-              La detección corre entera en tu navegador. No se envía vídeo, no se sube ninguna
-              foto y no se guarda nada: al servidor solo se le piden las imágenes de las
-              prendas.
-            </p>
-          </Notice>
-        </aside>
+      <div className="flex flex-wrap items-center gap-4 border-t border-ink-10 pt-6">
+        <button type="button" className="btn-primary" disabled={!listo || lanzando} onClick={probar}>
+          {lanzando ? 'Enviando…' : 'Probármela'}
+        </button>
+        {!listo && (
+          <p className="text-sm text-ink-60">
+            {foto === null ? 'Falta tu foto.' : 'Falta elegir la prenda.'}
+          </p>
+        )}
       </div>
+
+      <section className="space-y-4">
+        <div className="flex items-baseline justify-between gap-4">
+          <h2 className="rotulo">Tus pruebas</h2>
+          {enMarcha && <span className="text-xs text-ink-60">Vistiendo… (alrededor de medio minuto)</span>}
+        </div>
+        {probadasIniciales.loading ? (
+          <LoadingBlock label="Cargando tus pruebas…" />
+        ) : probadas.length === 0 ? (
+          <EmptyBlock
+            title="Todavía no te has probado nada"
+            detail="Elige tu foto y una prenda arriba. El resultado aparece aquí, junto a tu foto original."
+          />
+        ) : (
+          <ul className="space-y-8">
+            {probadas.map((probada) => (
+              <ResultadoDePrueba key={probada.id} probada={probada} onBorrar={borrarProbada} />
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   )
 }
 
-function Interruptor({
-  activo,
-  onClick,
-  children,
+/** Propone la categoría por el nombre de la prenda. Solo una propuesta. */
+function adivinarCategoria(nombre: string): GarmentCategory {
+  const texto = nombre.toLowerCase()
+  if (/vestido|mono\b|enterizo|jumpsuit|dress/.test(texto)) return 'full'
+  if (/pantal|falda|vaquero|jean|short|bermuda|skirt/.test(texto)) return 'bottom'
+  return 'top'
+}
+
+function ElegirFoto({
+  fotos,
+  cargando,
+  error,
+  elegida,
+  onElegir,
+  onBorrar,
+  onSubida,
+  onFallo,
 }: {
-  activo: boolean
-  onClick: () => void
-  children: React.ReactNode
+  fotos: PersonPhoto[] | null
+  cargando: boolean
+  error: string | null
+  elegida: number | null
+  onElegir: (id: number) => void
+  onBorrar: (id: number) => void
+  onSubida: (foto: PersonPhoto) => void
+  onFallo: (mensaje: string) => void
 }) {
+  const entrada = useRef<HTMLInputElement | null>(null)
+  const [subiendo, setSubiendo] = useState(false)
+
+  async function subir(archivo: File | undefined) {
+    if (!archivo) return
+    setSubiendo(true)
+    try {
+      onSubida(await uploadPersonPhoto(archivo))
+    } catch (causa) {
+      onFallo(causa instanceof Error ? causa.message : 'No se pudo subir la foto.')
+    } finally {
+      setSubiendo(false)
+      if (entrada.current) entrada.current.value = ''
+    }
+  }
+
+  if (cargando && !fotos) return <LoadingBlock label="Cargando tus fotos…" />
+  if (error) return <ErrorBlock title="No se pudieron cargar tus fotos" detail={error} />
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={activo}
-      className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs transition ${
-        activo ? 'border-ink bg-ink text-paper' : 'border-ink-20 text-ink-60 hover:border-ink'
-      }`}
-    >
-      <span
-        className={`h-1.5 w-1.5 rounded-full ${activo ? 'bg-paper' : 'bg-ink-20'}`}
-        aria-hidden
-      />
-      {children}
-    </button>
+    <div className="space-y-3">
+      <ul className="grid grid-cols-3 gap-3 sm:grid-cols-5 lg:grid-cols-7">
+        <li>
+          <button
+            type="button"
+            onClick={() => entrada.current?.click()}
+            disabled={subiendo}
+            className="flex aspect-[3/4] w-full flex-col items-center justify-center gap-1 rounded border border-dashed border-ink-20 text-center text-xs text-ink-60 transition hover:border-ink hover:text-ink disabled:opacity-50"
+          >
+            <span className="text-2xl leading-none">+</span>
+            {subiendo ? 'Subiendo…' : 'Subir una foto'}
+          </button>
+          <input
+            ref={entrada}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="hidden"
+            onChange={(e) => subir(e.target.files?.[0])}
+          />
+        </li>
+        {(fotos ?? []).map((f) => (
+          <li key={f.id} className="space-y-1">
+            <button
+              type="button"
+              aria-pressed={elegida === f.id}
+              onClick={() => onElegir(f.id)}
+              className={`block aspect-[3/4] w-full overflow-hidden rounded border-2 transition ${
+                elegida === f.id ? 'border-ink' : 'border-transparent hover:border-ink-20'
+              }`}
+            >
+              {f.image_url && (
+                <img src={f.image_url} alt="Tu foto" className="h-full w-full object-cover" />
+              )}
+            </button>
+            <div className="flex items-center justify-between px-0.5 text-[11px]">
+              <span className={elegida === f.id ? 'font-medium' : 'text-ink-60'}>
+                {elegida === f.id ? 'Elegida' : ' '}
+              </span>
+              <button
+                type="button"
+                onClick={() => onBorrar(f.id)}
+                className="text-ink-60 underline underline-offset-4 hover:text-ink"
+              >
+                Borrar
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs leading-relaxed text-ink-60">
+        De cuerpo entero o de medio cuerpo, con la ropa que te quieras cambiar a la vista.
+        Borrar una foto borra también las pruebas hechas con ella.
+      </p>
+    </div>
   )
 }
 
-function BotonTela({
-  activo,
-  onClick,
-  children,
+function ElegirPrenda({
+  conTela,
+  prendas,
+  cargando,
+  nombreDeTela,
+  prendaPorId,
+  elegida,
+  onElegir,
+  onSubida,
+  onFallo,
 }: {
-  activo: boolean
-  onClick: () => void
-  children: React.ReactNode
+  conTela: Trial[]
+  prendas: GarmentUpload[] | null
+  cargando: boolean
+  nombreDeTela: Map<number, string>
+  prendaPorId: Map<number, GarmentUpload>
+  elegida: Eleccion | null
+  onElegir: (e: Eleccion) => void
+  onSubida: (prenda: GarmentUpload) => void
+  onFallo: (mensaje: string) => void
 }) {
+  const [pestana, setPestana] = useState<'tela' | 'tal-cual'>(
+    elegida?.tipo === 'prenda' ? 'tal-cual' : 'tela',
+  )
+  const entrada = useRef<HTMLInputElement | null>(null)
+  const [subiendo, setSubiendo] = useState(false)
+
+  async function subir(archivo: File | undefined) {
+    if (!archivo) return
+    setSubiendo(true)
+    try {
+      // El mismo alta que en el taller: se recorta y se queda allí para
+      // probarle telas después.
+      const nombre = archivo.name.replace(/\.[a-z0-9]+$/i, '')
+      onSubida(await uploadGarment(nombre, 'photo', archivo))
+      setPestana('tal-cual')
+    } catch (causa) {
+      onFallo(causa instanceof Error ? causa.message : 'No se pudo subir la prenda.')
+    } finally {
+      setSubiendo(false)
+      if (entrada.current) entrada.current.value = ''
+    }
+  }
+
+  if (cargando && !prendas) return <LoadingBlock label="Cargando tu taller…" />
+
+  const esta = (e: Eleccion) => elegida?.tipo === e.tipo && elegida.id === e.id
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={activo}
-      className={`rounded-full border px-3 py-1 text-xs transition ${
-        activo ? 'border-ink bg-ink text-paper' : 'border-ink-10 text-ink-60 hover:border-ink'
-      }`}
-    >
-      {children}
-    </button>
+    <div className="space-y-4">
+      <div role="tablist" className="inline-flex rounded border border-ink p-0.5">
+        {(
+          [
+            ['tela', `Con tela (${conTela.length})`],
+            ['tal-cual', `Tal cual (${prendas?.length ?? 0})`],
+          ] as const
+        ).map(([valor, texto]) => (
+          <button
+            key={valor}
+            type="button"
+            role="tab"
+            aria-selected={pestana === valor}
+            onClick={() => setPestana(valor)}
+            className={`rounded-sm px-3 py-1.5 text-xs font-medium transition ${
+              pestana === valor ? 'bg-ink text-paper' : 'text-ink-60 hover:text-ink'
+            }`}
+          >
+            {texto}
+          </button>
+        ))}
+      </div>
+
+      {pestana === 'tela' ? (
+        conTela.length === 0 ? (
+          <EmptyBlock
+            title="Aún no has probado telas"
+            detail="Prueba una tela sobre una prenda en tu taller y aparecerá aquí, tal como salió."
+            action={
+              <Link to="/taller" className="btn-ghost">
+                Ir a mi taller
+              </Link>
+            }
+          />
+        ) : (
+          <ul className="grid grid-cols-3 gap-3 sm:grid-cols-5 lg:grid-cols-7">
+            {conTela.map((p) => (
+              <Miniatura
+                key={p.id}
+                imagen={p.output_image_url}
+                titulo={nombreDeTela.get(p.fabric_id) ?? `Tela ${p.fabric_id}`}
+                detalle={prendaPorId.get(p.garment_upload_id)?.name}
+                elegida={esta({ tipo: 'prueba', id: p.id })}
+                onElegir={() => onElegir({ tipo: 'prueba', id: p.id })}
+              />
+            ))}
+          </ul>
+        )
+      ) : (
+        <ul className="grid grid-cols-3 gap-3 sm:grid-cols-5 lg:grid-cols-7">
+          <li>
+            <button
+              type="button"
+              onClick={() => entrada.current?.click()}
+              disabled={subiendo}
+              className="flex aspect-[3/4] w-full flex-col items-center justify-center gap-1 rounded border border-dashed border-ink-20 px-2 text-center text-xs text-ink-60 transition hover:border-ink hover:text-ink disabled:opacity-50"
+            >
+              <span className="text-2xl leading-none">+</span>
+              {subiendo ? 'Subiendo y recortando…' : 'Subir una prenda'}
+            </button>
+            <input
+              ref={entrada}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={(e) => subir(e.target.files?.[0])}
+            />
+          </li>
+          {(prendas ?? []).map((p) => (
+            <Miniatura
+              key={p.id}
+              imagen={p.image_url}
+              titulo={p.name}
+              detalle={p.kind === 'sketch' ? 'Boceto' : undefined}
+              elegida={esta({ tipo: 'prenda', id: p.id })}
+              onElegir={() => onElegir({ tipo: 'prenda', id: p.id })}
+            />
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
 
-function Deslizador({
-  etiqueta,
-  valor,
-  min,
-  max,
-  paso,
-  formato,
-  onChange,
+function Miniatura({
+  imagen,
+  titulo,
+  detalle,
+  elegida,
+  onElegir,
 }: {
-  etiqueta: string
-  valor: number
-  min: number
-  max: number
-  paso: number
-  formato: (valor: number) => string
-  onChange: (valor: number) => void
+  imagen: string | null
+  titulo: string
+  detalle?: string
+  elegida: boolean
+  onElegir: () => void
 }) {
   return (
-    <label className="block">
-      <span className="flex items-baseline justify-between text-xs">
-        <span className="text-ink-60">{etiqueta}</span>
-        <span className="tabular-nums text-ink">{formato(valor)}</span>
-      </span>
-      <input
-        type="range"
-        className="mt-2"
-        min={min}
-        max={max}
-        step={paso}
-        value={valor}
-        onChange={(e) => onChange(Number(e.target.value))}
-      />
-    </label>
+    <li>
+      <button
+        type="button"
+        aria-pressed={elegida}
+        onClick={onElegir}
+        title={detalle ? `${titulo} · ${detalle}` : titulo}
+        className="group block w-full text-left"
+      >
+        <span
+          className={`block aspect-[3/4] overflow-hidden rounded border-2 bg-bone transition ${
+            elegida ? 'border-ink' : 'border-transparent group-hover:border-ink-20'
+          }`}
+        >
+          {imagen && <img src={imagen} alt={titulo} loading="lazy" className="h-full w-full object-contain" />}
+        </span>
+        <span className={`mt-1 block truncate text-[11px] ${elegida ? 'font-medium' : 'text-ink-60'}`}>
+          {elegida ? `✓ ${titulo}` : titulo}
+        </span>
+        {detalle && <span className="block truncate text-[10px] text-ink-40">{detalle}</span>}
+      </button>
+    </li>
+  )
+}
+
+function ResultadoDePrueba({ probada, onBorrar }: { probada: TryOn; onBorrar: (id: number) => void }) {
+  const enCurso = probada.status === 'pending' || probada.status === 'processing'
+
+  return (
+    <li className="grid gap-4 border-b border-ink-10 pb-8 sm:grid-cols-[1fr_1fr_140px]">
+      <figure className="space-y-2">
+        <div className="aspect-[3/4] overflow-hidden rounded border border-ink-10 bg-bone">
+          {probada.person_image_url && (
+            <img src={probada.person_image_url} alt="Tu foto" className="h-full w-full object-contain" />
+          )}
+        </div>
+        <figcaption className="text-xs text-ink-60">Tu foto</figcaption>
+      </figure>
+
+      <figure className="space-y-2">
+        <div className="relative aspect-[3/4] overflow-hidden rounded border border-ink bg-bone">
+          {probada.output_image_url && (
+            <img src={probada.output_image_url} alt="Con la prenda puesta" className="h-full w-full object-contain" />
+          )}
+          {enCurso && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-paper/70 backdrop-blur-sm">
+              <span className="h-4 w-4 animate-spin rounded-full border border-ink-20 border-t-ink" />
+              <span className="text-xs text-ink-60">Vistiendo…</span>
+            </div>
+          )}
+          {probada.status === 'failed' && (
+            <div className="absolute inset-0 flex items-center p-5">
+              <p className="break-words text-sm leading-relaxed text-ink-80">
+                <strong className="block font-medium">No se ha podido.</strong>
+                {probada.error_message ?? 'Error desconocido.'}
+              </p>
+            </div>
+          )}
+        </div>
+        <figcaption className="text-xs font-medium">Con la prenda puesta</figcaption>
+      </figure>
+
+      <div className="space-y-3">
+        <div className="aspect-[3/4] overflow-hidden rounded border border-ink-10 bg-white">
+          {probada.garment_image_url && (
+            <img src={probada.garment_image_url} alt="La prenda enviada" className="h-full w-full object-contain" />
+          )}
+        </div>
+        <div className="space-y-1 text-[11px] text-ink-60">
+          <p className="font-medium text-ink">La prenda, tal cual se envió</p>
+          <p>{CATEGORY_LABELS[probada.category]}</p>
+          {probada.duration_ms !== null && <p>{(probada.duration_ms / 1000).toFixed(0)} s</p>}
+          {probada.edited_fraction !== null && (
+            <p>Del modelo: {(probada.edited_fraction * 100).toFixed(0)}% de la foto. El resto es tu foto.</p>
+          )}
+        </div>
+        {probada.notice && <p className="break-words text-[11px] leading-relaxed text-ink-80">{probada.notice}</p>}
+        <button
+          type="button"
+          onClick={() => onBorrar(probada.id)}
+          className="text-[11px] text-ink-60 underline underline-offset-4 hover:text-ink"
+        >
+          Quitar
+        </button>
+      </div>
+    </li>
   )
 }

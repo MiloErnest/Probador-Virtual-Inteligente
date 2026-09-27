@@ -16,17 +16,18 @@ from app.core.database import get_session
 from app.models.user import User
 from app.repositories.fabric import FabricRepository
 from app.repositories.fabric_trial import FabricTrialRepository
-from app.repositories.garment import GarmentRepository
 from app.repositories.garment_upload import GarmentUploadRepository
+from app.repositories.person_photo import PersonPhotoRepository
+from app.repositories.try_on import TryOnRepository
 from app.repositories.user import UserRepository
 from app.services.auth import AuthService
 from app.services.exceptions import AuthenticationError
 from app.services.fabric import FabricService
 from app.services.fabric_trial import FabricTrialService
-from app.services.garment import GarmentService
 from app.services.garment_upload import GarmentUploadService
 from app.services.storage import Storage, get_storage
-from app.services.trial_jobs import run_trial_job
+from app.services.trial_jobs import run_trial_job, run_try_on_job
+from app.services.try_on import PersonPhotoService, TryOnService
 from app.services.user import UserService
 
 SessionDep = Annotated[Session, Depends(get_session)]
@@ -48,10 +49,6 @@ def get_user_service(session: SessionDep) -> UserService:
 
 def get_auth_service(session: SessionDep) -> AuthService:
     return AuthService(UserRepository(session))
-
-
-def get_garment_service(session: SessionDep, storage: StorageDep) -> GarmentService:
-    return GarmentService(GarmentRepository(session), storage)
 
 
 def get_fabric_service(session: SessionDep, storage: StorageDep) -> FabricService:
@@ -85,15 +82,37 @@ def get_trial_runner() -> Callable[[int], None]:
     return run_trial_job
 
 
+def get_person_photo_service(session: SessionDep, storage: StorageDep) -> PersonPhotoService:
+    return PersonPhotoService(PersonPhotoRepository(session), TryOnRepository(session), storage)
+
+
+def get_try_on_service(session: SessionDep, storage: StorageDep) -> TryOnService:
+    return TryOnService(
+        TryOnRepository(session),
+        PersonPhotoRepository(session),
+        FabricTrialRepository(session),
+        GarmentUploadRepository(session),
+        storage,
+    )
+
+
+def get_try_on_runner() -> Callable[[int], None]:
+    """Igual que `get_trial_runner`: inyectable para que los tests no abran
+    la sesión de PostgreSQL."""
+    return run_try_on_job
+
+
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
-GarmentServiceDep = Annotated[GarmentService, Depends(get_garment_service)]
 FabricServiceDep = Annotated[FabricService, Depends(get_fabric_service)]
 GarmentUploadServiceDep = Annotated[
     GarmentUploadService, Depends(get_garment_upload_service)
 ]
 TrialServiceDep = Annotated[FabricTrialService, Depends(get_trial_service)]
 TrialRunnerDep = Annotated[Callable[[int], None], Depends(get_trial_runner)]
+PersonPhotoServiceDep = Annotated[PersonPhotoService, Depends(get_person_photo_service)]
+TryOnServiceDep = Annotated[TryOnService, Depends(get_try_on_service)]
+TryOnRunnerDep = Annotated[Callable[[int], None], Depends(get_try_on_runner)]
 
 
 def get_current_user(

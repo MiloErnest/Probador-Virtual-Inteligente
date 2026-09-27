@@ -4,7 +4,7 @@ ESTRATEGIA
 ----------
 La aplicación nunca escribe rutas de disco directamente. Todo pasa por la
 interfaz `Storage`, que maneja *claves* opacas del tipo
-`"garments/3f9a1c2b.jpg"`. La base de datos guarda esa clave; la URL pública
+`"uploads/3f9a1c2b.jpg"`. La base de datos guarda esa clave; la URL pública
 se calcula al servir la respuesta.
 
 Consecuencia: sustituir disco local por S3, Cloudflare R2 o cualquier otro
@@ -32,11 +32,12 @@ ALLOWED_IMAGE_TYPES: dict[str, str] = {
 }
 
 # Carpetas lógicas dentro del almacén.
-FOLDER_GARMENTS = "garments"    # catálogo del probador con cámara
 FOLDER_FABRICS = "fabrics"      # catálogo de telas: foto y mosaico
 FOLDER_UPLOADS = "uploads"      # prendas y bocetos que sube el usuario
 FOLDER_MASKS = "masks"          # recorte de cada prenda subida, cacheado
-FOLDER_TRIALS = "trials"        # resultados de las pruebas
+FOLDER_TRIALS = "trials"        # resultados de las pruebas de tela
+FOLDER_PEOPLE = "people"        # fotos de personas, sin metadatos
+FOLDER_TRY_ONS = "tryons"       # prendas enviadas y resultados sobre persona
 
 
 class Storage(Protocol):
@@ -69,11 +70,12 @@ class LocalStorage:
 
     def ensure_directories(self) -> None:
         for folder in (
-            FOLDER_GARMENTS,
             FOLDER_FABRICS,
             FOLDER_UPLOADS,
             FOLDER_MASKS,
             FOLDER_TRIALS,
+            FOLDER_PEOPLE,
+            FOLDER_TRY_ONS,
         ):
             (self.root / folder).mkdir(parents=True, exist_ok=True)
 

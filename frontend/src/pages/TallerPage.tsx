@@ -226,6 +226,14 @@ function TarjetaDePrenda({
           <Link to={`/taller/${prenda.id}`} className="text-xs text-ink underline underline-offset-4">
             Probar telas
           </Link>
+          {prenda.kind === 'photo' && (
+            <Link
+              to={`/probador?prenda=${prenda.id}`}
+              className="text-xs text-ink underline underline-offset-4"
+            >
+              Probármela
+            </Link>
+          )}
           <button
             type="button"
             onClick={() => onBorrar(prenda.id)}

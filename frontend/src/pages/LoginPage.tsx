@@ -17,8 +17,8 @@ export default function LoginPage() {
   const [enviando, setEnviando] = useState(false)
 
   // A dónde volver tras identificarse: la página que intentaba abrirse, o el
-  // probador, que es a lo que se viene.
-  const destino = (location.state as { from?: string } | null)?.from ?? '/probador'
+  // taller, que es donde empieza todo.
+  const destino = (location.state as { from?: string } | null)?.from ?? '/taller'
 
   if (!initialising && isAuthenticated) {
     return <Navigate to={destino} replace />
@@ -41,10 +41,10 @@ export default function LoginPage() {
   return (
     <AuthLayout
       titulo="Entrar"
-      lema="Tu cuenta solo guarda quién eres. Ni una foto, ni una medida, ni lo que te has probado."
+      lema="Tus prendas, tus telas y tus pruebas, en un solo sitio. Solo para ti."
     >
       <h1 className="font-display text-titulo">Entrar</h1>
-      <p className="mt-2 text-sm text-ink-60">Para abrir el probador con la cámara.</p>
+      <p className="mt-2 text-sm text-ink-60">Para entrar a tu taller y a tu probador.</p>
 
       {error && (
         <div className="mt-6">

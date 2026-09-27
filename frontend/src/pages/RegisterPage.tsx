@@ -22,7 +22,7 @@ export default function RegisterPage() {
   const [enviando, setEnviando] = useState(false)
 
   if (!initialising && isAuthenticated) {
-    return <Navigate to="/probador" replace />
+    return <Navigate to="/taller" replace />
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -31,7 +31,7 @@ export default function RegisterPage() {
     setEnviando(true)
     try {
       await register(name, email, password)
-      navigate('/probador', { replace: true })
+      navigate('/taller', { replace: true })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'No se pudo crear la cuenta.')
     } finally {
@@ -45,7 +45,7 @@ export default function RegisterPage() {
       lema="Nombre, correo y contraseña. Nada más, porque nada más hace falta."
     >
       <h1 className="font-display text-titulo">Crear cuenta</h1>
-      <p className="mt-2 text-sm text-ink-60">Se tarda menos que en encender la cámara.</p>
+      <p className="mt-2 text-sm text-ink-60">Menos de un minuto.</p>
 
       {error && (
         <div className="mt-6">

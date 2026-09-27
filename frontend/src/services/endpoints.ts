@@ -4,14 +4,15 @@ import { api } from '@/services/apiClient'
 import type {
   Fabric,
   FabricPattern,
-  Garment,
   GarmentCategory,
   GarmentKind,
   GarmentUpload,
   Health,
+  PersonPhoto,
   TokenResponse,
   Trial,
   TrialMethod,
+  TryOn,
   User,
 } from '@/types'
 
@@ -113,19 +114,53 @@ export function deleteTrial(id: number, signal?: AbortSignal) {
   return api.delete<{ message: string }>(`/trials/${id}`, { signal })
 }
 
-// --- Probador con cámara ----------------------------------------------------
+// --- Probador: fotos de persona y pruebas sobre ellas -----------------------
 
-export function fetchGarments(
-  options: { category?: GarmentCategory; signal?: AbortSignal } = {},
-) {
-  return api.get<Garment[]>('/garments', {
-    params: { category: options.category },
-    signal: options.signal,
-  })
+export function fetchPersonPhotos(signal?: AbortSignal) {
+  return api.get<PersonPhoto[]>('/person-photos', { signal })
 }
 
-export function fetchGarment(id: number, signal?: AbortSignal) {
-  return api.get<Garment>(`/garments/${id}`, { signal })
+/** Se guarda enderezada y sin metadatos: ni la ubicación ni el teléfono. */
+export function uploadPersonPhoto(file: File, signal?: AbortSignal) {
+  return api.postForm<PersonPhoto>('/person-photos', { file }, {}, { signal })
+}
+
+/** Borra la foto y todas las pruebas hechas con ella. */
+export function deletePersonPhoto(id: number, signal?: AbortSignal) {
+  return api.delete<{ message: string }>(`/person-photos/${id}`, { signal })
+}
+
+export function fetchTryOns(signal?: AbortSignal) {
+  return api.get<TryOn[]>('/try-ons', { signal })
+}
+
+/**
+ * Le pone a la persona una prenda del taller. Responde 202 en `pending`: hay
+ * que sondear con `fetchTryOns` hasta `completed` o `failed`.
+ */
+export function createTryOn(
+  input: {
+    personPhotoId: number
+    fabricTrialId?: number
+    garmentUploadId?: number
+    category: GarmentCategory
+  },
+  signal?: AbortSignal,
+) {
+  return api.post<TryOn>(
+    '/try-ons',
+    {
+      person_photo_id: input.personPhotoId,
+      fabric_trial_id: input.fabricTrialId,
+      garment_upload_id: input.garmentUploadId,
+      category: input.category,
+    },
+    { signal },
+  )
+}
+
+export function deleteTryOn(id: number, signal?: AbortSignal) {
+  return api.delete<{ message: string }>(`/try-ons/${id}`, { signal })
 }
 
 // --- Autenticación ----------------------------------------------------------

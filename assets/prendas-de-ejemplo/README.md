@@ -1,12 +1,14 @@
 # Prendas de ejemplo
 
-Fotografias de producto para probar el catalogo, el probador y el recorte de
+Fotografias de producto para probar el taller, el probador y el recorte de
 fondo. Estan aqui, versionadas, para que quien clone el repositorio pueda
 usar la aplicacion sin tener que buscar imagenes por su cuenta.
 
-Se subieron con el script del proyecto; para volver a cargarlas:
+Se suben desde **Mi taller** como cualquier prenda (tipo «Una fotografia»), y
+desde ahi se les prueban telas o se prueban en una persona en el probador.
 
-    python -m scripts.seed --con-prendas-reales
+Son tambien el banco de pruebas del motor: cada cambio en el recorte o en el
+retexturizado se mide sobre estas cinco y sobre las prendas del usuario.
 
 Los nombres se normalizaron (sin mayusculas, sin espacios, sin comas) porque
 un archivo llamado `Chaqueta de cuero Hombre, Negra.jpg` obliga a entrecomillar

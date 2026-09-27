@@ -30,8 +30,8 @@ export default function AuthLayout({ titulo, lema, children }: Props) {
           </p>
 
           <p className="hidden text-xs leading-relaxed text-paper/40 lg:block">
-            El probador funciona entero dentro de tu navegador. La cuenta existe para saber
-            quién entra, no para recoger nada tuyo.
+            Tus prendas, tus pruebas y tus fotos solo las ves tú, y las borras cuando
+            quieras: borrar una foto borra también todo lo que se hizo con ella.
           </p>
         </div>
 

@@ -8,8 +8,8 @@ from app.services.exceptions import (
 )
 from app.services.fabric import FabricService
 from app.services.fabric_trial import FabricTrialService
-from app.services.garment import GarmentService
 from app.services.garment_upload import GarmentUploadService
+from app.services.try_on import PersonPhotoService, TryOnService
 from app.services.storage import LocalStorage, Storage, get_storage
 from app.services.user import UserService
 
@@ -20,8 +20,9 @@ __all__ = [
     "ValidationError",
     "FabricService",
     "FabricTrialService",
-    "GarmentService",
     "GarmentUploadService",
+    "PersonPhotoService",
+    "TryOnService",
     "UserService",
     "Storage",
     "LocalStorage",

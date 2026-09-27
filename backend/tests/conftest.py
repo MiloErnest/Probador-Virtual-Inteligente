@@ -25,7 +25,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.api.deps import get_trial_runner
+from app.api.deps import get_trial_runner, get_try_on_runner
 from app.core.config import settings
 from app.core.database import get_session
 from app.main import app
@@ -33,8 +33,11 @@ from app.models import Base
 from app.repositories.fabric import FabricRepository
 from app.repositories.fabric_trial import FabricTrialRepository
 from app.repositories.garment_upload import GarmentUploadRepository
+from app.repositories.person_photo import PersonPhotoRepository
+from app.repositories.try_on import TryOnRepository
 from app.services.fabric_trial import FabricTrialService
 from app.services.storage import LocalStorage, Storage, get_storage
+from app.services.try_on import TryOnService
 
 
 @pytest.fixture(autouse=True)
@@ -53,6 +56,11 @@ def sin_gastar_dinero(monkeypatch):
     """
     monkeypatch.setattr(settings, "AI_PROVIDER", "none")
     monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
+    # El probador es gratuito, pero llama a Hugging Face y gasta la cuota
+    # diaria —dos pruebas sin cuenta—. Una suite que se ejecuta decenas de
+    # veces al día la agotaría antes de que nadie la usara.
+    monkeypatch.setattr(settings, "VTO_PROVIDER", "none")
+    monkeypatch.setattr(settings, "HF_TOKEN", "")
 
 
 @pytest.fixture
@@ -121,6 +129,17 @@ def client(db_session: Session, storage: Storage) -> Generator[TestClient, None,
         ).process(trial_id)
 
     app.dependency_overrides[get_trial_runner] = lambda: procesar_prueba
+
+    def procesar_prueba_sobre_persona(try_on_id: int) -> None:
+        TryOnService(
+            TryOnRepository(db_session),
+            PersonPhotoRepository(db_session),
+            FabricTrialRepository(db_session),
+            GarmentUploadRepository(db_session),
+            storage,
+        ).process(try_on_id)
+
+    app.dependency_overrides[get_try_on_runner] = lambda: procesar_prueba_sobre_persona
 
     with TestClient(app) as test_client:
         yield test_client
@@ -272,20 +291,3 @@ def uploaded_garment(auth_client: TestClient) -> dict:
     )
     assert respuesta.status_code == 201, respuesta.text
     return respuesta.json()
-
-
-@pytest.fixture
-def garment_with_image(auth_client: TestClient) -> dict:
-    """Prenda del catálogo con su imagen ya subida."""
-    created = auth_client.post(
-        "/api/garments", json={"name": "Camisa de prueba", "category": "top"}
-    )
-    assert created.status_code == 201, created.text
-    garment_id = created.json()["id"]
-
-    uploaded = auth_client.post(
-        f"/api/garments/{garment_id}/image",
-        files={"file": ("camisa.png", make_image_bytes(200, 260, "crimson"), "image/png")},
-    )
-    assert uploaded.status_code == 200, uploaded.text
-    return uploaded.json()

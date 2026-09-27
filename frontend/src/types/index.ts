@@ -150,47 +150,50 @@ export const TRIAL_METHOD_LABELS: Record<TrialMethod, string> = {
   ai: 'IA generativa',
 }
 
-// --- Probador con cámara: la funcionalidad adicional ------------------------
+// --- Probador: la persona con la prenda puesta -----------------------------
 
-export type GarmentCategory = 'dress' | 'top' | 'bottom' | 'outerwear' | 'other'
+/** Qué parte del cuerpo cubre la prenda: decide qué ropa de la foto se cambia. */
+export type GarmentCategory = 'top' | 'bottom' | 'full'
 
-export type GarmentFabric =
-  | 'cotton'
-  | 'linen'
-  | 'silk'
-  | 'wool'
-  | 'knit'
-  | 'denim'
-  | 'leather'
-  | 'synthetic'
+export const CATEGORY_LABELS: Record<GarmentCategory, string> = {
+  top: 'Parte de arriba',
+  bottom: 'Parte de abajo',
+  full: 'Vestido o mono',
+}
 
-export interface Garment {
+export interface PersonPhoto {
   id: number
-  name: string
-  description: string | null
-  category: GarmentCategory
-  fabric: GarmentFabric | null
-  active: boolean
+  user_id: number
   image_url: string | null
+  width: number
+  height: number
   created_at: string
   updated_at: string
 }
 
-export const CATEGORY_LABELS: Record<GarmentCategory, string> = {
-  dress: 'Vestidos',
-  top: 'Superior',
-  bottom: 'Inferior',
-  outerwear: 'Abrigos',
-  other: 'Otros',
-}
+export interface TryOn {
+  id: number
+  user_id: number
+  person_photo_id: number
+  /** La prenda sale de una prueba de tela (su imagen ya generada)… */
+  fabric_trial_id: number | null
+  /** …o de una prenda subida. */
+  garment_upload_id: number | null
+  category: GarmentCategory
+  status: TrialStatus
 
-export const FABRIC_LABELS: Record<GarmentFabric, string> = {
-  cotton: 'Algodón',
-  linen: 'Lino',
-  silk: 'Seda',
-  wool: 'Lana',
-  knit: 'Punto',
-  denim: 'Vaquero',
-  leather: 'Cuero',
-  synthetic: 'Sintético',
+  person_image_url: string | null
+  /** La prenda exacta que se le mandó al modelo. */
+  garment_image_url: string | null
+  output_image_url: string | null
+
+  error_message: string | null
+  notice: string | null
+  provider: string | null
+  duration_ms: number | null
+  /** Qué parte de la foto viene del modelo. El resto es la foto original. */
+  edited_fraction: number | null
+
+  created_at: string
+  updated_at: string
 }

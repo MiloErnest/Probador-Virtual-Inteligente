@@ -49,3 +49,21 @@ openai==3.15.0
 # La variante HEADLESS: sin interfaz gráfica, que en un servidor sobra y trae
 # dependencias de escritorio. Rama 4 y no la 5, que es un salto mayor y reciente.
 opencv-python-headless==4.14.0.94
+
+# --- El probador: la persona de la foto con la prenda puesta ---
+#
+# Cliente oficial de los Spaces de Gradio. Llama a FASHN VTON 1.5 en su Space
+# gratuito de Hugging Face (ver app/probador/fashn.py). Riesgo asumido: el
+# Space es de un tercero y puede cambiar su API o caerse; el error se traduce
+# a un mensaje, nunca a un fallo mudo.
+gradio_client==2.7.1
+
+# Descarga, una vez y con la revisión fijada, el analizador de personas. Ya lo
+# trae gradio_client; se fija aquí porque el código lo usa directamente.
+huggingface-hub==1.33.0
+
+# Ejecuta el analizador de personas (SegFormer B2 para ropa, ONNX, 28 MB) en
+# CPU: 0,8 s por foto sin tarjeta gráfica. Es lo que permite devolver a la
+# foto original todo lo que el modelo cambia fuera de la prenda. Se eligió
+# frente a PyTorch, que ocupa del orden de un gigabyte para hacer lo mismo.
+onnxruntime==1.30.0
