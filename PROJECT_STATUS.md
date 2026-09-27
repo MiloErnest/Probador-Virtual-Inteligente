@@ -7,6 +7,25 @@
 
 ---
 
+## Qué pasó el 2026-09-27 (segunda parte)
+
+El usuario pidió un ejecutable para arrancarlo todo, y saber si las prendas
+funcionan bien.
+
+- **`Iniciar Probador.exe`** (`lanzador/`): arranca backend y frontend sin
+  ventanas, espera a que respondan, abre el navegador y los apaga al cerrarse.
+  Verificado las dos salidas: pulsando Enter, y matando el proceso de golpe
+  (como cerrar con la X) — los puertos 8000 y 5173 quedan libres y no queda
+  ningún node.exe. Compilado con el csc de .NET Framework 4, sin instalar nada.
+- **Banco de 8 prendas × 3 telas repasado a mano.** Encontró un defecto que
+  venía de antes: la camiseta blanca vestida de terracota salía con un ribete
+  blanco deshilachado. Arreglado (CLAUDE.md, lección 18), con dos pruebas que
+  fallan con el código anterior. Solo cambian el canto de la camiseta blanca
+  y un trozo de fondo entre el puño y el cuerpo del jersey gris; el boceto y
+  las demás prendas no se mueven ni un píxel.
+- **El probador por la API**: la cuota gratuita seguía agotada (se renueva a
+  las 24 h del primer uso). La #42 sigue abierta.
+
 ## Qué pasó el 2026-09-27
 
 El usuario pidió revisar el proyecto entero y dejarlo funcionando, y redefinió
@@ -152,7 +171,7 @@ siendo el catálogo del probador con cámara.
 - [x] Prendas del usuario: subir, listar, ver, borrar. Todo filtrado por token.
 - [x] Pruebas: crear (202 + sondeo), listar, filtrar por prenda, borrar.
 - [x] Techo de gasto por usuario y ventana móvil de 24 h.
-- [x] **94 pruebas automatizadas, en verde.** Y **no pueden gastar dinero ni
+- [x] **96 pruebas automatizadas, en verde.** Y **no pueden gastar dinero ni
       cuota**: un fixture `autouse` fuerza `AI_PROVIDER="none"` y
       `VTO_PROVIDER="none"`.
 - [x] Fotos de persona: subir (enderezada, a 2048 px y sin metadatos), listar,

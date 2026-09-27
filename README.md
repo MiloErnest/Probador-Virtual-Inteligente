@@ -156,6 +156,28 @@ Con esta opción el `DATABASE_URL` por defecto de `.env.example` ya es correcto.
 
 ## 3. Arranque rápido (una vez completado el primer arranque)
 
+### Con un doble clic
+
+Compila una vez el lanzador (usa el compilador de C# que ya trae Windows, no
+hay que instalar nada):
+
+```powershell
+.\lanzador\compilar.ps1
+```
+
+Aparece **`Iniciar Probador.exe`** en la raíz del proyecto. Con un doble clic
+arranca el backend y el frontend sin abrir más ventanas, espera a que
+respondan y abre <http://localhost:5173> en el navegador. **Para apagarlo todo,
+cierra su ventana** (o pulsa Enter en ella): los dos servidores se cierran con
+ella. Lo que escriben los servidores queda en `logs\backend.log` y
+`logs\frontend.log`, y si alguno no arranca, el lanzador enseña sus últimas
+líneas.
+
+No empaqueta la aplicación, que sigue siendo web: solo la arranca. PostgreSQL
+tiene que estar en marcha (el servicio de Windows arranca solo con el equipo).
+
+### Con dos terminales
+
 Dos scripts en la raíz del proyecto se encargan de releer el `PATH`, resolver
 las rutas y arrancar cada servicio. Funcionan **desde cualquier carpeta** y no
 requieren activar el entorno virtual.

@@ -19,6 +19,12 @@ dist-ssr/
 *.local
 *.tsbuildinfo
 
+# ---------- Lanzador ----------
+# El .exe se compila con lanzador\compilar.ps1 a partir de su código, que sí
+# se versiona. Un binario sin firmar no tiene por qué viajar en el repositorio.
+/Iniciar Probador.exe
+/logs/
+
 # ---------- Secretos y configuración local ----------
 .env
 .env.*

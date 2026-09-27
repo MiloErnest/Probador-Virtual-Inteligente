@@ -64,6 +64,21 @@ sobrevive: los acentos van bien.
 
 ### Arrancar el proyecto
 
+Con un doble clic en **`Iniciar Probador.exe`**, en la raíz. Arranca los dos
+servidores sin ventanas (salida en `logs/`), espera a que respondan, abre el
+navegador, y al cerrar su ventana los apaga — también si se cierra con la X:
+van dentro de un «job» de Windows que muere con él. Se compila, sin instalar
+nada, con el compilador de C# que trae Windows:
+
+```powershell
+.\lanzador\compilar.ps1
+```
+
+El `.exe` no se versiona (binario sin firmar); su código, `lanzador/IniciarProbador.cs`,
+sí. Y NO contradice la regla 10: no empaqueta la aplicación, solo la arranca.
+
+A mano, en dos terminales:
+
 ```powershell
 .\start-backend.ps1
 ```
@@ -83,7 +98,7 @@ Base `vfit`, rol de aplicación `vfit` / `vfit_dev_password`. Son las mismas
 credenciales que `docker-compose.yml`, a propósito.
 
 Ejecutar pruebas: `pytest` desde `backend/` con el venv activo. Usan SQLite en
-memoria — **no necesitan PostgreSQL levantado**. Son 94: las del contrato de la
+memoria — **no necesitan PostgreSQL levantado**. Son 96: las del contrato de la
 API; en `tests/test_motor.py`, las propiedades medidas del motor — cada una
 es un caso que falló de verdad antes de arreglarse—; y en
 `tests/test_probador.py`, la garantía del probador con un modelo que inventa
@@ -160,7 +175,9 @@ quedar siempre al día: son el único puente entre sesiones.
 7. Secretos siempre por variables de entorno.
 8. Archivos completos y ejecutables, no fragmentos.
 9. Mantener al día `PROJECT_STATUS.md`.
-10. **Es una aplicación web, no se empaqueta en un ejecutable.**
+10. **Es una aplicación web, no se empaqueta en un ejecutable.** El
+    `Iniciar Probador.exe` que pidió el usuario no la empaqueta: solo arranca
+    los dos servidores y abre el navegador.
 11. **No añadir infraestructura "por si acaso"** (Redis, Celery, Kubernetes,
     microservicios, S3). Solo con necesidad demostrada.
 
@@ -392,6 +409,15 @@ que queda se traslada a la tela nueva.
     las etiquetas de los paneles de la veta: salían costuras en escalera de 5 px
     y un serrucho de raya vertical por el filo de la manga. Pertenencia en coma
     flotante, suavizada, ampliada bilineal, y cada píxel a la pieza que gane.
+18. **Una prenda blanca sobre fondo claro salía con un ribete blanco** al
+    vestirla de un color oscuro. Dos causas. El borde se decidía por color
+    donde prenda y fondo miden lo mismo (217 contra 217 en el canto de la
+    camiseta blanca), y se llenaba de medias transparencias por DENTRO: ahí
+    manda ya el recorte a 512 px (`SEPARACION_MINIMA`, medida: la camiseta da
+    0,088 de mediana, el jersey gris —la siguiente— empieza en 0,26). Y el
+    canto se mezclaba con la foto, que en esos píxeles aún tiene la prenda
+    vieja: se mezcla con el FONDO de al lado. En un boceto no se aplica lo
+    primero: el trazo, más oscuro que papel y vestido, sí lo encuentra el color.
 
 ### Los parámetros están medidos, no elegidos a ojo
 
@@ -499,9 +525,9 @@ tabla de qué modelo admite qué caducaría con el siguiente modelo.
 
 ## Reparto de acceso
 
-Públicos: `/api/health`, el catálogo de telas en lectura, el catálogo de
-prendas del probador, `POST /api/users` y `POST /api/auth/login`. Todo lo demás
-exige `Authorization: Bearer <token>`.
+Públicos: `/api/health`, el catálogo de telas en lectura, `POST /api/users` y
+`POST /api/auth/login`. Todo lo demás —prendas, pruebas, fotos de persona y
+pruebas sobre ellas— exige `Authorization: Bearer <token>`.
 
 Tres reglas al añadir endpoints:
 
