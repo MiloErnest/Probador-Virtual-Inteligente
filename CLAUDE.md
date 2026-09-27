@@ -81,7 +81,7 @@ Base `vfit`, rol de aplicación `vfit` / `vfit_dev_password`. Son las mismas
 credenciales que `docker-compose.yml`, a propósito.
 
 Ejecutar pruebas: `pytest` desde `backend/` con el venv activo. Usan SQLite en
-memoria — **no necesitan PostgreSQL levantado**. Son 82: las del contrato de la
+memoria — **no necesitan PostgreSQL levantado**. Son 84: las del contrato de la
 API y, en `tests/test_motor.py`, las propiedades medidas del motor — cada una
 es un caso que falló de verdad antes de arreglarse.
 
@@ -332,6 +332,16 @@ que queda se traslada a la tela nueva.
 15. **Cerrar la junta de un mosaico periódico: desplazar un múltiplo del
     período y cortar por el camino de mínimo error.** Fundir a media anchura
     dejó fantasmales los vichy; fundir con rampa, hojas dobles en las palmeras.
+16. **El cierre morfológico sella también el hueco entre el brazo y el cuerpo.**
+    No sabe de colores: en el vestido negro del usuario la tela rellenaba ese
+    hueco de axila a mano. Lo añadido por el cierre se devuelve al fondo si es
+    claramente fondo Y mucho más parecido al fondo que a la prenda de al lado.
+    La distancia al fondo sola no separaba el hueco (0,4 del umbral) de los
+    túneles de la camiseta blanca (0,7), que sí hay que sellar.
+17. **Nada que se amplíe desde 320 px puede ir por vecino más próximo**, tampoco
+    las etiquetas de los paneles de la veta: salían costuras en escalera de 5 px
+    y un serrucho de raya vertical por el filo de la manga. Pertenencia en coma
+    flotante, suavizada, ampliada bilineal, y cada píxel a la pieza que gane.
 
 ### Los parámetros están medidos, no elegidos a ojo
 

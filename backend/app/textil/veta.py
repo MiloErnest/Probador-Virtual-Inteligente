@@ -130,11 +130,7 @@ def coordenadas_de_la_veta(alfa: np.ndarray) -> tuple[np.ndarray, np.ndarray, in
     if not paneles:
         return x, y, 0
 
-    # Las etiquetas se amplían por vecino más próximo: un panel no tiene bordes
-    # suaves, tiene una costura.
-    etiquetas_reales = cv2.resize(
-        etiquetas_panel.astype(np.float32), (ancho, alto), interpolation=cv2.INTER_NEAREST
-    ).astype(np.int32)
+    etiquetas_reales = _ampliar_paneles(etiquetas_panel, dentro, paneles, ancho, alto)
 
     for k, (giro, cx, cy) in giros.items():
         region = etiquetas_reales == k
@@ -146,6 +142,51 @@ def coordenadas_de_la_veta(alfa: np.ndarray) -> tuple[np.ndarray, np.ndarray, in
         y[region] = cy + dx * seno + dy * coseno
 
     return x, y, paneles
+
+
+#: Suavizado de la pertenencia a cada panel antes de ampliarla, en píxeles de la
+#: máscara reducida. Tiene que cubrir la franja de un píxel reducido que queda
+#: entre el borde reducido y el de verdad.
+SUAVIZADO_DE_PANEL = 1.5
+
+
+def _ampliar_paneles(
+    etiquetas: np.ndarray, dentro: np.ndarray, paneles: int, ancho: int, alto: int
+) -> np.ndarray:
+    """Lleva los paneles al tamaño de la foto con la costura lisa y hasta el filo.
+
+    SE AMPLIABAN POR VECINO MÁS PRÓXIMO, Y SE VEÍA
+    ----------------------------------------------
+    La idea era que un panel no tiene borde suave, tiene una costura. Cierto,
+    pero a 320 px una costura ampliada por vecino más próximo es una escalera:
+    en la camiseta de rayas del usuario, a 1536 px, escalones de 5 px en cada
+    raya que cruzaba. Y la máscara reducida no llega exactamente al borde de la
+    real, así que entre las dos quedaba una franja con la veta del CUERPO: a lo
+    largo del filo de la manga, un serrucho de raya vertical.
+
+    Ahora cada pieza —cuerpo y paneles— es un campo de pertenencia en coma
+    flotante, se suaviza con convolución normalizada, que además lo prolonga un
+    poco más allá del borde reducido, y se amplía bilineal. Cada píxel se queda
+    con la pieza a la que más pertenece. La costura sigue siendo seca, de un
+    píxel, pero ahora es una curva y no una escalera, y la manga llega al filo.
+    """
+    import cv2
+
+    peso = cv2.GaussianBlur(dentro.astype(np.float32), (0, 0), SUAVIZADO_DE_PANEL)
+    peso = np.maximum(peso, 1e-6)
+    piezas = [(dentro & (etiquetas == 0)).astype(np.float32)]
+    piezas += [(etiquetas == k).astype(np.float32) for k in range(1, paneles + 1)]
+    pertenencia = np.stack(
+        [
+            cv2.resize(
+                cv2.GaussianBlur(pieza, (0, 0), SUAVIZADO_DE_PANEL) / peso,
+                (ancho, alto),
+                interpolation=cv2.INTER_LINEAR,
+            )
+            for pieza in piezas
+        ]
+    )
+    return np.argmax(pertenencia, axis=0).astype(np.int32)
 
 
 def grosor_local(binaria: np.ndarray) -> np.ndarray:

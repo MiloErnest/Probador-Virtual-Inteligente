@@ -101,6 +101,25 @@ SUAVIZADO_DE_DECISION = 1.0
 #: columnas incluso con radio 7.
 RADIO_CIERRE = 5
 
+#: Lo que el cierre añade y es CLARAMENTE fondo se devuelve al fondo.
+#:
+#: El cierre no sabe de colores: sella cualquier hueco más estrecho que su
+#: diámetro, y el hueco entre un brazo y el cuerpo lo es. En el vestido negro de
+#: manga larga del usuario, la tela nueva rellenaba esa franja de fondo blanco
+#: desde la axila hasta la mano, y salían dos bloques rectangulares pegados al
+#: torso.
+#:
+#: La distancia al fondo sola no separa los dos casos: medida en fracciones del
+#: umbral, el hueco del vestido da 0,37–0,43 de mediana y los túneles de la
+#: camiseta blanca, que SÍ hay que sellar, 0,68–0,77. Lo que los separa es con
+#: qué se parece más cada píxel: el hueco es blanco junto a una prenda negra; el
+#: túnel es blanco junto a una prenda blanca. Se exigen las dos cosas —muy cerca
+#: del fondo Y mucho más cerca del fondo que de la prenda de al lado—, y así una
+#: prenda clara sobre fondo claro se queda exactamente como estaba.
+FONDO_CLARO = 0.5
+VENTAJA_DEL_FONDO = 3.0
+RADIO_DEL_COLOR_DE_PRENDA = 8
+
 #: Anchura del marco del que se aprende el fondo, en fracción del lado corto.
 FRANJA_DEL_MARCO = 0.06
 
@@ -280,8 +299,12 @@ def segmentar_prenda(imagen: Image.Image, *, boceto: bool = False) -> Recorte:
     # borde de la imagen. Así que basta con volver a rellenar desde el borde y
     # quedarse con lo que NO se alcanza: es fondo encerrado, o sea, prenda.
     solida = np.asarray(mascara, dtype=np.uint8) > 127
-    fuera = _rellenar_desde_el_borde(~solida)
-    mascara = Image.fromarray((~fuera).astype(np.uint8) * 255, mode="L")
+    tapada = ~_rellenar_desde_el_borde(~solida)
+
+    # PASO 2b. Devolver al fondo lo que el cierre selló y es fondo de verdad:
+    # el hueco entre un brazo y el cuerpo. Ver `FONDO_CLARO`.
+    tapada = _devolver_el_fondo(tapada, ~alcanzado, px, fondo, umbral)
+    mascara = Image.fromarray(tapada.astype(np.uint8) * 255, mode="L")
 
     # PASO 3. En una foto, GrabCut: corte de grafo con modelos de color.
     if not boceto:
@@ -430,6 +453,33 @@ def _pegar_al_borde(
     alfa[alfa < 0.03] = 0.0
     alfa[alfa > 0.97] = 1.0
     return Image.fromarray((alfa * 255.0 + 0.5).astype(np.uint8), mode="L")
+
+
+def _devolver_el_fondo(
+    tapada: np.ndarray,
+    cruda: np.ndarray,
+    px: np.ndarray,
+    fondo: np.ndarray,
+    umbral: float,
+) -> np.ndarray:
+    """Quita de lo que añadieron el cierre y el tapado lo que es claramente fondo.
+
+    `cruda` es la prenda tal como la dejó el relleno, antes de cerrar. Solo se
+    reconsidera lo añadido después; lo que el relleno ya decidió no se toca.
+    """
+    anadido = tapada & ~cruda
+    if not anadido.any() or not cruda.any():
+        return tapada
+
+    color_prenda = _media_local(px, cruda, RADIO_DEL_COLOR_DE_PRENDA)
+    a_fondo = np.linalg.norm(px - fondo, axis=2)
+    a_prenda = np.linalg.norm(px - color_prenda, axis=2)
+    es_fondo = (
+        anadido
+        & (a_fondo < FONDO_CLARO * umbral)
+        & (a_prenda > VENTAJA_DEL_FONDO * np.maximum(a_fondo, 1.0))
+    )
+    return tapada & ~es_fondo
 
 
 def _media_local(color: np.ndarray, donde: np.ndarray, radio: int) -> np.ndarray:

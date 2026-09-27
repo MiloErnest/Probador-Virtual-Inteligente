@@ -144,6 +144,62 @@ def test_las_mangas_inclinadas_llevan_su_propia_veta() -> None:
     assert paneles == 2
 
 
+def test_la_manga_llega_entera_hasta_su_borde() -> None:
+    """A tamaño de foto, TODA la manga lleva su veta, también el filo.
+
+    Los paneles se deciden a 320 px y se ampliaban por vecino más próximo. En la
+    camiseta de rayas del usuario, a 1536 px, eso dejaba la costura en escalones
+    de 5 px y una franja a lo largo del filo de la manga con la raya vertical del
+    cuerpo: un serrucho azul y blanco por todo el hombro.
+    """
+    escala = 4
+    pequena = _camiseta(inclinacion_grados=45)
+    alfa = np.kron(pequena, np.ones((escala, escala), dtype=np.float32))
+    x, _, paneles = coordenadas_de_la_veta(alfa)
+    assert paneles == 2
+
+    alto, ancho = alfa.shape
+    yy, xx = np.mgrid[0:alto, 0:ancho].astype(np.float32) / escala
+    angulo = np.radians(45)
+    filo = np.zeros_like(alfa, dtype=bool)
+    for lado in (-1, 1):
+        hombro = np.array([200 + lado * 60, 140])
+        direccion = np.array([lado * np.sin(angulo), np.cos(angulo)])
+        rel = np.stack([xx - hombro[0], yy - hombro[1]], axis=-1)
+        a_lo_largo = rel @ direccion
+        de_lado = np.abs(rel @ np.array([direccion[1], -direccion[0]]))
+        # El filo exterior de la manga, lejos del hombro y de la punta.
+        filo |= (a_lo_largo > 40) & (a_lo_largo < 130) & (de_lado > 19) & (de_lado < 22)
+    filo &= alfa > 0.5
+    identidad = np.arange(ancho, dtype=np.float32)[None, :]
+    girados = np.abs(x - identidad)[filo] > 0.5
+    assert girados.mean() > 0.99, f"solo el {girados.mean():.1%} del filo lleva la veta de la manga"
+
+
+def test_el_hueco_entre_brazo_y_cuerpo_sigue_siendo_fondo() -> None:
+    """El cierre morfológico no puede rellenar el hueco entre la manga y el cuerpo.
+
+    Pasaba en el vestido negro del usuario: el hueco de unos 5 px entre el brazo
+    y el torso se sellaba entero, y la tela salía en dos bloques pegados al
+    cuerpo. Aquí, una prenda oscura con dos mangas separadas del torso por un
+    hueco más estrecho que el cierre.
+    """
+    from app.textil.segmentar import segmentar_prenda
+
+    alto, ancho = 512, 400
+    foto = np.full((alto, ancho, 3), 238, dtype=np.uint8)
+    foto[60:480, 154:246] = 25  # torso
+    foto[60:100, 110:290] = 25  # hombros
+    foto[60:330, 110:146] = 25  # manga izquierda: hueco de 8 px hasta el torso
+    foto[60:330, 254:290] = 25  # manga derecha
+    recorte = segmentar_prenda(Image.fromarray(foto))
+    alfa = np.asarray(recorte.mascara, dtype=np.float32) / 255.0
+    hueco = np.concatenate([alfa[140:320, 148:152].ravel(), alfa[140:320, 248:252].ravel()])
+    assert hueco.mean() < 0.1, f"el hueco sale como prenda ({hueco.mean():.2f})"
+    assert alfa[200:300, 160:240].mean() > 0.99, "el torso sigue entero"
+    assert alfa[150:300, 115:140].mean() > 0.99, "la manga sigue entera"
+
+
 def test_un_rectangulo_no_tiene_paneles() -> None:
     """Sin piezas estrechas no se gira nada: la veta del cuerpo es vertical.
 
