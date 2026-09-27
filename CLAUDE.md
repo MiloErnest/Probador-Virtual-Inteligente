@@ -98,7 +98,7 @@ Base `vfit`, rol de aplicación `vfit` / `vfit_dev_password`. Son las mismas
 credenciales que `docker-compose.yml`, a propósito.
 
 Ejecutar pruebas: `pytest` desde `backend/` con el venv activo. Usan SQLite en
-memoria — **no necesitan PostgreSQL levantado**. Son 96: las del contrato de la
+memoria — **no necesitan PostgreSQL levantado**. Son 98: las del contrato de la
 API; en `tests/test_motor.py`, las propiedades medidas del motor — cada una
 es un caso que falló de verdad antes de arreglarse—; y en
 `tests/test_probador.py`, la garantía del probador con un modelo que inventa
@@ -279,6 +279,20 @@ Ruta (HTTP) → Servicio (negocio) → Repositorio (SQL) → Modelo
 6. **Licencias**: FASHN y onnxruntime son libres; los pesos del analizador
    derivan de SegFormer de NVIDIA, de uso NO comercial. Vale para un proyecto
    universitario, no para venderlo.
+7. **FASHN va en el modo que BORRA la prenda vieja** (`segmentation_free=False`).
+   El que trae por defecto no borra, y en la foto del usuario frente al espejo,
+   con el brazo levantado, dejó un trozo de su manga negra en el hombro.
+   Borrando desapareció, y en las otras dos fotos de prueba salen parecidos.
+8. **La piel NO entra en la zona por haber cambiado.** Así era, y el modelo
+   (en modo borrar redibuja más) cortó el móvil del usuario, redibujó su mano
+   y dejó un borrón beige: todo pasó al resultado. La piel que la prenda
+   destapa o tapa ya entra por ser ropa en una de las dos imágenes; la que es
+   piel en las dos se queda con sus píxeles.
+9. **La prenda vieja que el analizador no ve**: el pliegue de la manga bajo el
+   codo salió como «fondo». Se añade lo etiquetado como fondo que tiene el
+   color de la prenda de al lado y está pegado a ella (medido: cubre el 94%
+   del pliegue). Solo fondo: dejándola crecer sobre los brazos, se llevaba el
+   antebrazo tatuado de otra foto.
 
 ---
 

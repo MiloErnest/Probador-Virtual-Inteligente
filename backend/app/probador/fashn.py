@@ -5,14 +5,27 @@ POR QUÉ ESTE MODELO
 Se compararon los modelos abiertos de prueba virtual que tenían una demo
 funcionando. De los que respondían, FASHN VTON 1.5 (2026) es el único con
 licencia libre (Apache 2.0; IDM-VTON y CatVTON son no comerciales), está hecho
-para conservar a la persona («maskless»: no borra la zona antes de pintar) y
-genera en el espacio de píxeles, sin el autocodificador que emborrona los
-estampados. Acepta la prenda como foto de producto.
+para conservar a la persona y genera en el espacio de píxeles, sin el
+autocodificador que emborrona los estampados. Acepta la prenda como foto de
+producto.
 
 Medido con dos fotos reales y dos prendas del taller: una persona sentada con
 la camiseta de rayas azul rey, y otra haciéndose una foto en un espejo con la
 camiseta de palmeras. Las dos veces colocó la prenda con su dibujo y su color,
 siguiendo la postura, en unos 28 s.
+
+SE LE PIDE QUE BORRE LA PRENDA VIEJA ANTES DE PINTAR
+----------------------------------------------------
+FASHN tiene dos modos. El que trae por defecto no borra nada («sin máscara»);
+el otro borra primero la ropa de la categoría con su propio analizador. Se usa
+el segundo, y por una prueba real del usuario: una foto frente al espejo con
+el brazo levantado sujetando el móvil y una camiseta negra. Sin borrar, el
+modelo dejó un trozo de la manga negra en el hombro, bajo el brazo. Borrando,
+desapareció. En las otras dos fotos de prueba los dos modos salen parecidos,
+y borrando tardó 13 s en dos de las tres llamadas, frente a 28 s.
+
+Lo que el modo de borrar tiene de malo —redibuja más, manos incluidas— no
+llega al resultado: `conservar.py` solo toma del modelo la ropa.
 
 LO QUE CUESTA: NADA, PERO CON CUOTA
 -----------------------------------
@@ -95,7 +108,8 @@ class ModeloFashn:
                 # Semilla fija: la misma foto con la misma prenda da siempre lo
                 # mismo, y dos prendas sobre la misma foto son comparables.
                 seed=42,
-                segmentation_free=True,
+                # Borrar la prenda vieja antes de pintar. Ver la cabecera.
+                segmentation_free=False,
                 api_name="/try_on",
             )
             try:

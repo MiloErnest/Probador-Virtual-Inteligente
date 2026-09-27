@@ -15,14 +15,24 @@ LA ZONA, PASO A PASO
 --------------------
 1. **Ropa de la categoría**, en la foto original Y en la generada. En la
    original, porque la prenda vieja tiene que desaparecer aunque la nueva sea
-   más pequeña; en la generada, porque la nueva puede ser más grande.
-2. **Piel de la categoría** —brazos para una camisa, piernas para una falda—
-   solo donde la imagen cambió: una manga corta nueva destapa brazo que antes
-   cubría una manga larga, y ese brazo lo tiene que poner el modelo. Un brazo
-   que no cambia se queda con sus píxeles originales.
+   más pequeña; en la generada, porque la nueva puede ser más grande. Con eso
+   ya entra la piel que la prenda nueva destapa (era ropa en la foto) o tapa
+   (es ropa en la generada).
+2. **Lo que es prenda vieja aunque el analizador no lo vea**: un pliegue de
+   manga bajo el codo, en sombra, que sale como «brazo» o «fondo». Se añade si
+   tiene el color de la prenda vieja de al lado y está pegado a ella.
 3. Se limpian las islas que el analizador deja sueltas, se ensancha un margen
    para llevarse el canto de la prenda y su sombra, y se difumina para que la
    costura entre imagen generada y foto no se vea.
+
+LA PIEL NO ENTRA PORQUE HAYA CAMBIADO
+-------------------------------------
+Así era al principio: los brazos entraban donde la imagen generada fuera
+distinta. Una prueba real lo desmintió: el modelo redibujó la mano que
+sujetaba el móvil, cortó el móvil y dejó un borrón beige cruzándolo, y todo
+eso pasó al resultado porque «había cambiado». Un brazo que es piel en las
+dos imágenes no tiene nada que cambiar; si el modelo lo cambia, es un error
+del modelo, y se queda el de la foto.
 
 Lo que NO entra aunque cambie: la cara, el pelo, el fondo, los zapatos, el
 bolso y, en una camisa, el pantalón. Si el modelo los cambió, se deshace, y
@@ -47,12 +57,21 @@ ROPA = {
     GarmentCategory.FULL: {P.ROPA_ARRIBA, P.FALDA, P.PANTALON, P.VESTIDO, P.CINTURON, P.BUFANDA},
 }
 
-#: Qué piel puede destapar o tapar cada categoría.
-PIEL = {
-    GarmentCategory.TOP: {P.BRAZO_IZQ, P.BRAZO_DER},
-    GarmentCategory.BOTTOM: {P.PIERNA_IZQ, P.PIERNA_DER},
-    GarmentCategory.FULL: {P.BRAZO_IZQ, P.BRAZO_DER, P.PIERNA_IZQ, P.PIERNA_DER},
-}
+#: Dónde puede estar la prenda vieja que el analizador no reconoce: SOLO en lo
+#: que etiqueta como fondo. En la foto del usuario frente al espejo, el pliegue
+#: de la camiseta negra bajo el codo salió como fondo en 317 de sus 322
+#: píxeles. Se probó dejarla crecer también sobre los brazos, y en la foto del
+#: hombre sentado se llevaba trozos del antebrazo tatuado.
+PUEDE_SER_PRENDA_VIEJA = {P.FONDO}
+
+#: Cuánto se parece al color de la prenda vieja de al lado (distancia RGB
+#: sobre 255) y a qué distancia de ella puede estar (fracción del lado mayor).
+#: Medido en ese pliegue, a 1024 px: 7,5 de distancia de color de mediana, y
+#: entre 25 y 42 px de la parte que el analizador sí reconoce. Con 0,045 (46
+#: px) queda cubierto el 94%; con 0,03, solo el 56%. En las otras dos fotos
+#: de prueba añade un 0,4% de la prenda, píxeles sueltos del canto.
+COLOR_DE_PRENDA_VIEJA = 30.0
+ALCANCE_DE_PRENDA_VIEJA = 0.045
 
 #: Diferencia de color (sRGB, distancia euclídea sobre 255, tras un
 #: desenfoque suave) a partir de la cual un píxel "ha cambiado". Medido en dos
@@ -104,10 +123,10 @@ def zona_editable(
     cambio = np.linalg.norm(suave_g - suave_p, axis=2) > UMBRAL_DE_CAMBIO
 
     ropa = list(ROPA[categoria])
-    piel = list(PIEL[categoria])
     nueva = np.isin(partes_generada, ropa)
-    zona = np.isin(partes_persona, ropa) | nueva
-    zona |= (np.isin(partes_persona, piel) | np.isin(partes_generada, piel)) & cambio
+    vieja = np.isin(partes_persona, ropa)
+    vieja |= _prenda_vieja_sin_etiqueta(persona, partes_persona, vieja, lado)
+    zona = vieja | nueva
 
     # Islas sueltas fuera: el analizador deja motas en fondos con textura.
     cuantas, etiquetas, stats, _ = cv2.connectedComponentsWithStats(zona.astype(np.uint8), 8)
@@ -128,3 +147,39 @@ def zona_editable(
         prenda_nueva=float(nueva.mean()),
         descartado=float((cambio & (alfa < 0.5)).mean()),
     )
+
+
+def _prenda_vieja_sin_etiqueta(
+    persona: np.ndarray, partes: np.ndarray, vieja: np.ndarray, lado: int
+) -> np.ndarray:
+    """La prenda vieja que el analizador etiquetó como fondo o piel.
+
+    Tres condiciones a la vez: una etiqueta donde puede esconderse
+    (`PUEDE_SER_PRENDA_VIEJA`), el color de la prenda vieja DE AL LADO —su
+    media local, así una camiseta de rayas sirve igual que una lisa—, y estar
+    unida a la parte reconocida sin salir de su alcance.
+    """
+    import cv2
+
+    from app.textil.filtros import media_de_caja
+
+    if not vieja.any():
+        return np.zeros_like(vieja)
+
+    radio = max(3, round(ALCANCE_DE_PRENDA_VIEJA * lado))
+    peso = media_de_caja(vieja.astype(np.float32), radio)
+    color = np.stack(
+        [media_de_caja(persona[..., c] * vieja, radio) for c in range(3)], axis=-1
+    ) / np.maximum(peso, 1e-6)[..., None]
+    candidata = (
+        np.isin(partes, list(PUEDE_SER_PRENDA_VIEJA))
+        & (peso > 0.01)
+        & (np.linalg.norm(persona - color, axis=2) < COLOR_DE_PRENDA_VIEJA)
+    )
+    # Solo lo que toca la prenda reconocida: se crece desde ella a través de
+    # las candidatas, y lo que queda suelto no cuenta.
+    cuantas, etiquetas = cv2.connectedComponents((candidata | vieja).astype(np.uint8), connectivity=8)
+    unidas = np.zeros(cuantas, dtype=bool)
+    unidas[np.unique(etiquetas[vieja])] = True
+    unidas[0] = False
+    return unidas[etiquetas] & candidata

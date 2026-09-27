@@ -267,7 +267,14 @@ def test_borrar_la_foto_borra_sus_pruebas_y_sus_archivos(
 # --- Las piezas, por separado -------------------------------------------------------
 
 
-def test_la_cara_y_el_fondo_nunca_entran_aunque_el_modelo_los_cambie() -> None:
+def test_ni_la_cara_ni_el_fondo_ni_el_brazo_retocado_entran() -> None:
+    """Aunque el modelo lo cambie todo, solo se toma la ropa.
+
+    El brazo es piel en las dos imágenes: si el modelo lo retoca, es un error
+    suyo. Pasó de verdad: redibujó la mano que sujetaba el móvil, cortó el
+    móvil y dejó un borrón beige, y la regla de entonces —la piel entra donde
+    cambie— lo llevó todo al resultado.
+    """
     alto, ancho = 200, 200
     persona = np.full((alto, ancho, 3), 200, dtype=np.float32)
     generada = persona.copy()
@@ -275,14 +282,55 @@ def test_la_cara_y_el_fondo_nunca_entran_aunque_el_modelo_los_cambie() -> None:
     partes = np.full((alto, ancho), P.FONDO, dtype=np.uint8)
     partes[20:60, 80:120] = P.CARA
     partes[70:150, 60:140] = P.ROPA_ARRIBA
-    partes[70:150, 40:60] = P.BRAZO_IZQ
+    partes[70:150, 30:60] = P.BRAZO_IZQ
 
     zona = zona_editable(persona, generada, partes, partes, GarmentCategory.TOP)
     assert zona.alfa[100, 100] == 1.0, "la ropa se toma del modelo"
-    assert zona.alfa[110, 50] > 0.99, "el brazo cambió, así que también"
+    assert zona.alfa[110, 40] == 0.0, "el brazo retocado no"
     assert zona.alfa[40, 100] == 0.0, "la cara nunca"
     assert zona.alfa[190, 10] == 0.0, "el fondo nunca"
     assert zona.descartado > 0.5
+
+
+def test_la_piel_que_destapa_la_prenda_nueva_si_entra() -> None:
+    """Manga larga en la foto, manga corta en la prenda: el brazo nuevo es del modelo."""
+    alto, ancho = 200, 200
+    persona = np.full((alto, ancho, 3), 200, dtype=np.float32)
+    generada = persona.copy()
+    generada[70:150, 30:140] = 60
+    antes = np.full((alto, ancho), P.FONDO, dtype=np.uint8)
+    antes[70:150, 30:140] = P.ROPA_ARRIBA  # la manga larga tapa el brazo
+    despues = antes.copy()
+    despues[70:150, 30:60] = P.BRAZO_IZQ  # la manga corta lo destapa
+
+    zona = zona_editable(persona, generada, antes, despues, GarmentCategory.TOP)
+    assert zona.alfa[110, 40] == 1.0
+
+
+def test_el_pliegue_de_la_prenda_vieja_que_no_se_reconoce_tambien_se_quita() -> None:
+    """Un trozo de la prenda vieja etiquetado como fondo, pegado a ella, entra.
+
+    En la foto del usuario frente al espejo, el pliegue de la camiseta negra
+    bajo el codo salió como «fondo» y se quedaba en el resultado. Lo que tiene
+    el color de la prenda de al lado y está pegado a ella, es prenda. Pero no
+    lo que esté suelto, ni lo que el analizador reconoce como otra cosa.
+    """
+    alto, ancho = 200, 200
+    persona = np.full((alto, ancho, 3), 200, dtype=np.float32)
+    partes = np.full((alto, ancho), P.FONDO, dtype=np.uint8)
+    persona[70:150, 60:140] = 30
+    partes[70:150, 60:140] = P.ROPA_ARRIBA
+    persona[150:158, 90:110] = 30  # el pliegue, etiquetado como fondo
+    persona[20:40, 10:30] = 30  # algo oscuro en el fondo, suelto
+    persona[100:130, 140:160] = 30  # un bolso negro pegado a la camiseta
+    partes[100:130, 140:160] = P.BOLSO
+    generada = persona.copy()
+    generada[70:158, 60:140] = 220
+
+    zona = zona_editable(persona, generada, partes, partes, GarmentCategory.TOP)
+    assert zona.alfa[154, 100] == 1.0, "el pliegue es prenda vieja"
+    assert zona.alfa[30, 20] == 0.0, "lo oscuro suelto del fondo no"
+    assert zona.alfa[115, 152] == 0.0, "el bolso no"
 
 
 def test_un_brazo_que_no_cambia_se_queda_con_sus_pixeles() -> None:
