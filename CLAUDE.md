@@ -98,7 +98,7 @@ Base `vfit`, rol de aplicación `vfit` / `vfit_dev_password`. Son las mismas
 credenciales que `docker-compose.yml`, a propósito.
 
 Ejecutar pruebas: `pytest` desde `backend/` con el venv activo. Usan SQLite en
-memoria — **no necesitan PostgreSQL levantado**. Son 98: las del contrato de la
+memoria — **no necesitan PostgreSQL levantado**. Son 103: las del contrato de la
 API; en `tests/test_motor.py`, las propiedades medidas del motor — cada una
 es un caso que falló de verdad antes de arreglarse—; y en
 `tests/test_probador.py`, la garantía del probador con un modelo que inventa
@@ -293,6 +293,19 @@ Ruta (HTTP) → Servicio (negocio) → Repositorio (SQL) → Modelo
    color de la prenda de al lado y está pegado a ella (medido: cubre el 94%
    del pliegue). Solo fondo: dejándola crecer sobre los brazos, se llevaba el
    antebrazo tatuado de otra foto.
+10. **Los 502 de la pasarela de Hugging Face se reintentan; la generación,
+    nunca.** Al usuario le falló dos veces seguidas: al conectar, y al
+    DESCARGAR el resultado cuando el modelo ya lo había generado y cobrado de
+    la cuota. Conexión y descarga (que hace `fashn._descargar`, no el cliente
+    de Gradio, para poder repetirla) se reintentan tres veces; repetir la
+    generación a ciegas podría gastar la cuota dos veces.
+11. **Cada prueba lleva su semilla: `42 + id`.** Con una fija, repetir daba la
+    MISMA imagen —el modelo se inventó un cordón y un collar sobre la camiseta
+    roja, y repetir los devolvía idénticos—. El botón «Otra variante» vuelve a
+    lanzar la misma combinación con otra semilla. Se descartó contar los
+    intentos previos: el usuario borra pruebas, y la cuenta volvía atrás.
+    Y se descartó detectar lo inventado por color: daba falsos positivos en el
+    canto de la zona y se dejaba el collar, que tiene tono de piel.
 
 ---
 

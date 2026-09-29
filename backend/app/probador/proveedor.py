@@ -24,6 +24,18 @@ class PeticionDePrueba:
     #: La prenda sobre blanco (`prenda.recortar_prenda`).
     prenda: Image.Image
     categoria: GarmentCategory
+    #: Número que decide la semilla del modelo: el de la propia prueba.
+    #:
+    #: El modelo es determinista, y con una semilla fija repetir una prueba
+    #: daba EXACTAMENTE la misma imagen. Le pasó al usuario: el modelo se
+    #: inventó un cordón azul colgando del cuello, y volver a probar devolvía
+    #: el mismo cordón. Con el número de la prueba, cada intento es otra
+    #: variante, y sigue siendo reproducible: el número queda guardado.
+    #:
+    #: Se descartó contar los intentos anteriores de la misma combinación: el
+    #: usuario borra pruebas, y al borrar la mala la cuenta bajaba y volvía la
+    #: misma imagen.
+    variante: int = 0
 
 
 class ModeloDePrueba(Protocol):

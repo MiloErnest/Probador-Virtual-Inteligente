@@ -160,6 +160,28 @@ export default function ProbadorPage() {
     }
   }
 
+  /**
+   * La misma foto con la misma prenda, otra vez. El servidor usa otra semilla
+   * para cada prueba, así que sale otra variante: sirve cuando el modelo se ha
+   * inventado algo —un cordón, un collar— que no está en la prenda.
+   */
+  async function otraVariante(probada: TryOn) {
+    setFallo(null)
+    try {
+      const nueva = await createTryOn({
+        personPhotoId: probada.person_photo_id,
+        category: probada.category,
+        ...(probada.fabric_trial_id !== null
+          ? { fabricTrialId: probada.fabric_trial_id }
+          : { garmentUploadId: probada.garment_upload_id ?? undefined }),
+      })
+      setProbadas((actuales) => [nueva, ...actuales])
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch (causa) {
+      setFallo(causa instanceof Error ? causa.message : 'No se pudo lanzar la prueba.')
+    }
+  }
+
   async function borrarProbada(id: number) {
     try {
       await deleteTryOn(id)
@@ -299,7 +321,12 @@ export default function ProbadorPage() {
         ) : (
           <ul className="space-y-8">
             {probadas.map((probada) => (
-              <ResultadoDePrueba key={probada.id} probada={probada} onBorrar={borrarProbada} />
+              <ResultadoDePrueba
+                key={probada.id}
+                probada={probada}
+                onBorrar={borrarProbada}
+                onOtraVariante={otraVariante}
+              />
             ))}
           </ul>
         )}
@@ -583,8 +610,19 @@ function Miniatura({
   )
 }
 
-function ResultadoDePrueba({ probada, onBorrar }: { probada: TryOn; onBorrar: (id: number) => void }) {
+function ResultadoDePrueba({
+  probada,
+  onBorrar,
+  onOtraVariante,
+}: {
+  probada: TryOn
+  onBorrar: (id: number) => void
+  onOtraVariante: (probada: TryOn) => void
+}) {
   const enCurso = probada.status === 'pending' || probada.status === 'processing'
+  // Si se borró la prueba de tela o la prenda de origen, ya no hay con qué repetir.
+  const repetible =
+    !enCurso && (probada.fabric_trial_id !== null || probada.garment_upload_id !== null)
 
   return (
     <li className="grid gap-4 border-b border-ink-10 pb-8 sm:grid-cols-[1fr_1fr_140px]">
@@ -635,13 +673,30 @@ function ResultadoDePrueba({ probada, onBorrar }: { probada: TryOn; onBorrar: (i
           )}
         </div>
         {probada.notice && <p className="break-words text-[11px] leading-relaxed text-ink-80">{probada.notice}</p>}
-        <button
-          type="button"
-          onClick={() => onBorrar(probada.id)}
-          className="text-[11px] text-ink-60 underline underline-offset-4 hover:text-ink"
-        >
-          Quitar
-        </button>
+        {repetible && (
+          <p className="text-[11px] leading-relaxed text-ink-60">
+            ¿Algo que no está en tu prenda? Pide otra variante: el modelo la vuelve a generar
+            de otra forma. Gasta una prueba de tu cuota.
+          </p>
+        )}
+        <div className="flex flex-wrap gap-3">
+          {repetible && (
+            <button
+              type="button"
+              onClick={() => onOtraVariante(probada)}
+              className="text-[11px] text-ink underline underline-offset-4"
+            >
+              Otra variante
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => onBorrar(probada.id)}
+            className="text-[11px] text-ink-60 underline underline-offset-4 hover:text-ink"
+          >
+            Quitar
+          </button>
+        </div>
       </div>
     </li>
   )

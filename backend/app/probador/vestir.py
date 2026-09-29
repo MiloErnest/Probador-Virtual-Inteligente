@@ -68,6 +68,7 @@ def vestir_persona(
     prenda: Image.Image,
     categoria: GarmentCategory,
     *,
+    variante: int = 0,
     modelo: ModeloDePrueba | None = None,
     etiquetar: Callable[[Image.Image, tuple[int, int]], np.ndarray] | None = None,
 ) -> PersonaVestida:
@@ -93,7 +94,9 @@ def vestir_persona(
     recorte = persona.crop(caja)
 
     # 2. Vestirla.
-    generada = modelo.vestir(PeticionDePrueba(persona=recorte, prenda=prenda, categoria=categoria))
+    generada = modelo.vestir(
+        PeticionDePrueba(persona=recorte, prenda=prenda, categoria=categoria, variante=variante)
+    )
     if abs(generada.width / generada.height - recorte.width / recorte.height) > 0.03:
         raise ErrorDeMotor(
             "El modelo ha devuelto una imagen con otro encuadre, y no se puede "

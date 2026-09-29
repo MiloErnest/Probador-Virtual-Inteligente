@@ -59,8 +59,10 @@ class ModeloQueInventa:
     """
 
     nombre = "doble-de-prueba"
+    variantes: list[int] = []
 
     def vestir(self, peticion):
+        ModeloQueInventa.variantes.append(peticion.variante)
         px = np.asarray(peticion.persona.convert("RGB")).copy()
         camisa = np.abs(px.astype(np.int32) - np.array(CAMISA)).sum(axis=2) < 60
         px[camisa] = PRENDA_NUEVA
@@ -375,3 +377,96 @@ def test_la_cuota_agotada_se_explica_con_lo_que_hay_que_hacer(monkeypatch) -> No
         "You have exceeded your ZeroGPU runs limit. Authenticate with a Hugging Face token"
     )
     assert "HF_TOKEN" in mensaje and "cuota" in mensaje
+
+
+# --- Los 502 de Hugging Face ----------------------------------------------------------
+
+
+class _Respuestas:
+    """Doble de `httpx.stream`: devuelve una respuesta de la lista en cada llamada."""
+
+    def __init__(self, codigos: list[int]) -> None:
+        self.codigos = list(codigos)
+        self.llamadas = 0
+
+    def __call__(self, metodo, url, **kwargs):
+        import contextlib
+
+        import httpx
+
+        self.llamadas += 1
+        codigo = self.codigos.pop(0)
+        respuesta = httpx.Response(codigo, content=b"imagen", request=httpx.Request(metodo, url))
+        return contextlib.nullcontext(respuesta)
+
+
+class _ClienteFalso:
+    src_prefixed = "https://espacio.hf.space/gradio_api/"
+    headers: dict = {}
+
+
+def test_un_502_al_descargar_se_reintenta_sin_volver_a_generar(monkeypatch, tmp_path) -> None:
+    """Le pasó al usuario: el modelo generó la imagen y la pasarela dio 502 al
+    devolverla. Se perdía la imagen, y con ella la cuota gastada."""
+    from app.probador import fashn
+
+    respuestas = _Respuestas([502, 502, 200])
+    monkeypatch.setattr(fashn.httpx, "stream", respuestas)
+    monkeypatch.setattr(fashn, "ESPERAS", (0.0, 0.0, 0.0))
+
+    ruta = fashn._descargar(_ClienteFalso(), {"path": "/tmp/gradio/abc/image.webp"}, tmp_path)
+    assert ruta.read_bytes() == b"imagen"
+    assert respuestas.llamadas == 3
+
+
+def test_un_404_al_descargar_no_se_reintenta(monkeypatch, tmp_path) -> None:
+    from app.probador import fashn
+    from app.textil.errores import ErrorDeMotor
+
+    respuestas = _Respuestas([404, 200])
+    monkeypatch.setattr(fashn.httpx, "stream", respuestas)
+    monkeypatch.setattr(fashn, "ESPERAS", (0.0, 0.0, 0.0))
+
+    with pytest.raises(ErrorDeMotor, match="404"):
+        fashn._descargar(_ClienteFalso(), {"path": "/tmp/gradio/abc/image.webp"}, tmp_path)
+    assert respuestas.llamadas == 1
+
+
+def test_conectar_se_reintenta_si_la_pasarela_falla(monkeypatch) -> None:
+    from app.probador import fashn
+
+    monkeypatch.setattr(fashn, "ESPERAS", (0.0, 0.0, 0.0))
+    intentos = []
+
+    def cliente(*args, **kwargs):
+        intentos.append(kwargs)
+        if len(intentos) < 3:
+            raise RuntimeError("Server error '502 Bad Gateway' for url '.../config'")
+        return "conectado"
+
+    assert fashn._conectar(cliente) == "conectado"
+    assert len(intentos) == 3
+    assert intentos[0]["download_files"] is False, "la descarga la hace _descargar"
+
+
+def test_un_502_se_explica_como_fallo_de_hugging_face() -> None:
+    mensaje = traducir_error("Server error '502 Bad Gateway' for url 'https://x.hf.space/config'")
+    assert "Hugging Face" in mensaje and "no es tu foto" in mensaje
+
+
+def test_repetir_la_misma_prueba_da_otra_variante(
+    auth_client: TestClient, foto: dict, uploaded_garment: dict, modelo_falso
+) -> None:
+    """Con semilla fija, repetir una prueba devolvía la MISMA imagen.
+
+    Le pasó al usuario: el modelo se inventó un cordón colgando del cuello, y
+    volver a probar daba el mismo cordón. Cada prueba lleva ahora su semilla.
+    """
+    ModeloQueInventa.variantes = []
+    cuerpo = {"person_photo_id": foto["id"], "garment_upload_id": uploaded_garment["id"]}
+    primera = auth_client.post("/api/try-ons", json=cuerpo).json()
+    segunda = auth_client.post("/api/try-ons", json=cuerpo).json()
+
+    assert len(ModeloQueInventa.variantes) == 2
+    assert ModeloQueInventa.variantes[0] != ModeloQueInventa.variantes[1]
+    assert ModeloQueInventa.variantes == [primera["id"], segunda["id"]]

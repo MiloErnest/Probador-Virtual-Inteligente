@@ -7,6 +7,27 @@
 
 ---
 
+## Qué pasó el 2026-09-28
+
+Dos fallos del usuario con una camiseta roja recién retexturizada.
+
+**«502 Bad Gateway».** No era la prenda: la pasarela de Hugging Face falló dos
+veces seguidas. La primera al conectar (sin gasto); la segunda al descargar el
+resultado, con la imagen YA generada y la cuota gastada, y se perdía. Ahora la
+conexión y la descarga se reintentan (tres veces, 2/5/10 s), la descarga la hace
+el propio módulo para poder repetirla sin volver a llamar al modelo, y un 502 se
+explica como fallo de Hugging Face. Repetida la prueba: completa en 40 s. Y el
+archivo que devolvió el Space tenía el MISMO nombre que el perdido: el modelo es
+determinista y la imagen estaba ahí.
+
+**El modelo se inventó un cordón azul y un collar** sobre la camiseta, que no
+están en la prenda enviada. `conservar.py` no puede pararlo: está pintado SOBRE
+la prenda. Se intentó detectarlo por color (lo que no es ni la prenda, ni piel,
+ni estaba en la foto): daba falsos positivos y se dejaba el collar. Lo que sí
+funciona: cada prueba con su semilla, y un botón «Otra variante». Probado desde
+la interfaz: la variante salió sin cordón ni collar, aunque con una mancha
+oscura en el pecho. Cada variante es otra tirada del modelo.
+
 ## Qué pasó el 2026-09-27 (tercera parte)
 
 El usuario puso su token de Hugging Face (cuenta gratuita, token de lectura,
@@ -201,7 +222,7 @@ siendo el catálogo del probador con cámara.
 - [x] Prendas del usuario: subir, listar, ver, borrar. Todo filtrado por token.
 - [x] Pruebas: crear (202 + sondeo), listar, filtrar por prenda, borrar.
 - [x] Techo de gasto por usuario y ventana móvil de 24 h.
-- [x] **98 pruebas automatizadas, en verde.** Y **no pueden gastar dinero ni
+- [x] **103 pruebas automatizadas, en verde.** Y **no pueden gastar dinero ni
       cuota**: un fixture `autouse` fuerza `AI_PROVIDER="none"` y
       `VTO_PROVIDER="none"`.
 - [x] Fotos de persona: subir (enderezada, a 2048 px y sin metadatos), listar,
@@ -283,6 +304,7 @@ Dos cosas que solo se ven con un dibujo real:
 
 | # | Descripción | Impacto | Plan |
 |---|---|---|---|
+| 48 | **El modelo a veces pinta cosas que no están en la prenda**, sobre ella: un cordón y un collar en una camiseta lisa, una mancha oscura en el pecho. `conservar.py` no puede quitarlas porque están dentro de la prenda. | Medio | «Otra variante» vuelve a generarla con otra semilla (gasta una prueba de la cuota). Detectarlo por color se probó y no es fiable. |
 | 42 | ~~**La generación con éxito por la aplicación entera no se ha podido ver todavía.**~~ **RESUELTO** con el token del usuario: su prueba y una repetición por la API salieron completas. Las dos pruebas reales se hicieron con un script, y la conservación se verificó sobre sus salidas; por la API y la interfaz solo se llegó al error de cuota, porque sin cuenta son dos pruebas al día y se gastaron midiendo. | Alto | Con `HF_TOKEN` (cuenta gratuita) o al día siguiente: lanzar una prueba desde `/probador` y mirarla. |
 | 43 | **Cuota gratuita pequeña**: ~2 pruebas al día sin cuenta. Con cuenta gratuita, más, pero sigue siendo una cuota diaria compartida por todos los usuarios de la instalación. | Medio | Suficiente para una demostración. Para un uso real, cuenta PRO de Hugging Face o un servidor con GPU propio. |
 | 44 | **La prenda sale más blanda que el resto de la foto** en fotos grandes: el modelo trabaja a 864 px de alto y la foto se conserva a su resolución. El encuadre de la persona lo reduce, no lo elimina. | Medio | Es el límite del modelo. |

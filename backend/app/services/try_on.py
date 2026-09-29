@@ -200,7 +200,12 @@ class TryOnService:
             )
             self.repository.save(prueba)
 
-            vestida = vestir_persona(persona, recorte, prueba.category)
+            vestida = vestir_persona(
+                persona,
+                recorte,
+                prueba.category,
+                variante=prueba.id,
+            )
         except (ErrorDeMotor, ValidationError) as exc:
             prueba.status = TrialStatus.FAILED
             prueba.error_message = str(exc)

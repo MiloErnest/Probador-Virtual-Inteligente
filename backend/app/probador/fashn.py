@@ -35,6 +35,19 @@ intento devolvió «You have exceeded your ZeroGPU runs limit»). Con una cuenta
 gratuita y su token en `HF_TOKEN`, la cuota es mayor. Ningún error de cuota se
 convierte en un fallo misterioso: se traduce a qué hacer.
 
+LOS 502 DE HUGGING FACE SE REINTENTAN, PERO NUNCA EL MODELO
+------------------------------------------------------------
+La pasarela de Hugging Face devuelve de vez en cuando un «502 Bad Gateway»,
+sobre todo mientras el Space se reinicia. Le pasó al usuario dos veces
+seguidas: una al conectar, y otra —peor— al DESCARGAR el resultado, cuando el
+modelo ya había generado la imagen y gastado cuota. Esa imagen se perdía.
+
+Ahora se reintentan la conexión y la descarga, que no gastan cuota. La
+descarga la hace este módulo y no el cliente de Gradio, precisamente para
+poder repetirla sin volver a llamar al modelo. Lo que NO se reintenta nunca
+es la generación: si falla, puede haber gastado cuota, y repetirla a ciegas
+podría gastarla dos veces.
+
 LA FOTO SALE DE ESTE SERVIDOR
 -----------------------------
 Hacia un Space público de Hugging Face que mantiene FASHN AI. La interfaz lo
@@ -45,8 +58,10 @@ Space haga con sus archivos temporales no depende de este proyecto.
 from __future__ import annotations
 
 import tempfile
+import time
 from pathlib import Path
 
+import httpx
 from PIL import Image
 
 from app.core.config import settings
@@ -64,6 +79,14 @@ CATEGORIAS = {
 #: alto, así que mandar más solo alarga la subida.
 LADO_DE_ENVIO = 1280
 
+#: Base de la semilla; se le suma el número de la prueba.
+SEMILLA = 42
+
+#: Esperas entre intentos, en segundos, al conectar y al descargar el
+#: resultado. Tres intentos más en unos 17 s: lo que suele durar un 502 de la
+#: pasarela mientras el Space se reinicia.
+ESPERAS = (2.0, 5.0, 10.0)
+
 
 class ModeloFashn:
     nombre = "fashn-vton-1.5"
@@ -80,23 +103,7 @@ class ModeloFashn:
             ruta_prenda = carpeta / "prenda.png"
             peticion.prenda.convert("RGB").save(ruta_prenda)
 
-            try:
-                cliente = Client(
-                    settings.VTO_SPACE,
-                    token=settings.HF_TOKEN or None,
-                    verbose=False,
-                    download_files=str(carpeta),
-                    httpx_kwargs={"timeout": 60},
-                    # Sin telemetría: no hace falta, y es una conexión más
-                    # hacia fuera con cada prueba.
-                    analytics_enabled=False,
-                )
-            except Exception as exc:  # noqa: BLE001
-                raise ErrorDeMotor(
-                    "No se ha podido conectar con el modelo de prueba virtual en Hugging "
-                    f"Face ({settings.VTO_SPACE}). Puede estar arrancando o caído; "
-                    "vuelve a intentarlo en un par de minutos."
-                ) from exc
+            cliente = _conectar(Client)
 
             trabajo = cliente.submit(
                 person_image=handle_file(str(ruta_persona)),
@@ -105,9 +112,8 @@ class ModeloFashn:
                 garment_photo_type="flat-lay",
                 num_timesteps=settings.VTO_STEPS,
                 guidance_scale=1.5,
-                # Semilla fija: la misma foto con la misma prenda da siempre lo
-                # mismo, y dos prendas sobre la misma foto son comparables.
-                seed=42,
+                # Una semilla por prueba. Ver `PeticionDePrueba.variante`.
+                seed=SEMILLA + peticion.variante,
                 # Borrar la prenda vieja antes de pintar. Ver la cabecera.
                 segmentation_free=False,
                 api_name="/try_on",
@@ -124,13 +130,82 @@ class ModeloFashn:
             except Exception as exc:  # noqa: BLE001
                 raise ErrorDeMotor(traducir_error(str(exc))) from exc
 
-            ruta = salida.get("path") if isinstance(salida, dict) else salida
+            ruta = _descargar(cliente, salida, carpeta)
             try:
                 imagen = Image.open(ruta)
                 imagen.load()
             except Exception as exc:  # noqa: BLE001
                 raise ErrorDeMotor("El modelo de prueba virtual no ha devuelto una imagen.") from exc
             return imagen.convert("RGB")
+
+
+def _conectar(Client):
+    """El cliente del Space, con reintentos: conectar no gasta cuota."""
+    ultimo: Exception | None = None
+    for espera in (0.0, *ESPERAS):
+        time.sleep(espera)
+        try:
+            return Client(
+                settings.VTO_SPACE,
+                token=settings.HF_TOKEN or None,
+                verbose=False,
+                # El resultado lo descarga `_descargar`, que sabe reintentarlo.
+                download_files=False,
+                httpx_kwargs={"timeout": 60},
+                # Sin telemetría: no hace falta, y es una conexión más hacia
+                # fuera con cada prueba.
+                analytics_enabled=False,
+            )
+        except Exception as exc:  # noqa: BLE001
+            ultimo = exc
+    raise ErrorDeMotor(
+        "No se ha podido conectar con el modelo de prueba virtual en Hugging Face "
+        f"({settings.VTO_SPACE}) tras cuatro intentos. Puede estar arrancando o caído; "
+        "vuelve a intentarlo en un par de minutos."
+    ) from ultimo
+
+
+def _descargar(cliente, salida, carpeta: Path) -> Path:
+    """Trae la imagen generada, reintentando los fallos del servidor.
+
+    Aquí la imagen YA existe y ya se ha pagado su cuota: perderla por un 502
+    de la pasarela sería tirarla. Un 4xx no se reintenta —el archivo no está, y
+    no va a aparecer—; un 5xx o un corte de red, sí.
+    """
+    from gradio_client import utils
+
+    datos = salida if isinstance(salida, dict) else {"path": getattr(salida, "path", salida)}
+    url = datos.get("url") or ""
+    if not url.startswith(("http://", "https://")):
+        url = cliente.src_prefixed + "file=" + utils.encode_file_path(datos["path"])
+    destino = carpeta / "resultado"
+
+    ultimo: Exception | None = None
+    for espera in (0.0, *ESPERAS):
+        time.sleep(espera)
+        try:
+            with httpx.stream(
+                "GET", url, headers=cliente.headers, follow_redirects=True, timeout=60
+            ) as respuesta:
+                respuesta.raise_for_status()
+                with open(destino, "wb") as archivo:
+                    for trozo in respuesta.iter_bytes():
+                        archivo.write(trozo)
+            return destino
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code < 500:
+                raise ErrorDeMotor(
+                    "El modelo ha generado la imagen, pero Hugging Face ya no la tiene "
+                    f"(error {exc.response.status_code}). Vuelve a intentarlo."
+                ) from exc
+            ultimo = exc
+        except httpx.TransportError as exc:
+            ultimo = exc
+    raise ErrorDeMotor(
+        "El modelo ha generado la imagen, pero Hugging Face ha fallado cuatro veces al "
+        "devolverla (su pasarela, no tu foto ni la prenda). Vuelve a intentarlo en un "
+        "par de minutos."
+    ) from ultimo
 
 
 def traducir_error(mensaje: str) -> str:
@@ -150,6 +225,11 @@ def traducir_error(mensaje: str) -> str:
         )
     if "queue" in texto and "full" in texto:
         return "El modelo de prueba virtual tiene la cola llena. Vuelve a intentarlo en unos minutos."
+    if "502" in texto or "503" in texto or "bad gateway" in texto or "unavailable" in texto:
+        return (
+            "Hugging Face ha tenido un fallo momentáneo en su pasarela (no es tu foto "
+            "ni la prenda). Vuelve a intentarlo en un par de minutos."
+        )
     if "sleeping" in texto or "building" in texto or "starting" in texto:
         return "El modelo de prueba virtual se está arrancando. Vuelve a intentarlo en un par de minutos."
     corto = mensaje.strip().splitlines()[0][:200] if mensaje.strip() else "sin detalle"
