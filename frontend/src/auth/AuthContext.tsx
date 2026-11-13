@@ -1,40 +1,38 @@
 /**
  * Sesión del usuario.
  *
- * Único dueño del token en el frontend. Nadie más lo lee ni lo escribe: las
- * páginas preguntan por `user`, y el cliente HTTP recibe el token por
- * `setAuthToken`.
+ * Las páginas preguntan por `user`; nadie más sabe cómo se lleva la sesión.
  *
- * DÓNDE SE GUARDA EL TOKEN
- * ------------------------
- * En `localStorage`, para que recargar la página no cierre la sesión.
+ * DÓNDE ESTÁ LA SESIÓN (Ep5-Hu6)
+ * ------------------------------
+ * En una cookie `httpOnly` que pone el servidor al iniciar sesión. El frontend
+ * NO guarda el token: ni en `localStorage`, que era donde estaba hasta el
+ * 12/11/2026 y donde un fallo de XSS se lo llevaba, ni en memoria. El
+ * navegador manda la cookie solo, y ningún script la puede leer.
  *
- * Riesgo asumido y documentado: un fallo de XSS permitiría leerlo, cosa que
- * no ocurriría con una cookie `httpOnly`. La alternativa segura exige manejar
- * CSRF y cookies entre orígenes distintos (5173 -> 8000), que es bastante más
- * maquinaria de la que este proyecto necesita hoy. Si algún día se despliega
- * de cara al público, este es el primer punto a revisar.
+ * Cerrar sesión pide al servidor que la borre: un script no puede borrar una
+ * cookie `httpOnly`.
  *
  * QUÉ PASA AL RECARGAR
  * --------------------
- * El token guardado no se cree sin más: se valida contra `GET /api/auth/me`.
- * Confiar en él sin comprobarlo pintaría la interfaz como "sesión iniciada"
- * aunque estuviera caducado, y el usuario se encontraría errores por todas
- * partes sin entender por qué.
+ * Se pregunta `GET /api/auth/me`: si la cookie sigue valiendo, ahí está el
+ * usuario; si no, un 401 y se empieza sin sesión. Pintar «sesión iniciada»
+ * sin comprobarlo dejaría al usuario frente a errores sin entender por qué.
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 
-import { setAuthToken, setUnauthorizedHandler } from '@/services/apiClient'
+import { setUnauthorizedHandler } from '@/services/apiClient'
 import * as endpoints from '@/services/endpoints'
 import type { User } from '@/types'
 
-const TOKEN_STORAGE_KEY = 'vfit.access_token'
+/** Donde estaba el token antes del 12/11/2026. Se borra si queda alguno. */
+const TOKEN_ANTIGUO = 'vfit.access_token'
 
 interface AuthContextValue {
   user: User | null
-  /** true mientras se comprueba el token guardado al arrancar. */
+  /** true mientras se comprueba la sesión al arrancar. */
   initialising: boolean
   isAuthenticated: boolean
   login: (email: string, password: string) => Promise<void>
@@ -44,22 +42,11 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-function readStoredToken(): string | null {
+function borrarTokenAntiguo() {
   try {
-    return localStorage.getItem(TOKEN_STORAGE_KEY)
+    localStorage.removeItem(TOKEN_ANTIGUO)
   } catch {
-    // Navegación privada o almacenamiento bloqueado: se sigue sin sesión
-    // persistente en lugar de romper la aplicación entera.
-    return null
-  }
-}
-
-function writeStoredToken(token: string | null) {
-  try {
-    if (token === null) localStorage.removeItem(TOKEN_STORAGE_KEY)
-    else localStorage.setItem(TOKEN_STORAGE_KEY, token)
-  } catch {
-    // Igual que arriba: la sesión funcionará hasta cerrar la pestaña.
+    // Almacenamiento bloqueado: no había nada que borrar.
   }
 }
 
@@ -67,28 +54,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [initialising, setInitialising] = useState(true)
 
+  // Lo que pasa en la pantalla al perder la sesión, sin llamar al servidor:
+  // es lo que hace un 401, cuando la cookie ya no vale.
+  const olvidar = useCallback(() => setUser(null), [])
+
   const logout = useCallback(() => {
-    setAuthToken(null)
-    writeStoredToken(null)
     setUser(null)
+    // Si falla (servidor caído), la cookie caduca sola; la pantalla ya está
+    // sin sesión.
+    endpoints.logout().catch(() => undefined)
   }, [])
 
-  // Un 401 en cualquier petición cierra la sesión. Lo registra el contexto
-  // porque es quien sabe cómo hacerlo; el cliente HTTP solo avisa.
+  // Un 401 en cualquier petición deja la interfaz sin sesión. Lo registra el
+  // contexto porque es quien sabe cómo hacerlo; el cliente HTTP solo avisa.
   useEffect(() => {
-    setUnauthorizedHandler(logout)
+    setUnauthorizedHandler(olvidar)
     return () => setUnauthorizedHandler(null)
-  }, [logout])
+  }, [olvidar])
 
-  // Al arrancar: si hay token guardado, se valida contra el backend.
+  // Al arrancar: ¿hay sesión? Lo dice el servidor, que es quien ve la cookie.
   useEffect(() => {
-    const token = readStoredToken()
-    if (token === null) {
-      setInitialising(false)
-      return
-    }
-
-    setAuthToken(token)
+    borrarTokenAntiguo()
 
     const controller = new AbortController()
     let active = true
@@ -99,10 +85,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (active) setUser(currentUser)
       })
       .catch(() => {
-        // Token caducado o backend caído. En ambos casos se empieza sin
-        // sesión; si el backend está caído, el usuario verá el indicador de
-        // estado en rojo y podrá volver a entrar cuando vuelva.
-        if (active) logout()
+        // Sin sesión, caducada o backend caído: se empieza sin sesión. Si el
+        // backend está caído, el indicador de estado lo dice.
+        if (active) setUser(null)
       })
       .finally(() => {
         if (active) setInitialising(false)
@@ -112,24 +97,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       active = false
       controller.abort()
     }
-  }, [logout])
+  }, [])
 
   const doLogin = useCallback(async (email: string, password: string) => {
-    const { access_token } = await endpoints.login(email, password)
-
-    // El token se activa ANTES de pedir /auth/me: esa petición ya necesita ir
-    // firmada.
-    setAuthToken(access_token)
-    try {
-      const currentUser = await endpoints.fetchCurrentUser()
-      writeStoredToken(access_token)
-      setUser(currentUser)
-    } catch (error) {
-      // Si /auth/me falla justo después de un login correcto, no se guarda
-      // nada: es preferible quedarse sin sesión que con una a medias.
-      setAuthToken(null)
-      throw error
-    }
+    // El servidor deja la cookie; el token del cuerpo no se guarda.
+    await endpoints.login(email, password)
+    setUser(await endpoints.fetchCurrentUser())
   }, [])
 
   const doRegister = useCallback(

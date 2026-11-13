@@ -22,18 +22,18 @@ export class ApiError extends Error {
 }
 
 /**
- * Token de la sesión activa.
+ * LA SESIÓN NO PASA POR AQUÍ (Ep5-Hu6)
+ * ------------------------------------
+ * Hasta el 12/11/2026 este módulo guardaba el token y lo ponía en cada
+ * petición; el token vivía en `localStorage`, al alcance de cualquier script.
+ * Ahora viaja en una cookie `httpOnly` que pone el servidor al iniciar sesión:
+ * el navegador la manda sola (`credentials: 'include'`) y ningún script, este
+ * tampoco, la puede leer.
  *
- * Vive en una variable de módulo, no en el estado de React: `request()` es una
- * función suelta a la que no se le pueden pasar hooks. `AuthContext` es el
- * único que la escribe, mediante `setAuthToken`.
+ * A cambio, cada petición lleva `X-Probador`: el backend la exige en las que
+ * cambian algo y llegan con la cookie. Otra página puede hacer que el navegador
+ * mande la cookie, pero no añadir esa cabecera sin pasar por el CORS.
  */
-let authToken: string | null = null
-
-/** Se llama al iniciar sesión, al restaurarla y al cerrarla (con null). */
-export function setAuthToken(token: string | null) {
-  authToken = token
-}
 
 /**
  * Aviso de que el servidor ha rechazado el token.
@@ -49,7 +49,7 @@ export function setUnauthorizedHandler(handler: (() => void) | null) {
 }
 
 function authHeaders(): Record<string, string> {
-  return authToken ? { Authorization: `Bearer ${authToken}` } : {}
+  return { 'X-Probador': '1' }
 }
 
 function buildUrl(path: string, params?: Record<string, string | number | boolean | undefined>) {
@@ -81,7 +81,9 @@ async function parseError(response: Response): Promise<ApiError> {
 async function request<T>(path: string, init: RequestInit, params?: Parameters<typeof buildUrl>[1]): Promise<T> {
   let response: Response
   try {
-    response = await fetch(buildUrl(path, params), init)
+    // `include`: la cookie de sesión va del puerto 5173 al 8000, que para el
+    // navegador son orígenes distintos.
+    response = await fetch(buildUrl(path, params), { ...init, credentials: 'include' })
   } catch (cause) {
     if (cause instanceof DOMException && cause.name === 'AbortError') throw cause
     // fetch solo rechaza por fallo de red, no por códigos 4xx/5xx.

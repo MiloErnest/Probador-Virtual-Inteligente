@@ -8,7 +8,7 @@ Esto también permite sustituir cualquier pieza en los tests.
 from collections.abc import Callable
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -124,17 +124,37 @@ TryOnServiceDep = Annotated[TryOnService, Depends(get_try_on_service)]
 TryOnRunnerDep = Annotated[Callable[[int], None], Depends(get_try_on_runner)]
 
 
+#: Cookie de la sesión del navegador (Ep5-Hu6). `httpOnly`: ningún script de
+#: la página la puede leer, que era el riesgo del token en `localStorage`.
+COOKIE_DE_SESION = "probador_sesion"
+
+#: Cabecera que el frontend pone en TODAS sus peticiones. Con la sesión en una
+#: cookie, el navegador la manda sola, también si la petición la dispara otra
+#: página (CSRF). Una cabecera propia no la puede añadir otra página sin pasar
+#: por el CORS, que solo admite los orígenes de `CORS_ORIGINS`. Se exige en las
+#: peticiones que cambian algo y llegan con la cookie.
+CABECERA_ANTI_CSRF = "X-Probador"
+
+METODOS_SEGUROS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
 def get_current_user(
-    credentials: CredentialsDep, auth_service: AuthServiceDep
+    request: Request, credentials: CredentialsDep, auth_service: AuthServiceDep
 ) -> User:
-    """Usuario autenticado a partir de la cabecera `Authorization: Bearer`.
+    """Usuario autenticado, por la cabecera `Authorization: Bearer` o por la cookie.
 
     Es el único punto del proyecto que convierte un token en un usuario.
     Declararla en una ruta es lo que la convierte en protegida.
 
-    Responde 401 —nunca 403— tanto si falta el token como si es inválido o
-    ha caducado, siempre con el mismo mensaje: decir *por qué* falló un token
-    solo le sirve a quien está intentando fabricar uno.
+    DOS CAMINOS, UN SOLO TOKEN
+    --------------------------
+    El navegador lleva la sesión en la cookie `httpOnly` (Ep5-Hu6). La cabecera
+    `Bearer` sigue sirviendo a las pruebas, a los scripts y a quien use la API
+    directamente. Si vienen las dos, manda la cabecera.
+
+    Responde 401 —nunca 403— tanto si falta el token como si es inválido, ha
+    caducado o falta la cabecera anti-CSRF, siempre con el mismo mensaje:
+    decir *por qué* falló solo le sirve a quien está intentando colarse.
     """
     unauthorized = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -144,11 +164,20 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    if credentials is None:
+    if credentials is not None:
+        token = credentials.credentials
+    else:
+        token = request.cookies.get(COOKIE_DE_SESION)
+        if token and request.method not in METODOS_SEGUROS and not request.headers.get(
+            CABECERA_ANTI_CSRF
+        ):
+            raise unauthorized
+
+    if not token:
         raise unauthorized
 
     try:
-        return auth_service.resolve_token(credentials.credentials)
+        return auth_service.resolve_token(token)
     except AuthenticationError as exc:
         raise unauthorized from exc
 

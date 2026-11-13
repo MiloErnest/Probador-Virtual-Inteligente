@@ -63,6 +63,17 @@ que se rehace con `alembic upgrade head`: comprueba de paso que las migraciones
 dan el esquema de los modelos. Las 161 pasan (~195 s); `public` no se toca
 (comprobado: sigue con sus 27 telas). Sin la variable, SQLite como siempre.
 
+**Y Ep5-Hu6, la sesión más segura.** El token ya no se guarda en `localStorage`:
+`login` lo deja en una cookie `httpOnly` (SameSite=Lax, ruta `/api`, `Secure`
+en producción) y el frontend no lo guarda en ningún sitio. `POST
+/api/auth/logout` la borra. `get_current_user` sigue siendo el único punto de
+control y acepta la cabecera `Bearer` (pruebas, API) o la cookie; con la cookie,
+lo que cambia algo exige además la cabecera `X-Probador`, que otra web no puede
+añadir sin pasar el CORS (defensa contra CSRF). 6 pruebas nuevas (167).
+Verificado en el navegador: la sesión vuelve con la cookie, el token viejo de
+`localStorage` se borra solo, una prueba de tela se lanza (202) y «Salir» deja
+`/auth/me` en 401. Quien tuviera sesión abierta tiene que volver a entrar una vez.
+
 ---
 
 ## Qué pasó el 2026-11-12
@@ -513,7 +524,7 @@ Dos cosas que solo se ven con un dibujo real:
 | 5 | **El proyecto está dentro de OneDrive.** | Medio | Mover a `C:\dev\` o excluir `node_modules` y `.venv`. |
 | 20 | **Las imágenes de Docker nunca se han construido.** | Medio | `docker compose --profile full up -d --build`. |
 | 8 | Sin límite de peticiones. **Incluye el login.** | Medio | Antes de exponer la aplicación públicamente. |
-| 10 | **El token se guarda en `localStorage`.** | Medio | Primer punto a revisar antes de un despliegue público. |
+| 10 | ~~**El token se guarda en `localStorage`.**~~ **RESUELTO el 12/11/2026 (Ep5-Hu6)**: la sesión del navegador va en una cookie `httpOnly`, SameSite=Lax y `Secure` en producción; «Salir» la borra desde el servidor. Lo que sigue: el JWT no se revoca (si alguien lo copió, vale hasta que caduca). | Bajo | Lista de revocación si algún día hace falta. |
 | 11 | **Cualquier usuario registrado puede dar de alta y editar telas DEL CATÁLOGO** por `/api/fabrics`. No existe la figura de administrador. Las telas propias de cada taller (`/api/my-fabrics`, 12/11/2026) sí son privadas, y por el camino del catálogo no se ven ni se tocan. | Bajo | Columna `is_admin` (historia Ep12-Hu3). |
 | 56 | **Una foto de tela subexpuesta da un mosaico gris.** El motor quita la luz desigual, pero no corrige el balance de blancos de una sola foto: no sabe qué es blanco en ella. | Bajo | Se ve en la vista previa antes de guardar. Una opción «el fondo es blanco o crudo» que use `muestra_estampada(fondo_blanco=True)`. |
 | 14 | **El registro no verifica que el buzón exista.** | Medio | Se resolverá con el acceso mediante Google. |

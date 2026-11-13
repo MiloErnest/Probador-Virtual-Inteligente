@@ -105,7 +105,7 @@ Base `vfit`, rol de aplicación `vfit` / `vfit_dev_password`. Son las mismas
 credenciales que `docker-compose.yml`, a propósito.
 
 Ejecutar pruebas: `pytest` desde `backend/` con el venv activo. Usan SQLite en
-memoria — **no necesitan PostgreSQL levantado**. Son 161: las del contrato de la
+memoria — **no necesitan PostgreSQL levantado**. Son 167: las del contrato de la
 API; en `tests/test_motor.py`, las propiedades medidas del motor — cada una
 es un caso que falló de verdad antes de arreglarse—; en `tests/test_mis_telas.py`,
 una por criterio de aceptación de Ep6-Hu7 a Hu11; y en
@@ -753,6 +753,13 @@ El catálogo (`/api/fabrics`) busca SOLO telas con `owner_id` vacío, y las tela
 propias (`/api/my-fabrics`) SOLO las del usuario del token: una tela de un
 taller no aparece ni se toca por el camino del otro. Al probar, la tela tiene
 que ser del catálogo o del usuario (`FabricRepository.get_visible`).
+
+**La sesión del navegador va en la cookie `httpOnly` `probador_sesion`**
+(Ep5-Hu6, 12/11/2026), no en `localStorage`. `get_current_user` acepta la
+cabecera `Bearer` (manda si viene) o la cookie; con la cookie, un método que no
+sea GET/HEAD/OPTIONS exige la cabecera `X-Probador`, que pone `apiClient.ts` en
+todas sus peticiones: es la defensa contra CSRF. Un endpoint nuevo no tiene que
+hacer nada: basta con depender de `get_current_user`.
 
 Tres reglas al añadir endpoints:
 

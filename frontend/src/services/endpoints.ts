@@ -251,7 +251,12 @@ export function register(name: string, email: string, password: string) {
   return api.post<User>('/users', { name, email, password })
 }
 
-/** Quién soy, según el token actual. Restaura la sesión al cargar. */
+/** Borra la cookie de sesión. La borra el servidor: un script no puede. */
+export function logout() {
+  return api.post<void>('/auth/logout', undefined)
+}
+
+/** Quién soy, según la cookie de sesión. Restaura la sesión al cargar. */
 export function fetchCurrentUser(signal?: AbortSignal) {
   return api.get<User>('/auth/me', { signal })
 }
