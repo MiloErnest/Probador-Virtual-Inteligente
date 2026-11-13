@@ -207,7 +207,7 @@ estás: un `cd backend` cuando ya estás dentro de `backend` falla con
 `No se encuentra la ruta de acceso ...\backend\backend`.
 
 ```powershell
-Set-Location "C:\Users\camil\OneDrive\Desktop\Universidad\ClaudePoryectos\backend"
+Set-Location "C:\Users\camil\OneDrive\Desktop\Universidad\TRAMA\backend"
 ```
 
 Crea el entorno virtual:
@@ -301,7 +301,7 @@ uvicorn app.main:app --reload
 Abre una **segunda terminal** (la del backend sigue ocupada).
 
 ```powershell
-Set-Location "C:\Users\camil\OneDrive\Desktop\Universidad\ClaudePoryectos\frontend"
+Set-Location "C:\Users\camil\OneDrive\Desktop\Universidad\TRAMA\frontend"
 ```
 
 ```powershell
