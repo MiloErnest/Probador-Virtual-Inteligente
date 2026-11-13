@@ -101,6 +101,30 @@ class FabricTrialService:
             )
         )
 
+    def repeat(self, trial_id: int, user_id: int) -> TrialRead:
+        """Vuelve a generar una prueba antigua con el motor de hoy (Ep9-Hu6).
+
+        Una prueba vieja conserva los defectos del motor con que se hizo
+        (limitación #47 de PROJECT_STATUS.md) y no se reescribe: es historial.
+        Repetirla crea OTRA prueba con la misma prenda, la misma tela y la misma
+        repetición, y quedan las dos para compararlas.
+
+        Siempre con el motor por defecto, el que no cuesta dinero, aunque la
+        antigua se hiciera con IA: repetir no puede convertirse en un gasto que
+        nadie pidió. La tela y la prenda se vuelven a comprobar como en `create`:
+        si la tela se retiró, ya no se puede probar.
+        """
+        antigua = self._get_or_fail(trial_id, user_id)
+        return self.create(
+            user_id,
+            TrialCreate(
+                garment_upload_id=antigua.garment_upload_id,
+                fabric_id=antigua.fabric_id,
+                method=None,
+                repeat_across=antigua.repeat_across,
+            ),
+        )
+
     def delete(self, trial_id: int, user_id: int) -> None:
         prueba = self._get_or_fail(trial_id, user_id)
         clave = prueba.output_image_key

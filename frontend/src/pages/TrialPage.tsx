@@ -34,6 +34,7 @@ import { useApi } from '@/hooks/useApi'
 import {
   createTrial,
   deleteTrial,
+  repeatTrial,
   fetchFabricsToTry,
   fetchGarmentUpload,
   fetchTrials,
@@ -131,6 +132,18 @@ export default function TrialPage() {
     }
   }
 
+  // Ep9-Hu6: una prueba antigua se repite con el motor de hoy. La antigua se
+  // queda: la nueva entra la primera y se marca como la más reciente.
+  async function repetir(trialId: number) {
+    setFallo(null)
+    try {
+      const nueva = await repeatTrial(trialId)
+      setPruebas((actuales) => [nueva, ...actuales])
+    } catch (causa) {
+      setFallo(causa instanceof Error ? causa.message : 'No se pudo repetir la prueba.')
+    }
+  }
+
   async function borrar(trialId: number) {
     try {
       await deleteTrial(trialId)
@@ -144,6 +157,23 @@ export default function TrialPage() {
     () => new Map((telas ?? []).map((t) => [t.id, t] as const)),
     [telas],
   )
+
+  // La más reciente de cada tela, solo cuando hay más de una: es la que se
+  // marca, para que al repetir una prueba se sepa cuál es cuál.
+  const masRecientes = useMemo(() => {
+    const ultima = new Map<number, Trial>()
+    const cuantas = new Map<number, number>()
+    for (const p of pruebas) {
+      cuantas.set(p.fabric_id, (cuantas.get(p.fabric_id) ?? 0) + 1)
+      const vista = ultima.get(p.fabric_id)
+      if (!vista || p.created_at > vista.created_at || (p.created_at === vista.created_at && p.id > vista.id)) {
+        ultima.set(p.fabric_id, p)
+      }
+    }
+    return new Set(
+      [...ultima.entries()].filter(([tela]) => (cuantas.get(tela) ?? 0) > 1).map(([, p]) => p.id),
+    )
+  }, [pruebas])
 
   const telasVisibles = useMemo(() => (telas ?? []).filter((t) => t.texture_url && t.active), [telas])
 
@@ -314,6 +344,8 @@ export default function TrialPage() {
                 key={prueba.id}
                 prueba={prueba}
                 tela={porId.get(prueba.fabric_id)}
+                masReciente={masRecientes.has(prueba.id)}
+                onRepetir={repetir}
                 onBorrar={borrar}
               />
             ))}
@@ -327,10 +359,14 @@ export default function TrialPage() {
 function ResultadoDePrueba({
   prueba,
   tela,
+  masReciente,
+  onRepetir,
   onBorrar,
 }: {
   prueba: Trial
   tela: Fabric | undefined
+  masReciente: boolean
+  onRepetir: (id: number) => void
   onBorrar: (id: number) => void
 }) {
   const enCurso = prueba.status === 'pending' || prueba.status === 'processing'
@@ -344,6 +380,10 @@ function ResultadoDePrueba({
             alt={tela?.name ?? 'Resultado'}
             className="h-full w-full object-contain"
           />
+        )}
+
+        {masReciente && (
+          <span className="pill absolute left-2 top-2 bg-paper/90 backdrop-blur">Más reciente</span>
         )}
 
         {enCurso && (
@@ -371,6 +411,17 @@ function ResultadoDePrueba({
               gratis y barato es la que hay que ver de un vistazo. */}
           {prueba.tokens_used !== null && <span>{prueba.tokens_used} tokens</span>}
         </p>
+        <p className="text-[11px] text-ink-60">
+          <time dateTime={prueba.created_at}>
+            {new Date(prueba.created_at).toLocaleString('es', {
+              day: 'numeric',
+              month: 'short',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </time>
+        </p>
 
         {tela?.price_per_meter != null && (
           <p className="text-[11px] text-ink-60">
@@ -393,6 +444,16 @@ function ResultadoDePrueba({
             >
               Probármela
             </Link>
+          )}
+          {!enCurso && (
+            <button
+              type="button"
+              onClick={() => onRepetir(prueba.id)}
+              title="Otra prueba con la misma prenda y la misma tela, con el motor de hoy. Esta se conserva."
+              className="text-[11px] text-ink underline underline-offset-4"
+            >
+              Repetir con el motor de hoy
+            </button>
           )}
           <button
             type="button"

@@ -70,6 +70,35 @@ def create_trial(
     return prueba
 
 
+@router.post(
+    "/{trial_id}/repeat",
+    response_model=TrialRead,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Repetir una prueba antigua con el motor de hoy",
+    description=(
+        "Crea una prueba NUEVA con la misma prenda, la misma tela y la misma "
+        "repetición, siempre con el motor que no cuesta dinero. La antigua no se "
+        "toca. Como `POST /trials`, responde 202 y hay que sondear la nueva."
+    ),
+)
+def repeat_trial(
+    trial_id: int,
+    service: TrialServiceDep,
+    runner: TrialRunnerDep,
+    background: BackgroundTasks,
+    current_user: CurrentUserDep,
+) -> TrialRead:
+    try:
+        prueba = service.repeat(trial_id, current_user.id)
+    except NotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+    background.add_task(runner, prueba.id)
+    return prueba
+
+
 @router.delete(
     "/{trial_id}", response_model=MessageResponse, summary="Borrar una prueba"
 )

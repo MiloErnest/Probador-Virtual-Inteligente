@@ -3,11 +3,11 @@
 > Documento vivo. Se actualiza al cerrar cada etapa.
 
 **Etapa actual:** prueba virtual de telas, bocetos convertidos en prenda con IA, y el probador sobre la foto de una persona.
-**Última actualización:** 2026-11-13
+**Última actualización:** 2026-11-12
 
 ---
 
-## Qué pasó el 2026-11-13: las telas del propio taller (Ep6-Hu7 a Hu11)
+## Qué pasó el 2026-11-12: las telas del propio taller (Ep6-Hu7 a Hu11)
 
 El confeccionista ya puede fotografiar una tela de su taller y probarla sobre
 sus prendas como cualquiera del catálogo. Sin IA generativa: no cuesta nada.
@@ -47,6 +47,15 @@ sus prendas como cualquiera del catálogo. Sin IA generativa: no cuesta nada.
 Lo que queda abierto: el balance de blancos. Una foto subexpuesta da un mosaico
 gris (el floral sale gris; el del catálogo se corrigió con su fondo blanco). Se
 ve en la vista previa, pero no hay opción para corregirlo.
+
+**Y Ep9-Hu6, repetir una prueba antigua con el motor de hoy.** `POST
+/api/trials/{id}/repeat` crea OTRA prueba con la misma prenda, tela y repetición;
+la antigua se conserva. Siempre con el motor gratuito, aunque la antigua fuera
+con IA: repetir no puede ser un gasto que nadie pidió. En la pantalla de
+comparación, cada resultado lleva su fecha, el botón «Repetir con el motor de
+hoy», y la más reciente de cada tela, cuando hay varias, la marca «Más
+reciente». 5 pruebas nuevas (161 en total). Verificado en el navegador con la
+prueba 61: quedan las dos, la nueva primero y marcada.
 
 ---
 
@@ -470,7 +479,7 @@ Dos cosas que solo se ven con un dibujo real:
 | 44 | **La prenda sale más blanda que el resto de la foto** en fotos grandes: el modelo trabaja a 864 px de alto y la foto se conserva a su resolución. El encuadre de la persona lo reduce, no lo elimina. | Medio | Es el límite del modelo. |
 | 45 | **El analizador de personas es de uso no comercial** (pesos derivados de SegFormer de NVIDIA). | Bajo | Vale para el proyecto universitario. Para venderlo, otro analizador. |
 | 46 | **La foto sale del servidor** hacia un Space público de Hugging Face. Se avisa en pantalla antes de subirla, y se guarda aquí sin metadatos. | Medio | Asumido y dicho. La alternativa es alojar el modelo. |
-| 47 | **Las pruebas de tela antiguas siguen con los defectos de su momento** (el vestido negro con los bloques junto al torso). Se decidió no reescribir el historial. Como el probador usa la imagen guardada, una prueba vieja lleva sus defectos a la persona. | Bajo | Repetir la prueba de tela: sale ya con el motor corregido. |
+| 47 | **Las pruebas de tela antiguas siguen con los defectos de su momento** (el vestido negro con los bloques junto al torso). Se decidió no reescribir el historial. Como el probador usa la imagen guardada, una prueba vieja lleva sus defectos a la persona. | Bajo | Desde el 12/11/2026, «Repetir con el motor de hoy» en la comparación (Ep9-Hu6): sale ya con el motor corregido y la antigua se conserva. |
 | 39 | **El aporte visible de la IA al render es pequeño.** Con el bloqueo, la prenda está garantizada, pero de la IA solo entra la textura fina donde coincide. En la prueba real sobre la camiseta coincidió en un 17% — y el modelo había vuelto a devolver la ESPALDA de la camiseta. | Medio | Es el límite de la API: sin condicionamiento estructural no hay más que tomar sin arriesgar la prenda. Un proveedor con ControlNet de profundidad (ver «Próximos pasos») lo cambiaría. |
 | 40 | **Una prueba con IA sobre una foto grande tarda más de un minuto** (71 s en 2048 px). El render determinista ya se optimizó: de 13,5 s a 3,3 s en 3 MP, con el mismo resultado (diferencia máxima de 4 niveles sobre 255). | Bajo | El corte del sondeo se subió a 150 s. Casi todo el minuto es la llamada al modelo. |
 | 41 | **Los mosaicos IA de las telas de demostración viejas exageran la trama** (la franela sale como cestería). | Bajo | Son telas de demostración; las reales de la tienda salen de sus fotos. Rehacer con una instrucción por tipo de tela, o retirarlas. |
@@ -499,7 +508,7 @@ Dos cosas que solo se ven con un dibujo real:
 | 20 | **Las imágenes de Docker nunca se han construido.** | Medio | `docker compose --profile full up -d --build`. |
 | 8 | Sin límite de peticiones. **Incluye el login.** | Medio | Antes de exponer la aplicación públicamente. |
 | 10 | **El token se guarda en `localStorage`.** | Medio | Primer punto a revisar antes de un despliegue público. |
-| 11 | **Cualquier usuario registrado puede dar de alta y editar telas DEL CATÁLOGO** por `/api/fabrics`. No existe la figura de administrador. Las telas propias de cada taller (`/api/my-fabrics`, 13/11/2026) sí son privadas, y por el camino del catálogo no se ven ni se tocan. | Bajo | Columna `is_admin` (historia Ep12-Hu3). |
+| 11 | **Cualquier usuario registrado puede dar de alta y editar telas DEL CATÁLOGO** por `/api/fabrics`. No existe la figura de administrador. Las telas propias de cada taller (`/api/my-fabrics`, 12/11/2026) sí son privadas, y por el camino del catálogo no se ven ni se tocan. | Bajo | Columna `is_admin` (historia Ep12-Hu3). |
 | 56 | **Una foto de tela subexpuesta da un mosaico gris.** El motor quita la luz desigual, pero no corrige el balance de blancos de una sola foto: no sabe qué es blanco en ella. | Bajo | Se ve en la vista previa antes de guardar. Una opción «el fondo es blanco o crudo» que use `muestra_estampada(fondo_blanco=True)`. |
 | 14 | **El registro no verifica que el buzón exista.** | Medio | Se resolverá con el acceso mediante Google. |
 
@@ -585,7 +594,7 @@ Lo que queda de él, por orden:
    reconoce la piel de una figura dibujada antes de usarlo ahí.
 4. **Fotografiar telas reales.** Un cuadrado limpio de cada rollo mejora el
    resultado más que cualquier ajuste del motor, y es gratis. Desde el
-   13/11/2026 lo puede hacer el propio usuario desde «Mis telas».
+   12/11/2026 lo puede hacer el propio usuario desde «Mis telas».
 5. **Probar con prendas, bocetos y personas reales de un taller.** Lo que hay
    está medido contra ocho prendas y dos fotos de persona.
 6. **La conversión prueba→compra.** El Vision Board la pone como métrica y hoy

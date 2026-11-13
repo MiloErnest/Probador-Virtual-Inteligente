@@ -105,7 +105,7 @@ Base `vfit`, rol de aplicación `vfit` / `vfit_dev_password`. Son las mismas
 credenciales que `docker-compose.yml`, a propósito.
 
 Ejecutar pruebas: `pytest` desde `backend/` con el venv activo. Usan SQLite en
-memoria — **no necesitan PostgreSQL levantado**. Son 156: las del contrato de la
+memoria — **no necesitan PostgreSQL levantado**. Son 161: las del contrato de la
 API; en `tests/test_motor.py`, las propiedades medidas del motor — cada una
 es un caso que falló de verdad antes de arreglarse—; en `tests/test_mis_telas.py`,
 una por criterio de aceptación de Ep6-Hu7 a Hu11; y en
@@ -582,7 +582,7 @@ que queda se traslada a la tela nueva.
 15. **Cerrar la junta de un mosaico periódico: desplazar un múltiplo del
     período y cortar por el camino de mínimo error.** Fundir a media anchura
     dejó fantasmales los vichy; fundir con rampa, hojas dobles en las palmeras.
-    **Y el corte entra y sale por la misma columna** (13/11/2026): al cerrar el
+    **Y el corte entra y sale por la misma columna** (12/11/2026): al cerrar el
     segundo eje, un corte que entraba por un sitio y salía por otro reabría la
     junta del primero. Con un estampado de motivos sueltos daba junta 7,4 y los
     motivos partidos; no se había visto porque las telas del catálogo no tienen

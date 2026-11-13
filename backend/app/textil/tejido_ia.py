@@ -389,7 +389,7 @@ def _corte_minimo(coste: np.ndarray) -> np.ndarray:
     imagen, y la primera y la última son vecinas al repetir el mosaico. Si el
     corte entra por un sitio y sale por otro, en las filas de en medio un lado
     del borde viene de la imagen original y el otro de la desplazada: el borde
-    que se acababa de cerrar se vuelve a abrir. Medido el 13/11/2026 con un
+    que se acababa de cerrar se vuelve a abrir. Medido el 12/11/2026 con un
     estampado de círculos sueltos: junta 7,4 y los círculos cortados por la
     mitad al repetir. Se fija la entrada y la salida en la columna que menos
     cuesta en las dos filas extremas.

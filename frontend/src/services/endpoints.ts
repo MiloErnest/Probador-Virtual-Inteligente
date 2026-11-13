@@ -179,6 +179,15 @@ export function createTrial(
   )
 }
 
+/**
+ * Repite una prueba con el motor de hoy: crea OTRA, con la misma prenda, tela y
+ * repetición, y la antigua se conserva. Responde 202 en `pending`, como
+ * `createTrial`. Nunca usa IA, aunque la antigua la usara.
+ */
+export function repeatTrial(id: number, signal?: AbortSignal) {
+  return api.post<Trial>(`/trials/${id}/repeat`, undefined, { signal })
+}
+
 export function deleteTrial(id: number, signal?: AbortSignal) {
   return api.delete<{ message: string }>(`/trials/${id}`, { signal })
 }
