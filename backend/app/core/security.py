@@ -125,3 +125,56 @@ def decode_access_token(token: str) -> int:
         return int(payload["sub"])
     except (KeyError, TypeError, ValueError) as exc:
         raise InvalidTokenError("Token inválido o caducado.") from exc
+
+
+# --- Verificación del correo (Ep5-Hu7) --------------------------------------
+
+#: Un token de verificación NO sirve para entrar, y uno de acceso no sirve para
+#: verificar: `decode_access_token` exige el tipo «access» y este exige el suyo.
+TOKEN_TYPE_VERIFY_EMAIL = "verify_email"
+
+#: Lo que dura el enlace del correo. Dos días dan margen a quien lo abre al día
+#: siguiente; si caduca, se pide otro desde la aplicación.
+VERIFY_EMAIL_EXPIRE_HOURS = 48
+
+
+def create_email_verification_token(user_id: int, email: str) -> str:
+    """Token del enlace de verificación. Lleva el correo que se verifica.
+
+    Con el correo dentro, un enlace emitido para una dirección no verifica otra:
+    si algún día se puede cambiar el correo, los enlaces viejos dejan de valer
+    solos. Sin tabla: la firma ya dice que lo emitimos nosotros.
+    """
+    issued_at = datetime.now(UTC)
+    payload = {
+        "sub": str(user_id),
+        "email": email,
+        "type": TOKEN_TYPE_VERIFY_EMAIL,
+        "iat": issued_at,
+        "exp": issued_at + timedelta(hours=VERIFY_EMAIL_EXPIRE_HOURS),
+    }
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+
+def decode_email_verification_token(token: str) -> tuple[int, str]:
+    """Devuelve `(id_de_usuario, correo)` de un enlace válido.
+
+    Mismas garantías que el token de acceso: algoritmo cerrado, `exp`
+    obligatorio, un único mensaje para cualquier fallo.
+    """
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[JWT_ALGORITHM],
+            options={"require": ["exp", "sub", "email"]},
+        )
+    except jwt.PyJWTError as exc:
+        raise InvalidTokenError("Enlace inválido o caducado.") from exc
+
+    if payload.get("type") != TOKEN_TYPE_VERIFY_EMAIL:
+        raise InvalidTokenError("Enlace inválido o caducado.")
+    try:
+        return int(payload["sub"]), str(payload["email"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise InvalidTokenError("Enlace inválido o caducado.") from exc

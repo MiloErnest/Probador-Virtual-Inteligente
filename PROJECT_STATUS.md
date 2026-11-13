@@ -74,6 +74,23 @@ Verificado en el navegador: la sesión vuelve con la cookie, el token viejo de
 `localStorage` se borra solo, una prueba de tela se lanza (202) y «Salir» deja
 `/auth/me` en 401. Quien tuviera sesión abierta tiene que volver a entrar una vez.
 
+**Y Ep5-Hu7, verificar el correo al registrarse.** `users.email_verified_at`
+(migración `de5d082642e2`; las cuentas que ya existían quedan verificadas, porque
+se crearon sin la regla). Al registrarse se envía un enlace firmado de un solo
+uso: token de tipo «verify_email», con el correo dentro, 48 h, que no sirve
+para entrar (y uno de sesión no sirve para verificar). Lo abre
+`/verificar-correo`, pública. Hasta verificar, la cuenta no puede generar
+prendas con IA (boceto, variante o prueba con IA): 403 con lo que hay que hacer;
+probar telas con el motor gratuito sigue abierto. «Enviarme otro enlace» en el
+perfil, y un aviso en Bocetos. El envío: `smtplib` (sin dependencias), en
+segundo plano; sin `SMTP_HOST` se escribe en el log marcado «CORREO NO
+ENVIADO». 9 pruebas nuevas; `register_and_login` verifica ya cada cuenta con el
+enlace del correo capturado, así que todo el flujo pasa por la API real (176).
+Verificado en el navegador con una cuenta nueva: perfil «No, todavía» →
+reenviar → enlace del log → «Correo confirmado»; el aviso de Bocetos aparece
+sin verificar y no con la cuenta verificada. La cuenta `verificar@example.com`
+quedó SIN verificar a propósito, para las capturas.
+
 ---
 
 ## Qué pasó el 2026-11-12
@@ -527,7 +544,7 @@ Dos cosas que solo se ven con un dibujo real:
 | 10 | ~~**El token se guarda en `localStorage`.**~~ **RESUELTO el 12/11/2026 (Ep5-Hu6)**: la sesión del navegador va en una cookie `httpOnly`, SameSite=Lax y `Secure` en producción; «Salir» la borra desde el servidor. Lo que sigue: el JWT no se revoca (si alguien lo copió, vale hasta que caduca). | Bajo | Lista de revocación si algún día hace falta. |
 | 11 | **Cualquier usuario registrado puede dar de alta y editar telas DEL CATÁLOGO** por `/api/fabrics`. No existe la figura de administrador. Las telas propias de cada taller (`/api/my-fabrics`, 12/11/2026) sí son privadas, y por el camino del catálogo no se ven ni se tocan. | Bajo | Columna `is_admin` (historia Ep12-Hu3). |
 | 56 | **Una foto de tela subexpuesta da un mosaico gris.** El motor quita la luz desigual, pero no corrige el balance de blancos de una sola foto: no sabe qué es blanco en ella. | Bajo | Se ve en la vista previa antes de guardar. Una opción «el fondo es blanco o crudo» que use `muestra_estampada(fondo_blanco=True)`. |
-| 14 | **El registro no verifica que el buzón exista.** | Medio | Se resolverá con el acceso mediante Google. |
+| 14 | ~~**El registro no verifica que el buzón exista.**~~ **RESUELTO el 12/11/2026 (Ep5-Hu7)**, con una condición: sin `SMTP_HOST` en `backend/.env` el correo no sale, y el enlace queda en el registro del servidor. Para enviarlo de verdad hay que configurar una cuenta (Gmail con contraseña de aplicación vale). | Medio | Configurar el SMTP. Las cuentas de Google, cuando exista Ep5-Hu5, entrarán ya verificadas. |
 
 ---
 

@@ -34,7 +34,9 @@ que ningún test escriba en `backend/storage/`.
 """
 
 import os
+import re
 from collections.abc import Generator
+from urllib.parse import unquote
 from pathlib import Path
 
 import pytest
@@ -43,7 +45,7 @@ from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.api.deps import get_sketch_runner, get_trial_runner, get_try_on_runner
+from app.api.deps import get_correo, get_sketch_runner, get_trial_runner, get_try_on_runner
 from app.core.config import settings
 from app.core.database import get_session
 from app.main import app
@@ -228,6 +230,11 @@ def client(db_session: Session, storage: Storage) -> Generator[TestClient, None,
 
     app.dependency_overrides[get_sketch_runner] = lambda: generar_prenda_de_boceto
 
+    # Ningún test manda un correo de verdad: los correos quedan en BUZON, y de
+    # ahí `register_and_login` saca el enlace para verificar la cuenta.
+    BUZON.clear()
+    app.dependency_overrides[get_correo] = lambda: CorreoDePrueba()
+
     with TestClient(app) as test_client:
         yield test_client
 
@@ -246,19 +253,48 @@ REGISTERED_USER = {
 }
 
 
+#: Los correos que «se enviaron» durante el test: (destino, asunto, texto).
+BUZON: list[tuple[str, str, str]] = []
+
+
+class CorreoDePrueba:
+    def enviar(self, destino: str, asunto: str, texto: str) -> None:
+        BUZON.append((destino, asunto, texto))
+
+
+def enlace_de_verificacion(email: str) -> str:
+    """El token del último correo de verificación enviado a `email`."""
+    for destino, _asunto, texto in reversed(BUZON):
+        if destino == email:
+            encontrado = re.search(r"/verificar-correo\?token=(\S+)", texto)
+            assert encontrado, texto
+            return unquote(encontrado.group(1))
+    raise AssertionError(f"No se envió ningún correo a {email}")
+
+
 def register_and_login(
-    client: TestClient, **overrides: str
+    client: TestClient, *, verificar: bool = True, **overrides: str
 ) -> tuple[dict[str, object], str]:
     """Registra un usuario y devuelve `(usuario, token)`.
 
     Recorre los endpoints reales en lugar de insertar en la base y firmar un
     token a mano: así la prueba también verifica que registro y login encajan
     entre sí, que es donde suelen aparecer los fallos.
+
+    Por defecto confirma también el correo (Ep5-Hu7), con el enlace del correo
+    que el registro «envía» al buzón de prueba: sin eso, nada de lo que usa IA
+    funcionaría. `verificar=False` deja la cuenta como recién creada.
     """
     payload = {**REGISTERED_USER, **overrides}
 
     created = client.post("/api/users", json=payload)
     assert created.status_code == 201, created.text
+
+    if verificar:
+        verificada = client.post(
+            "/api/auth/verify-email", json={"token": enlace_de_verificacion(payload["email"])}
+        )
+        assert verificada.status_code == 200, verificada.text
 
     logged_in = client.post(
         "/api/auth/login",

@@ -59,6 +59,23 @@ class Settings(BaseSettings):
     # lista separada por comas revienta con SettingsError.
     CORS_ORIGINS: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
 
+    # --- Correo: el enlace de verificación (Ep5-Hu7) ---
+    #
+    # Sin SMTP_HOST no se envía nada: el enlace se escribe en el registro del
+    # servidor, para poder verificar una cuenta en local. Con él, se envía por
+    # SMTP con STARTTLS. Con Gmail: smtp.gmail.com, puerto 587, el correo como
+    # usuario y una «contraseña de aplicación» (no la de la cuenta), que se
+    # crea en la cuenta de Google con la verificación en dos pasos activada.
+    # La contraseña, SIEMPRE en el .env.
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    #: Remitente. Vacío: el mismo SMTP_USER.
+    MAIL_FROM: str = ""
+    #: Dónde abre el enlace del correo: la aplicación web, no la API.
+    FRONTEND_URL: str = "http://localhost:5173"
+
     # --- Almacenamiento de imágenes ---
     STORAGE_DIR: Path = BACKEND_DIR / "storage"
     MEDIA_URL_PATH: str = "/media"

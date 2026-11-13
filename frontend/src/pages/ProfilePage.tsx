@@ -6,13 +6,13 @@
  * backend responde y si la base de datos está levantada.
  */
 
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { useAuth } from '@/auth/AuthContext'
-import { ErrorBlock, LoadingBlock } from '@/components/StateBlocks'
+import { ErrorBlock, LoadingBlock, Notice } from '@/components/StateBlocks'
 import { useApi } from '@/hooks/useApi'
-import { fetchHealth } from '@/services/endpoints'
+import { fetchHealth, resendVerification } from '@/services/endpoints'
 
 export default function ProfilePage() {
   const { user, logout } = useAuth()
@@ -20,6 +20,22 @@ export default function ProfilePage() {
 
   const fetcher = useCallback((signal: AbortSignal) => fetchHealth(signal), [])
   const { data, loading, error } = useApi(fetcher)
+
+  // Ep5-Hu7: sin el correo confirmado no se generan prendas con IA.
+  const [reenvio, setReenvio] = useState<{ ok: boolean; texto: string } | null>(null)
+  const [reenviando, setReenviando] = useState(false)
+
+  async function reenviar() {
+    setReenviando(true)
+    try {
+      const { message } = await resendVerification()
+      setReenvio({ ok: true, texto: message })
+    } catch (causa) {
+      setReenvio({ ok: false, texto: causa instanceof Error ? causa.message : 'No se pudo enviar.' })
+    } finally {
+      setReenviando(false)
+    }
+  }
 
   function salir() {
     logout()
@@ -42,9 +58,29 @@ export default function ProfilePage() {
             filas={[
               ['Nombre', user.name],
               ['Correo electrónico', user.email],
+              ['Correo confirmado', user.email_verified ? 'Sí' : 'No, todavía'],
               ['Cuenta creada', new Date(user.created_at).toLocaleDateString('es')],
             ]}
           />
+        )}
+
+        {user && !user.email_verified && (
+          <div className="mt-6 space-y-3">
+            <Notice title="Confirma tu correo">
+              <p>
+                Te enviamos un enlace a {user.email} al registrarte. Hasta abrirlo puedes probar
+                telas, pero no generar prendas con IA a partir de tus bocetos.
+              </p>
+            </Notice>
+            <button type="button" className="btn-ghost" onClick={reenviar} disabled={reenviando}>
+              {reenviando ? 'Enviando…' : 'Enviarme otro enlace'}
+            </button>
+            {reenvio && (
+              <p className="text-xs text-ink-60" role="status">
+                {reenvio.ok ? reenvio.texto : `No se pudo: ${reenvio.texto}`}
+              </p>
+            )}
+          </div>
         )}
 
         <div className="mt-6">
@@ -52,8 +88,9 @@ export default function ProfilePage() {
             Cerrar sesión
           </button>
           <p className="mt-3 max-w-lg text-xs leading-relaxed text-ink-60">
-            Cerrar sesión descarta el token en este navegador. No hay lista de revocación en el
-            servidor, así que el token seguiría siendo válido hasta caducar.
+            Cerrar sesión borra la cookie de la sesión en este navegador. No hay lista de
+            revocación en el servidor: si alguien hubiera copiado el token, seguiría valiendo
+            hasta caducar.
           </p>
         </div>
       </section>

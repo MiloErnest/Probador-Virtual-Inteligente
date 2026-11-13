@@ -34,6 +34,7 @@ from app.repositories.garment_upload import GarmentUploadRepository
 from app.schemas.garment_upload import GarmentUploadRead
 from app.services.exceptions import NotFoundError, ValidationError
 from app.services.images import validate_image
+from app.services.user import exigir_correo_verificado
 from app.services.storage import FOLDER_MASKS, FOLDER_UPLOADS, Storage
 from app.textil import ErrorDeMotor, boceto_ia, segmentar_prenda
 
@@ -63,7 +64,13 @@ class GarmentUploadService:
         kind: GarmentKind,
         content: bytes,
         max_bytes: int,
+        correo_verificado: bool,
     ) -> GarmentUploadRead:
+        # Un boceto se genera con IA, y eso exige el correo verificado (Ep5-Hu7).
+        # Antes de leer nada: no hay que procesar una imagen que no se va a usar.
+        if kind is GarmentKind.SKETCH:
+            exigir_correo_verificado(correo_verificado)
+
         extension = validate_image(content, max_bytes=max_bytes)
 
         try:
@@ -100,7 +107,9 @@ class GarmentUploadService:
         )
         return self.to_read(upload)
 
-    def otra_variante(self, upload_id: int, user_id: int) -> GarmentUploadRead:
+    def otra_variante(
+        self, upload_id: int, user_id: int, *, correo_verificado: bool
+    ) -> GarmentUploadRead:
         """Vuelve a generar la prenda de un boceto. Cada llamada se cobra.
 
         Si la prenda falló y no tiene nada colgando, se reintenta sobre la
@@ -115,6 +124,7 @@ class GarmentUploadService:
         if upload.status in (GarmentStatus.PENDING, GarmentStatus.PROCESSING):
             raise ValidationError("Esta prenda todavía se está generando. Espera a que termine.")
 
+        exigir_correo_verificado(correo_verificado)
         self._comprobar_techo_de_gasto(user_id)
 
         if upload.status is GarmentStatus.FAILED and not self.repository.tiene_pruebas(upload.id):

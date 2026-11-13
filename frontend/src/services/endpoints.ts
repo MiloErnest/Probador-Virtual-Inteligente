@@ -251,6 +251,16 @@ export function register(name: string, email: string, password: string) {
   return api.post<User>('/users', { name, email, password })
 }
 
+/** Confirma el correo con el token del enlace. Público: puede no haber sesión. */
+export function verifyEmail(token: string) {
+  return api.post<User>('/auth/verify-email', { token })
+}
+
+/** Pide otro enlace de verificación al correo de la cuenta. */
+export function resendVerification() {
+  return api.post<{ message: string }>('/auth/resend-verification', undefined)
+}
+
 /** Borra la cookie de sesión. La borra el servidor: un script no puede. */
 export function logout() {
   return api.post<void>('/auth/logout', undefined)

@@ -24,6 +24,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 
+import { useAuth } from '@/auth/AuthContext'
 import { EmptyBlock, ErrorBlock, LoadingBlock, Notice } from '@/components/StateBlocks'
 import { useApi } from '@/hooks/useApi'
 import {
@@ -44,6 +45,9 @@ const soloBocetos = (prendas: GarmentUpload[]) => prendas.filter((p) => p.kind =
 export default function BocetosPage() {
   const fetcher = useCallback((signal: AbortSignal) => fetchGarmentUploads(signal), [])
   const { data, loading, error } = useApi(fetcher)
+  // Ep5-Hu7: el servidor rechaza generar con IA sin el correo confirmado. Se
+  // avisa antes de que el usuario suba nada.
+  const { user } = useAuth()
 
   const [bocetos, setBocetos] = useState<GarmentUpload[]>([])
   const [nombre, setNombre] = useState('')
@@ -149,6 +153,19 @@ export default function BocetosPage() {
           </p>
         </div>
       </header>
+
+      {user && !user.email_verified && (
+        <Notice title="Confirma tu correo para generar prendas">
+          <p>
+            Generar una prenda con IA exige haber confirmado tu correo. Abre el enlace que te
+            enviamos al registrarte, o{' '}
+            <Link to="/perfil" className="font-medium underline underline-offset-4">
+              pide otro desde tu perfil
+            </Link>
+            .
+          </p>
+        </Notice>
+      )}
 
       {fallo && <ErrorBlock title="Algo ha fallado" detail={fallo} />}
 

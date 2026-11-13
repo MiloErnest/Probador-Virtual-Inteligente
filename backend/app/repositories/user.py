@@ -28,3 +28,9 @@ class UserRepository:
         self.session.commit()
         self.session.refresh(user)
         return user
+
+    def save(self, user: User) -> User:
+        self.session.add(user)
+        self.session.commit()
+        self.session.refresh(user)
+        return user

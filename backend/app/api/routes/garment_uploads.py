@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.models.garment_upload import GarmentKind, GarmentStatus
 from app.schemas.common import MessageResponse
 from app.schemas.garment_upload import GarmentUploadRead
-from app.services.exceptions import NotFoundError, ValidationError
+from app.services.exceptions import EmailNotVerifiedError, NotFoundError, ValidationError
 
 router = APIRouter(prefix="/garment-uploads", tags=["prendas del usuario"])
 
@@ -69,7 +69,10 @@ async def create_upload(
             kind=kind,
             content=contenido,
             max_bytes=settings.max_upload_bytes,
+            correo_verificado=current_user.email_verified,
         )
+    except EmailNotVerifiedError as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
     except ValidationError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
 
@@ -98,7 +101,11 @@ def create_variant(
     current_user: CurrentUserDep,
 ) -> GarmentUploadRead:
     try:
-        prenda = service.otra_variante(upload_id, current_user.id)
+        prenda = service.otra_variante(
+            upload_id, current_user.id, correo_verificado=current_user.email_verified
+        )
+    except EmailNotVerifiedError as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
     except NotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
     except ValidationError as exc:

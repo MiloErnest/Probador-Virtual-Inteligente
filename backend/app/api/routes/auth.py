@@ -19,13 +19,21 @@ hay lista de revocación. Lo que sí garantiza es que el navegador ya no lo
 manda.
 """
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Response, status
 
-from app.api.deps import COOKIE_DE_SESION, AuthServiceDep, CurrentUserDep
+from app.api.deps import (
+    COOKIE_DE_SESION,
+    AuthServiceDep,
+    CorreoDep,
+    CurrentUserDep,
+    UserServiceDep,
+)
 from app.core.config import settings
 from app.schemas.auth import LoginRequest, TokenResponse
-from app.schemas.user import UserRead
-from app.services.exceptions import AuthenticationError
+from app.schemas.common import MessageResponse
+from app.schemas.user import UserRead, VerifyEmailRequest
+from app.services.correo import enviar_verificacion
+from app.services.exceptions import AuthenticationError, ValidationError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -87,6 +95,49 @@ def logout() -> Response:
         secure=settings.ENVIRONMENT == "production",
     )
     return respuesta
+
+
+@router.post(
+    "/verify-email",
+    response_model=UserRead,
+    summary="Confirmar el correo con el enlace recibido",
+    description=(
+        "Público: quien abre el enlace puede no tener la sesión iniciada en ese "
+        "navegador. El token del enlace ya dice qué cuenta es, y abrirlo dos veces "
+        "no falla."
+    ),
+    responses={422: {"description": "Enlace inválido o caducado"}},
+)
+def verify_email(payload: VerifyEmailRequest, service: UserServiceDep) -> UserRead:
+    try:
+        return UserRead.model_validate(service.verify_email(payload.token))
+    except ValidationError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+
+@router.post(
+    "/resend-verification",
+    response_model=MessageResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Pedir otro enlace para confirmar el correo",
+)
+def resend_verification(
+    current_user: CurrentUserDep,
+    service: UserServiceDep,
+    correo: CorreoDep,
+    background: BackgroundTasks,
+) -> MessageResponse:
+    if current_user.email_verified:
+        return MessageResponse(message="Tu correo ya está confirmado.")
+    background.add_task(
+        enviar_verificacion,
+        correo,
+        current_user.email,
+        current_user.name,
+        service.verification_link(current_user),
+        service.verification_hours(),
+    )
+    return MessageResponse(message=f"Te hemos enviado otro enlace a {current_user.email}.")
 
 
 @router.get(

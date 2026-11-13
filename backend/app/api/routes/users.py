@@ -10,9 +10,10 @@ justificara. Volverá el día que haya un panel que realmente lo necesite, y
 entonces con el control de acceso que corresponda.
 """
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 
-from app.api.deps import CurrentUserDep, UserServiceDep
+from app.api.deps import CorreoDep, CurrentUserDep, UserServiceDep
+from app.services.correo import enviar_verificacion
 from app.schemas.user import UserCreate, UserRead
 from app.services.exceptions import ConflictError
 
@@ -25,11 +26,23 @@ router = APIRouter(prefix="/users", tags=["users"])
     status_code=status.HTTP_201_CREATED,
     summary="Registrar un usuario",
 )
-def create_user(payload: UserCreate, service: UserServiceDep) -> UserRead:
+def create_user(
+    payload: UserCreate, service: UserServiceDep, correo: CorreoDep, background: BackgroundTasks
+) -> UserRead:
     try:
         user = service.register(payload)
     except ConflictError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    # El enlace de verificación sale en segundo plano (Ep5-Hu7): un servidor de
+    # correo lento no retrasa el registro, y si falla se pide otro después.
+    background.add_task(
+        enviar_verificacion,
+        correo,
+        user.email,
+        user.name,
+        service.verification_link(user),
+        service.verification_hours(),
+    )
     return UserRead.model_validate(user)
 
 

@@ -26,6 +26,8 @@ export interface User {
   name: string
   email: string
   is_active: boolean
+  /** Si confirmó su correo. Sin él no puede generar prendas con IA (Ep5-Hu7). */
+  email_verified: boolean
   created_at: string
   updated_at: string
 }

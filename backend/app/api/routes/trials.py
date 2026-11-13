@@ -9,7 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 from app.api.deps import CurrentUserDep, TrialRunnerDep, TrialServiceDep
 from app.schemas.common import MessageResponse
 from app.schemas.fabric_trial import TrialCreate, TrialRead
-from app.services.exceptions import NotFoundError, ValidationError
+from app.services.exceptions import EmailNotVerifiedError, NotFoundError, ValidationError
 
 router = APIRouter(prefix="/trials", tags=["pruebas de tela"])
 
@@ -60,7 +60,11 @@ def create_trial(
     current_user: CurrentUserDep,
 ) -> TrialRead:
     try:
-        prueba = service.create(current_user.id, payload)
+        prueba = service.create(
+            current_user.id, payload, correo_verificado=current_user.email_verified
+        )
+    except EmailNotVerifiedError as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
     except NotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
     except ValidationError as exc:

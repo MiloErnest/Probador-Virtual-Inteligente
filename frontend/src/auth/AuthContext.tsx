@@ -38,6 +38,8 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>
   register: (name: string, email: string, password: string) => Promise<void>
   logout: () => void
+  /** Vuelve a preguntar quién soy: tras verificar el correo, por ejemplo. */
+  refreshUser: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -105,6 +107,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(await endpoints.fetchCurrentUser())
   }, [])
 
+  const refreshUser = useCallback(async () => {
+    try {
+      setUser(await endpoints.fetchCurrentUser())
+    } catch {
+      // Sin sesión en este navegador: no hay nada que refrescar.
+    }
+  }, [])
+
   const doRegister = useCallback(
     async (name: string, email: string, password: string) => {
       await endpoints.register(name, email, password)
@@ -123,8 +133,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login: doLogin,
       register: doRegister,
       logout,
+      refreshUser,
     }),
-    [user, initialising, doLogin, doRegister, logout],
+    [user, initialising, doLogin, doRegister, logout, refreshUser],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -26,6 +26,7 @@ from app.repositories.fabric_trial import FabricTrialRepository
 from app.repositories.garment_upload import GarmentUploadRepository
 from app.schemas.fabric_trial import TrialCreate, TrialRead
 from app.services.exceptions import NotFoundError, ValidationError
+from app.services.user import exigir_correo_verificado
 from app.services.storage import FOLDER_TRIALS, Storage
 from app.textil import ErrorDeMotor, PeticionDeTela, motor_para
 
@@ -63,7 +64,7 @@ class FabricTrialService:
 
     # --- Comandos ---
 
-    def create(self, user_id: int, data: TrialCreate) -> TrialRead:
+    def create(self, user_id: int, data: TrialCreate, *, correo_verificado: bool) -> TrialRead:
         prenda = self.uploads.get_for_user(data.garment_upload_id, user_id)
         if prenda is None:
             raise NotFoundError(f"No existe la prenda {data.garment_upload_id}.")
@@ -88,6 +89,7 @@ class FabricTrialService:
             )
 
         if metodo is TrialMethod.AI:
+            exigir_correo_verificado(correo_verificado)
             self._comprobar_techo_de_gasto(user_id)
 
         return self.to_read(
@@ -123,6 +125,9 @@ class FabricTrialService:
                 method=None,
                 repeat_across=antigua.repeat_across,
             ),
+            # Repetir nunca usa IA (`method=None` es el motor gratuito), así que
+            # la verificación del correo no llega a mirarse.
+            correo_verificado=False,
         )
 
     def delete(self, trial_id: int, user_id: int) -> None:

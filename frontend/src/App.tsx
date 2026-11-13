@@ -12,6 +12,7 @@ import ProfilePage from '@/pages/ProfilePage'
 import RegisterPage from '@/pages/RegisterPage'
 import TallerPage from '@/pages/TallerPage'
 import TrialPage from '@/pages/TrialPage'
+import VerificarCorreoPage from '@/pages/VerificarCorreoPage'
 
 export default function App() {
   return (
@@ -24,6 +25,8 @@ export default function App() {
           <Route path="telas" element={<FabricsPage />} />
           <Route path="entrar" element={<LoginPage />} />
           <Route path="registro" element={<RegisterPage />} />
+          {/* El enlace del correo: se abre a menudo en otro dispositivo, sin sesión. */}
+          <Route path="verificar-correo" element={<VerificarCorreoPage />} />
 
           {/* Requieren sesión. El backend las protege igualmente; esto solo
               evita enseñar una pantalla que iba a fallar. */}

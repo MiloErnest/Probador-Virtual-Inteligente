@@ -30,3 +30,12 @@ class AuthenticationError(DomainError):
     mensaje. Distinguirlos en la respuesta permitiría averiguar qué correos
     están registrados probando el formulario de acceso.
     """
+
+
+class EmailNotVerifiedError(DomainError):
+    """La cuenta existe y es suya, pero aún no ha verificado el correo (Ep5-Hu7).
+
+    Se traduce a 403: aquí no hay nada que ocultar —es el propio usuario
+    preguntando por lo suyo— y 403 es lo que significa «sé quién eres y aún
+    no puedes».
+    """

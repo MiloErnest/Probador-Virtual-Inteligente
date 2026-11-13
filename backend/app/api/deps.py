@@ -21,6 +21,7 @@ from app.repositories.person_photo import PersonPhotoRepository
 from app.repositories.try_on import TryOnRepository
 from app.repositories.user import UserRepository
 from app.services.auth import AuthService
+from app.services.correo import Correo, correo_configurado
 from app.services.exceptions import AuthenticationError
 from app.services.fabric import FabricService
 from app.services.fabric_trial import FabricTrialService
@@ -45,6 +46,11 @@ CredentialsDep = Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_s
 
 def get_user_service(session: SessionDep) -> UserService:
     return UserService(UserRepository(session))
+
+
+def get_correo() -> Correo:
+    """Cómo sale un correo. Inyectable: los tests lo sustituyen para leer el enlace."""
+    return correo_configurado()
 
 
 def get_auth_service(session: SessionDep) -> AuthService:
@@ -111,6 +117,7 @@ def get_try_on_runner() -> Callable[[int], None]:
 
 
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
+CorreoDep = Annotated[Correo, Depends(get_correo)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 FabricServiceDep = Annotated[FabricService, Depends(get_fabric_service)]
 GarmentUploadServiceDep = Annotated[

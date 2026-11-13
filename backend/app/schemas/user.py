@@ -23,5 +23,13 @@ class UserRead(BaseModel):
     name: str
     email: EmailStr
     is_active: bool
+    #: Si confirmó su correo (Ep5-Hu7). Sin él no puede generar prendas con IA.
+    email_verified: bool = False
     created_at: datetime
     updated_at: datetime
+
+
+class VerifyEmailRequest(BaseModel):
+    """El token del enlace que llegó por correo."""
+
+    token: str = Field(min_length=10, max_length=2048)

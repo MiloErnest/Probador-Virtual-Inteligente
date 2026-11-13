@@ -105,7 +105,7 @@ Base `vfit`, rol de aplicación `vfit` / `vfit_dev_password`. Son las mismas
 credenciales que `docker-compose.yml`, a propósito.
 
 Ejecutar pruebas: `pytest` desde `backend/` con el venv activo. Usan SQLite en
-memoria — **no necesitan PostgreSQL levantado**. Son 167: las del contrato de la
+memoria — **no necesitan PostgreSQL levantado**. Son 176: las del contrato de la
 API; en `tests/test_motor.py`, las propiedades medidas del motor — cada una
 es un caso que falló de verdad antes de arreglarse—; en `tests/test_mis_telas.py`,
 una por criterio de aceptación de Ep6-Hu7 a Hu11; y en
@@ -760,6 +760,14 @@ cabecera `Bearer` (manda si viene) o la cookie; con la cookie, un método que no
 sea GET/HEAD/OPTIONS exige la cabecera `X-Probador`, que pone `apiClient.ts` en
 todas sus peticiones: es la defensa contra CSRF. Un endpoint nuevo no tiene que
 hacer nada: basta con depender de `get_current_user`.
+
+**Sin el correo verificado no se genera con IA** (Ep5-Hu7). La regla está en
+`app/services/user.py::exigir_correo_verificado`, y la llaman los servicios en
+los tres sitios que cobran (boceto, variante, prueba con IA); la ruta solo les
+pasa `correo_verificado=current_user.email_verified` y traduce el error a 403.
+Un camino nuevo que genere con IA tiene que llamarla. En los tests,
+`register_and_login` verifica la cuenta con el enlace del correo capturado en
+`BUZON`; `verificar=False` la deja recién creada.
 
 Tres reglas al añadir endpoints:
 
