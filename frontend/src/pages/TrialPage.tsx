@@ -30,6 +30,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { EmptyBlock, ErrorBlock, LoadingBlock, Notice } from '@/components/StateBlocks'
+import { useAncla } from '@/hooks/useAncla'
 import { useApi } from '@/hooks/useApi'
 import {
   createTrial,
@@ -76,6 +77,10 @@ export default function TrialPage() {
   useEffect(() => {
     if (pruebasIniciales) setPruebas(pruebasIniciales)
   }, [pruebasIniciales])
+
+  // `/taller/4#comparar` lleva directo a la comparación, que va debajo de las
+  // telas: se salta cuando las telas y las pruebas ya están pintadas.
+  useAncla(Boolean(telas) && Boolean(pruebasIniciales))
 
   const enMarcha = useMemo(
     () => pruebas.some((p) => p.status === 'pending' || p.status === 'processing'),
@@ -292,7 +297,7 @@ export default function TrialPage() {
       </section>
       )}
 
-      <section className="space-y-4">
+      <section id="comparar" className="scroll-mt-24 space-y-4">
         <div className="flex items-baseline justify-between gap-4">
           <h2 className="rotulo">Comparar</h2>
           {enMarcha && <span className="text-xs text-ink-60">Generando…</span>}

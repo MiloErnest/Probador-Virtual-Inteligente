@@ -16,6 +16,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '@/auth/AuthContext'
 import MisTelas from '@/components/MisTelas'
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '@/components/StateBlocks'
+import { useAncla } from '@/hooks/useAncla'
 import { useApi } from '@/hooks/useApi'
 import { fetchFabrics } from '@/services/endpoints'
 import { FABRIC_PATTERN_LABELS, type Fabric, type FabricPattern } from '@/types'
@@ -31,6 +32,9 @@ export default function FabricsPage() {
     [pattern],
   )
   const { data, loading, error, reload } = useApi(fetcher, [pattern])
+  // `/telas#mis-telas` (el enlace «Añadir mi tela»): «Mis telas» va DEBAJO del
+  // catálogo, así que se salta cuando el catálogo ya ocupa su sitio.
+  useAncla(!loading && data !== null)
 
   return (
     <div className="wrap space-y-10">

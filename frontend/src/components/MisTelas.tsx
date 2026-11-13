@@ -99,7 +99,7 @@ export default function MisTelas() {
     <section className="space-y-6" aria-labelledby="mis-telas">
       <div className="border-b border-ink-10 pb-6">
         <p className="rotulo">Tu taller</p>
-        <h2 id="mis-telas" className="mt-2 font-display text-2xl">
+        <h2 id="mis-telas" className="mt-2 scroll-mt-28 font-display text-2xl">
           Mis telas
         </h2>
         <p className="mt-2 max-w-xl text-sm leading-relaxed text-ink-60">
