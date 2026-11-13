@@ -9,19 +9,37 @@ tarda menos de un segundo.
 Limitación conocida y aceptada: SQLite no es PostgreSQL. No se validan tipos
 específicos de PG, constraints avanzadas ni comportamiento concurrente. Es
 asumible mientras el esquema sea simple y portable (por eso los enums se
-declaran con `native_enum=False`). Cuando aparezcan consultas dependientes de
-PostgreSQL habrá que añadir una base de pruebas real.
+declaran con `native_enum=False`).
+
+TAMBIÉN CONTRA POSTGRESQL (Ep2-Hu9)
+-----------------------------------
+Con la variable de entorno `TEST_DATABASE_URL` apuntando a una base
+PostgreSQL, la suite corre contra ella:
+
+    $env:TEST_DATABASE_URL = "postgresql+psycopg://vfit:vfit_dev_password@localhost:5432/vfit"
+    pytest
+
+Todo ocurre en un ESQUEMA propio, `pruebas_automaticas`, que se borra y se
+rehace al empezar: los datos de `public` no se tocan, así que puede apuntar a
+la base de desarrollo. Va en un esquema y no en una base aparte porque el rol
+`vfit` no puede crear bases, y sí esquemas en la suya.
+
+El esquema se construye con `alembic upgrade head`, no con `create_all`: así
+la misma pasada comprueba que las migraciones dan el esquema que esperan los
+modelos. Entre prueba y prueba se vacían las tablas (`TRUNCATE`), que es mucho
+más rápido que rehacerlas.
 
 El almacenamiento también se sustituye por un directorio temporal, de modo
 que ningún test escriba en `backend/storage/`.
 """
 
+import os
 from collections.abc import Generator
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -65,8 +83,66 @@ def sin_gastar_dinero(monkeypatch):
     monkeypatch.setattr(settings, "HF_TOKEN", "")
 
 
+TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "").strip()
+
+#: El esquema de PostgreSQL donde corren las pruebas. Se BORRA al empezar: no
+#: puede ser `public`, donde están los datos de desarrollo.
+ESQUEMA_DE_PRUEBAS = "pruebas_automaticas"
+
+
+def _url_en_el_esquema(url: str) -> str:
+    """La URL con el esquema de pruebas como `search_path`.
+
+    Todo lo que se cree o se consulte sin esquema explícito va ahí, incluida
+    la tabla de versiones de Alembic.
+    """
+    separador = "&" if "?" in url else "?"
+    return f"{url}{separador}options=-csearch_path%3D{ESQUEMA_DE_PRUEBAS}"
+
+
+@pytest.fixture(scope="session")
+def motor_postgresql():
+    """El motor de PostgreSQL, con el esquema recién migrado. Uno por sesión."""
+    if not TEST_DATABASE_URL:
+        yield None
+        return
+    if not TEST_DATABASE_URL.startswith("postgresql"):
+        pytest.exit("TEST_DATABASE_URL tiene que ser una URL de PostgreSQL.", returncode=2)
+
+    from alembic import command
+    from alembic.config import Config
+
+    base = create_engine(TEST_DATABASE_URL)
+    with base.begin() as conexion:
+        conexion.execute(text(f"DROP SCHEMA IF EXISTS {ESQUEMA_DE_PRUEBAS} CASCADE"))
+        conexion.execute(text(f"CREATE SCHEMA {ESQUEMA_DE_PRUEBAS}"))
+    base.dispose()
+
+    # `alembic/env.py` lee la URL de `settings`, no de `alembic.ini`: se cambia
+    # mientras dura la migración y se devuelve después.
+    url = _url_en_el_esquema(TEST_DATABASE_URL)
+    original = settings.DATABASE_URL
+    settings.DATABASE_URL = url
+    try:
+        command.upgrade(Config(str(Path(__file__).resolve().parents[1] / "alembic.ini")), "head")
+    finally:
+        settings.DATABASE_URL = original
+
+    motor = create_engine(url)
+    yield motor
+    motor.dispose()
+
+
 @pytest.fixture
-def engine():
+def engine(motor_postgresql):
+    if motor_postgresql is not None:
+        # Cada prueba parte de tablas vacías y de identificadores desde 1.
+        tablas = ", ".join(t.name for t in Base.metadata.sorted_tables)
+        with motor_postgresql.begin() as conexion:
+            conexion.execute(text(f"TRUNCATE {tablas} RESTART IDENTITY CASCADE"))
+        yield motor_postgresql
+        return
+
     # StaticPool + una sola conexión: todas las sesiones comparten la misma
     # base en memoria (sin esto, cada conexión vería una base distinta).
     test_engine = create_engine(

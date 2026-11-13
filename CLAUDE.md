@@ -113,6 +113,21 @@ una por criterio de aceptación de Ep6-Hu7 a Hu11; y en
 fondo, como el de verdad, y los defectos medidos el 10 y el 12/11/2026 con sus
 salidas reales.
 
+**También contra PostgreSQL** (Ep2-Hu9), con la base levantada:
+
+```powershell
+$env:TEST_DATABASE_URL = "postgresql+psycopg://vfit:vfit_dev_password@localhost:5432/vfit"
+```
+
+```powershell
+pytest
+```
+
+Corren en el esquema `pruebas_automaticas`, que se borra y se rehace con
+`alembic upgrade head` al empezar: `public` no se toca. Un esquema y no una base
+aparte porque el rol `vfit` no puede crear bases. Tarda ~195 s (12/11/2026).
+Para volver a SQLite: `Remove-Item Env:TEST_DATABASE_URL`.
+
 **El esquema lo gobierna Alembic, no `create_all`.** Sobre una base nueva:
 
 ```powershell

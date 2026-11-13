@@ -57,6 +57,12 @@ hoy», y la más reciente de cada tela, cuando hay varias, la marca «Más
 reciente». 5 pruebas nuevas (161 en total). Verificado en el navegador con la
 prueba 61: quedan las dos, la nueva primero y marcada.
 
+**Y Ep2-Hu9, las pruebas también contra PostgreSQL.** Con `TEST_DATABASE_URL`
+la suite corre contra PostgreSQL, en un esquema propio (`pruebas_automaticas`)
+que se rehace con `alembic upgrade head`: comprueba de paso que las migraciones
+dan el esquema de los modelos. Las 161 pasan (~195 s); `public` no se toca
+(comprobado: sigue con sus 27 telas). Sin la variable, SQLite como siempre.
+
 ---
 
 ## Qué pasó el 2026-11-12
@@ -503,7 +509,7 @@ Dos cosas que solo se ven con un dibujo real:
 | 24 | ~~El probador con cámara no se ha probado con una persona real.~~ **RETIRADO**: la cámara se sustituyó por el probador por fotos. | — | — |
 | 25 | ~~El probador con cámara no tiene oclusión.~~ **RETIRADO** con la cámara. En el probador por fotos, una mano delante de la prenda conserva sus píxeles originales. | — | — |
 | 15 | **`BackgroundTasks` no sobrevive a un reinicio.** Si el proceso se para mientras una prueba está en `processing`, se queda ahí. Con el motor determinista son 500 ms de ventana; con el generativo, 45 s. | Medio | `status` está modelado, así que meter una cola no obliga a rehacer la tabla. |
-| 4 | Los tests usan SQLite, no PostgreSQL. | Medio | Se activaron las claves ajenas (`PRAGMA foreign_keys=ON`); sin eso no se validaba ninguna restricción de integridad. |
+| 4 | ~~Los tests usan SQLite, no PostgreSQL.~~ **RESUELTO el 12/11/2026 (Ep2-Hu9)**: con `TEST_DATABASE_URL` corren contra PostgreSQL, en el esquema `pruebas_automaticas` construido con `alembic upgrade head`; las 161 pasan (~195 s). Por defecto sigue siendo SQLite, con las claves ajenas activadas. | — | Ver CLAUDE.md, «Ejecutar pruebas». |
 | 5 | **El proyecto está dentro de OneDrive.** | Medio | Mover a `C:\dev\` o excluir `node_modules` y `.venv`. |
 | 20 | **Las imágenes de Docker nunca se han construido.** | Medio | `docker compose --profile full up -d --build`. |
 | 8 | Sin límite de peticiones. **Incluye el login.** | Medio | Antes de exponer la aplicación públicamente. |

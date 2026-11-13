@@ -330,6 +330,17 @@ pytest
 
 Los tests usan SQLite en memoria: **no necesitan PostgreSQL ni Docker levantados.**
 
+Para pasarlos contra PostgreSQL —la misma base que usa la aplicación—, con la
+base levantada:
+
+```powershell
+$env:TEST_DATABASE_URL = "postgresql+psycopg://vfit:vfit_dev_password@localhost:5432/vfit"
+pytest
+```
+
+Corren en un esquema propio, `pruebas_automaticas`, que se rehace con las
+migraciones de Alembic al empezar; los datos de desarrollo no se tocan.
+
 Verificación de tipos del frontend (dentro de `frontend`):
 
 ```powershell
