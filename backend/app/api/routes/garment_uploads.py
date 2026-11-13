@@ -4,11 +4,11 @@ Todo aquí exige token, y todo va filtrado por el usuario del token. El diseño
 de un taller no se comparte con el taller de al lado.
 """
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, UploadFile, status
 
-from app.api.deps import CurrentUserDep, GarmentUploadServiceDep
+from app.api.deps import CurrentUserDep, GarmentUploadServiceDep, SketchRunnerDep
 from app.core.config import settings
-from app.models.garment_upload import GarmentKind
+from app.models.garment_upload import GarmentKind, GarmentStatus
 from app.schemas.common import MessageResponse
 from app.schemas.garment_upload import GarmentUploadRead
 from app.services.exceptions import NotFoundError, ValidationError
@@ -45,14 +45,17 @@ def get_upload(
     status_code=status.HTTP_201_CREATED,
     summary="Subir una prenda o un boceto",
     description=(
-        "El tipo no es una etiqueta: decide qué motor puede vestirla. Una "
-        "fotografía trae sus propios pliegues y sombras, y el motor determinista "
-        "los reutiliza — gratis y siempre igual. Un boceto no tiene sombras que "
-        "reutilizar, así que solo la IA puede vestirlo."
+        "Una **fotografía** ya es la prenda: se recorta y vuelve lista (`ready`).\n\n"
+        "Un **boceto** no lo es: la IA generativa lo convierte en la fotografía de "
+        "la prenda, y **eso se cobra**. Vuelve en `pending` y hay que sondear "
+        "`GET /garment-uploads/{id}` hasta `ready` o `failed`. Las telas se prueban "
+        "después sobre esa prenda, con el motor determinista y sin coste."
     ),
 )
 async def create_upload(
     service: GarmentUploadServiceDep,
+    runner: SketchRunnerDep,
+    background: BackgroundTasks,
     current_user: CurrentUserDep,
     name: str = Form(..., min_length=1, max_length=160),
     kind: GarmentKind = Form(GarmentKind.PHOTO),
@@ -60,7 +63,7 @@ async def create_upload(
 ) -> GarmentUploadRead:
     contenido = await file.read()
     try:
-        return service.create(
+        prenda = service.create(
             user_id=current_user.id,
             name=name,
             kind=kind,
@@ -69,6 +72,40 @@ async def create_upload(
         )
     except ValidationError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+    if prenda.status is GarmentStatus.PENDING:
+        background.add_task(runner, prenda.id)
+    return prenda
+
+
+@router.post(
+    "/{upload_id}/variants",
+    response_model=GarmentUploadRead,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Generar otra variante de la prenda de un boceto",
+    description=(
+        "Vuelve a pedirle la prenda a la IA a partir del mismo dibujo. **Cada "
+        "llamada se cobra.** Devuelve la prenda que se está generando, en "
+        "`pending`: normalmente una nueva, para no pisar la anterior ni las telas "
+        "ya probadas sobre ella; la misma, si había fallado."
+    ),
+)
+def create_variant(
+    upload_id: int,
+    service: GarmentUploadServiceDep,
+    runner: SketchRunnerDep,
+    background: BackgroundTasks,
+    current_user: CurrentUserDep,
+) -> GarmentUploadRead:
+    try:
+        prenda = service.otra_variante(upload_id, current_user.id)
+    except NotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+    background.add_task(runner, prenda.id)
+    return prenda
 
 
 @router.delete(

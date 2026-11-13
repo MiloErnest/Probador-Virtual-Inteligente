@@ -123,6 +123,15 @@ export const api = {
     })
   },
 
+  patch<T>(path: string, body: unknown, options: { signal?: AbortSignal } = {}) {
+    return request<T>(path, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify(body),
+      signal: options.signal,
+    })
+  },
+
   delete<T>(path: string, options: { signal?: AbortSignal } = {}) {
     return request<T>(path, { method: 'DELETE', headers: authHeaders(), signal: options.signal })
   },

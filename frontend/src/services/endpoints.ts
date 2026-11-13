@@ -4,6 +4,9 @@ import { api } from '@/services/apiClient'
 import type {
   Fabric,
   FabricPattern,
+  FabricPreview,
+  OwnFabricCreated,
+  OwnFabricPattern,
   GarmentCategory,
   GarmentKind,
   GarmentUpload,
@@ -11,7 +14,6 @@ import type {
   PersonPhoto,
   TokenResponse,
   Trial,
-  TrialMethod,
   TryOn,
   User,
 } from '@/types'
@@ -43,6 +45,65 @@ export function fetchFabric(id: number, signal?: AbortSignal) {
   return api.get<Fabric>(`/fabrics/${id}`, { signal })
 }
 
+// --- Mis telas: las que el usuario fotografía en su taller -----------------
+
+/**
+ * `includeRetired` trae también las borradas que tienen pruebas: el historial
+ * sigue necesitando su nombre, aunque ya no se puedan elegir.
+ */
+export function fetchMyFabrics(options: { includeRetired?: boolean; signal?: AbortSignal } = {}) {
+  return api.get<Fabric[]>('/my-fabrics', {
+    params: { include_retired: options.includeRetired ? true : undefined },
+    signal: options.signal,
+  })
+}
+
+/**
+ * Catálogo + mis telas, para elegir con qué probar. Las mías van primero:
+ * quien sube una tela es para probarla.
+ */
+export async function fetchFabricsToTry(signal?: AbortSignal) {
+  const [mias, catalogo] = await Promise.all([
+    fetchMyFabrics({ includeRetired: true, signal }),
+    fetchFabrics({ signal }),
+  ])
+  return [...mias, ...catalogo]
+}
+
+/** El mosaico que saldría de la foto. No guarda nada. */
+export function previewMyFabric(pattern: OwnFabricPattern, file: File, signal?: AbortSignal) {
+  return api.postForm<FabricPreview>('/my-fabrics/preview', { file }, { pattern }, { signal })
+}
+
+export function createMyFabric(
+  input: {
+    name: string
+    pattern: OwnFabricPattern
+    file: File
+    composition?: string
+    defaultRepeat?: number
+  },
+  signal?: AbortSignal,
+) {
+  const fields: Record<string, string | number> = { name: input.name, pattern: input.pattern }
+  if (input.composition) fields.composition = input.composition
+  if (input.defaultRepeat) fields.default_repeat = input.defaultRepeat
+  return api.postForm<OwnFabricCreated>('/my-fabrics', { file: input.file }, fields, { signal })
+}
+
+export function updateMyFabric(
+  id: number,
+  changes: { name?: string; composition?: string | null; default_repeat?: number },
+  signal?: AbortSignal,
+) {
+  return api.patch<Fabric>(`/my-fabrics/${id}`, changes, { signal })
+}
+
+/** Si la tela tiene pruebas, se retira y las pruebas se conservan. */
+export function deleteMyFabric(id: number, signal?: AbortSignal) {
+  return api.delete<void>(`/my-fabrics/${id}`, { signal })
+}
+
 // --- Mis prendas ------------------------------------------------------------
 
 export function fetchGarmentUploads(signal?: AbortSignal) {
@@ -54,8 +115,9 @@ export function fetchGarmentUpload(id: number, signal?: AbortSignal) {
 }
 
 /**
- * Sube una prenda. `kind` no es una etiqueta: decide qué motor puede vestirla.
- * Una fotografía trae su propia luz; un boceto hay que inventárselo con IA.
+ * Sube una prenda. Una fotografía vuelve lista (`ready`). Un boceto vuelve en
+ * `pending`: la IA genera su prenda en segundo plano —y se cobra—, así que hay
+ * que sondear con `fetchGarmentUploads` hasta `ready` o `failed`.
  */
 export function uploadGarment(
   name: string,
@@ -64,6 +126,15 @@ export function uploadGarment(
   signal?: AbortSignal,
 ) {
   return api.postForm<GarmentUpload>('/garment-uploads', { file }, { name, kind }, { signal })
+}
+
+/**
+ * Vuelve a pedirle a la IA la prenda de un boceto. Cada llamada se cobra.
+ * Devuelve la prenda que se está generando: una nueva, o la misma si había
+ * fallado.
+ */
+export function createGarmentVariant(id: number, signal?: AbortSignal) {
+  return api.post<GarmentUpload>(`/garment-uploads/${id}/variants`, undefined, { signal })
 }
 
 export function deleteGarmentUpload(id: number, signal?: AbortSignal) {
@@ -93,7 +164,6 @@ export function createTrial(
   input: {
     garmentUploadId: number
     fabricId: number
-    method?: TrialMethod
     repeatAcross?: number
   },
   signal?: AbortSignal,
@@ -103,7 +173,6 @@ export function createTrial(
     {
       garment_upload_id: input.garmentUploadId,
       fabric_id: input.fabricId,
-      method: input.method,
       repeat_across: input.repeatAcross,
     },
     { signal },

@@ -23,7 +23,7 @@ from PIL import Image, ImageOps
 
 from app.core.config import settings
 from app.models.fabric_trial import TrialStatus
-from app.models.garment_upload import GarmentKind
+from app.models.garment_upload import GarmentStatus
 from app.models.person_photo import PersonPhoto
 from app.models.try_on import TryOn
 from app.repositories.fabric_trial import FabricTrialRepository
@@ -90,7 +90,7 @@ class PersonPhotoService:
             raise NotFoundError(f"No existe la foto {photo_id}.")
         claves = [foto.image_key]
         for prueba in self.try_ons.list_for_photo(foto.id):
-            claves += [prueba.output_image_key, prueba.garment_image_key]
+            claves += [prueba.output_image_key, prueba.garment_image_key, prueba.raw_output_key]
         self.repository.delete(foto)
         for clave in claves:
             if clave:
@@ -154,6 +154,10 @@ class TryOnService:
             prenda = self.uploads.get_for_user(data.garment_upload_id, user_id)
             if prenda is None:
                 raise NotFoundError(f"No existe la prenda {data.garment_upload_id}.")
+            if prenda.status is not GarmentStatus.READY:
+                raise ValidationError(
+                    "Ese boceto todavía no tiene su prenda generada: espera a que termine."
+                )
             if prenda.mask_key is None:
                 raise ValidationError("Esa prenda no tiene recorte; vuelve a subirla.")
 
@@ -170,7 +174,7 @@ class TryOnService:
 
     def delete(self, try_on_id: int, user_id: int) -> None:
         prueba = self._get_or_fail(try_on_id, user_id)
-        claves = [prueba.output_image_key, prueba.garment_image_key]
+        claves = [prueba.output_image_key, prueba.garment_image_key, prueba.raw_output_key]
         self.repository.delete(prueba)
         for clave in claves:
             if clave:
@@ -191,7 +195,7 @@ class TryOnService:
         self.repository.save(prueba)
         comenzado = time.perf_counter()
         try:
-            persona, prenda, es_boceto = self._cargar(prueba)
+            persona, prenda = self._cargar(prueba)
             recorte = recortar_prenda(*prenda)
             buffer = io.BytesIO()
             recorte.save(buffer, format="PNG", optimize=True)
@@ -221,18 +225,22 @@ class TryOnService:
             )
             prueba.provider = vestida.proveedor
             prueba.edited_fraction = round(vestida.editado, 4)
-            avisos = [vestida.aviso] if vestida.aviso else []
-            if es_boceto:
-                avisos.append(
-                    "La prenda es un boceto: el modelo la interpreta como una foto de "
-                    "producto, así que el resultado depende de lo realista que sea el dibujo."
+            prueba.notice = vestida.aviso or None
+            # Lo que devolvió el modelo, tal cual: con esto y la caja se puede
+            # repetir la composición sin volver a gastar cuota.
+            if vestida.cruda is not None and vestida.caja is not None:
+                buffer = io.BytesIO()
+                vestida.cruda.save(buffer, format="PNG", optimize=True)
+                prueba.raw_output_key = self.storage.save(
+                    buffer.getvalue(), folder=FOLDER_TRY_ONS, extension=".png"
                 )
-            prueba.notice = " ".join(avisos) or None
+                prueba.raw_box = ",".join(str(v) for v in vestida.caja)
+            prueba.model_params = vestida.parametros
 
         prueba.duration_ms = int((time.perf_counter() - comenzado) * 1000)
         self.repository.save(prueba)
 
-    def _cargar(self, prueba: TryOn) -> tuple[Image.Image, tuple[Image.Image, Image.Image], bool]:
+    def _cargar(self, prueba: TryOn) -> tuple[Image.Image, tuple[Image.Image, Image.Image]]:
         """La foto de la persona, y la prenda con su máscara."""
         foto = self.photos.get_by_id(prueba.person_photo_id)
         if foto is None:
@@ -253,7 +261,7 @@ class TryOnService:
         if subida is None or subida.mask_key is None or imagen_prenda is None:
             raise ValidationError("La prenda ya no existe o no tiene recorte.")
         mascara = self._abrir(subida.mask_key)
-        return persona, (imagen_prenda, mascara), subida.kind is GarmentKind.SKETCH
+        return persona, (imagen_prenda, mascara)
 
     def _abrir(self, clave: str) -> Image.Image:
         imagen = Image.open(io.BytesIO(self.storage.read(clave)))

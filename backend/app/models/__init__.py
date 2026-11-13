@@ -17,7 +17,7 @@ UN PRODUCTO, DOS PREGUNTAS
 from app.models.base import Base, TimestampMixin
 from app.models.fabric import Fabric, FabricPattern
 from app.models.fabric_trial import FabricTrial, TrialMethod, TrialStatus
-from app.models.garment_upload import GarmentKind, GarmentUpload
+from app.models.garment_upload import GarmentKind, GarmentStatus, GarmentUpload
 from app.models.person_photo import PersonPhoto
 from app.models.try_on import GarmentCategory, TryOn
 from app.models.user import User
@@ -31,6 +31,7 @@ __all__ = [
     "FabricPattern",
     "GarmentUpload",
     "GarmentKind",
+    "GarmentStatus",
     "FabricTrial",
     "TrialStatus",
     "TrialMethod",

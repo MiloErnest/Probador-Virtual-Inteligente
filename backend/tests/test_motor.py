@@ -136,6 +136,24 @@ def test_un_cuadro_se_cierra_sin_fantasmas() -> None:
     assert medir_junta(cerrado) < 3.0
 
 
+def test_cerrar_el_segundo_eje_no_reabre_el_primero() -> None:
+    """Un estampado de motivos sueltos salía con los motivos partidos al repetir.
+
+    El corte del segundo eje entraba por una columna y salía por otra, y eso
+    reabría la junta del primero: medido, 7,4 de junta y los círculos cortados
+    por la mitad en el borde vertical.
+    """
+    rng = np.random.default_rng(5)
+    lado = 560
+    px = np.full((lado, lado, 3), (225, 215, 195), dtype=np.float32)
+    yy, xx = np.mgrid[0:lado, 0:lado]
+    for _ in range(60):
+        cx, cy, r = rng.integers(0, lado), rng.integers(0, lado), rng.integers(8, 30)
+        px[(xx - cx) ** 2 + (yy - cy) ** 2 < r * r] = rng.integers(40, 200, 3)
+    cerrado = hacer_repetible(Image.fromarray(px.astype(np.uint8), mode="RGB"))
+    assert medir_junta(cerrado) < 3.0
+
+
 def test_una_tela_sin_periodo_tambien_se_cierra() -> None:
     ruido = np.random.default_rng(1).random((200, 200, 3)).astype(np.float32)
     lisa = Image.fromarray((ruido * 60 + 100).astype(np.uint8), mode="RGB")

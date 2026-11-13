@@ -2,10 +2,165 @@
 
 > Documento vivo. Se actualiza al cerrar cada etapa.
 
-**Etapa actual:** prueba virtual de telas, y el probador sobre la foto de una persona.
-**Última actualización:** 2026-09-27
+**Etapa actual:** prueba virtual de telas, bocetos convertidos en prenda con IA, y el probador sobre la foto de una persona.
+**Última actualización:** 2026-11-13
 
 ---
+
+## Qué pasó el 2026-11-13: las telas del propio taller (Ep6-Hu7 a Hu11)
+
+El confeccionista ya puede fotografiar una tela de su taller y probarla sobre
+sus prendas como cualquiera del catálogo. Sin IA generativa: no cuesta nada.
+
+- **`app/textil/tela_propia.py`**: de una foto, el mosaico. Usa el 80% central y
+  el motor que ya sacó las telas reales de la tienda (`digitalizar.py`): lisa,
+  rayas (en vertical u horizontal) o estampada (los cuadros van como estampada).
+  Mide la junta y avisa si la foto es pequeña (menos de 600 px), está
+  desenfocada (medida de Crete et al., 2007) o tiene la luz desigual; cada aviso
+  dice cómo repetir la foto. Umbrales medidos con las fotos de `scripts/muestras/`
+  (tabla en el propio módulo).
+- **Base de datos:** `fabrics.owner_id` (migración `003b717b36b7`). Vacío = del
+  catálogo; con valor = de ese usuario y solo suyo. Las telas que había quedan
+  en el catálogo.
+- **API `/api/my-fabrics`**: vista previa (no guarda nada), crear, listar,
+  editar y borrar. Una tela ajena responde 404 aquí, en el catálogo y al
+  probarla. Borrar una tela con pruebas la RETIRA y las pruebas se conservan
+  (la clave de `fabric_trials` es RESTRICT); sin pruebas se borra con sus
+  archivos. La foto se guarda recodificada, sin metadatos.
+- **Pantalla:** «Mis telas» en `/telas`, con un enlace «Añadir mi tela» arriba.
+  «Guardar» no se activa sin haber visto el mosaico repetido 2 × 2 con su junta
+  y sus avisos. Las pantallas de prueba y del probador ofrecen también las
+  telas propias, marcadas «· mía».
+- **Un fallo del motor que estaba desde el principio, encontrado al probarlo:**
+  `hacer_repetible` dejaba una costura en el borde vertical con estampados de
+  motivos sueltos (junta 7,4; los motivos salían partidos al repetir). El
+  segundo corte de mínimo error no empezaba y acababa en la misma columna y
+  reabría la junta del primero. Arreglado en `_corte_minimo`: el sintético baja
+  a 1,10 y el floral real de 0,96 a 0,86.
+- **Pruebas:** 156 (29 nuevas: 28 en `tests/test_mis_telas.py`, una por
+  criterio de aceptación, y la del corte en `test_motor.py`).
+- **Verificado en el navegador** con la cuenta de desarrollo: la foto real del
+  floral → vista previa (junta 0,86, «la foto sirve») → guardar → probarla sobre
+  la camiseta blanca de ejemplo (prueba 61, completa) → editar la composición.
+  Borrar no se probó en el navegador (abre un `confirm`), sí en las pruebas.
+
+Lo que queda abierto: el balance de blancos. Una foto subexpuesta da un mosaico
+gris (el floral sale gris; el del catálogo se corrigió con su fondo blanco). Se
+ve en la vista previa, pero no hay opción para corregirlo.
+
+---
+
+## Qué pasó el 2026-11-12
+
+El usuario probó el probador y encontró dos cosas: al hombre musculoso «pareciera
+que le quitáramos masa muscular» con una camiseta, y el vestido generado de un
+boceto «no cumple con las medidas» al probarse. Se analizaron sus pruebas 30, 31
+y 32 con la salida cruda que ya guarda cada una.
+
+- **Los brazos, arreglado.** El modelo dibuja el brazo más fino y la camiseta
+  ocupaba el hueco, encima del brazo real. Ahora el brazo de la foto conserva su
+  ancho en los tramos que el modelo deja al aire, y el corte con la manga sigue el
+  dobladillo que dibujó (`_brazos_al_aire` en `conservar.py`). Dos tests nuevos;
+  127 en total. Las cuatro pruebas guardadas se recompusieron sin gastar cuota.
+- **El vestido de noche, NO arreglado, y por qué.** El modelo lo convierte siempre
+  en un palabra de honor a media pierna. Se midió con cuatro configuraciones
+  (tipo de foto, guía, prenda estirada) y con un prototipo que superponía la
+  prenda con su forma exacta: ninguna sirve. El boceto, además, tiene
+  proporciones de figurín. Queda como limitación #54.
+- **Dos hipótesis descartadas midiendo**, anotadas en CLAUDE.md (probador, 17 y
+  18): deformar la imagen del modelo hasta la silueta de la foto, y la
+  superposición exacta de la prenda.
+
+Lo que no cambia: la caída holgada de la prenda sobre el torso es dibujo del
+modelo. En una persona musculosa o corpulenta, la prenda sigue viéndose más
+suelta de lo que le quedaría.
+
+---
+
+## Qué pasó el 2026-11-10
+
+**El probador sobre personas, medido y corregido.** El usuario lo describió así:
+«la prenda no se ve bien, aunque se usen fotos en alta calidad». Antes de tocar
+nada se midió con ocho pruebas reales, guardando lo que devolvía el modelo
+(diagnóstico y resultado en
+[docs/diagnostico-probador-2026-11-10.md](docs/diagnostico-probador-2026-11-10.md)).
+El problema estaba repartido, y la mayor parte no era del modelo:
+
+- **Cómo se llamaba al modelo.** Iba en el modo que borra la prenda vieja y
+  pinta en su hueco, así que una prenda más grande que la que se lleva salía
+  recortada: un vestido largo sobre un pantalón corto, como minivestido, y con
+  el estampado encima del móvil. Y con 30 pasos, que dejaba agujeros. Ahora va
+  sin borrar y con 50 pasos (`VTO_STEPS`, `VTO_ERASE_FIRST`).
+- **Nuestra composición copiaba el fondo del modelo**, que no es el de la foto:
+  de ahí el «fantasma» claro junto al hombro y el ribete claro de la prenda.
+  Ahora el fondo es siempre el de la foto, continuado donde lo tapaba la prenda
+  vieja.
+- **La ropa que el modelo se inventa** (unas mangas largas verdes bajo una
+  camiseta roja de manga corta) entraba encima de los brazos. Se detecta por
+  color contra la paleta de la prenda; donde tapaba piel vuelve la foto, y se
+  avisa de que conviene pedir otra variante.
+- **El encuadre depende de la prenda**: una «parte de arriba» se encuadra de la
+  cabeza a medio muslo, y el modelo le da entre 1,5 y 1,65 veces más píxeles
+  por lado en una foto de cuerpo entero.
+- **Cada prueba guarda la salida cruda del modelo**, y
+  `python -m scripts.recomponer` rehace la composición sin gastar cuota.
+  Migración `3a17a80c22fb`.
+
+**Lo que se descartó midiendo:** igualar la nitidez o el grano. Las fotos de
+prueba no tienen grano, y una prenda estampada sale con más detalle que el
+resto de la foto; la que se veía «plana» era lisa.
+
+**Verificado:** 125 tests (ocho nuevos, uno por defecto encontrado; tres de
+ellos se comprobó que fallan si se desactiva su arreglo). Dos pruebas reales
+con el código nuevo: la chaqueta generada de un boceto sobre una foto de
+cuerpo entero frente al espejo, y el vestido de noche generado de un boceto
+por el camino de la aplicación (prueba 25 del historial). En las dos, la
+prenda con su forma y su dibujo, y el móvil, las manos y la habitación como
+en la foto.
+
+**Las prendas generadas de bocetos funcionan en el probador**: era la primera
+vez que se probaban sobre una persona. La imagen que se le manda al modelo es
+limpia (la prenda sola sobre blanco, sin huecos).
+
+**De paso, la cuota:** con la cuenta gratuita de Hugging Face salieron ocho
+pruebas ese día (dos a 30 pasos y seis a 50), y la novena —la prueba 26, a las
+21:53— falló por cuota agotada. A 50 pasos cada prueba gasta más GPU que antes.
+
+---
+
+## Qué pasó el 2026-10-01
+
+**Los bocetos pasan por la IA generativa, y solo ellos.** El usuario lo pidió
+así: «un boceto con un color encima, nadie lo quiere». Ahora la IA convierte el
+dibujo en la fotografía de la prenda —una vez—, y las telas se prueban sobre
+ella con el motor determinista, gratis.
+
+- **Pantalla nueva `/bocetos`**: sube el dibujo, espera ~40 s, y ve el boceto y
+  la prenda lado a lado con el parecido de silueta. «Otra variante» vuelve a
+  pedirla; «Probar telas» la lleva a la comparación de siempre.
+- **El taller solo sube fotografías.** Las prendas de boceto aparecen en él
+  cuando están listas, marcadas «De boceto».
+- **Se quitó el texturizado directo del dibujo** (`vestir_boceto`) y **el
+  selector «IA generativa» de la pantalla de pruebas**. El acabado generativo
+  sigue en el backend (`method: "ai"`), sin botón.
+- **Medido con el vestido de noche del usuario**, tres generaciones reales: las
+  tres con el escote, el drapeado, el cinturón, la sirena y la cola del dibujo.
+  ~3.400 tokens y 38 s cada una; parecido de silueta 0,87–0,88. Sobre la
+  tercera se probaron denim y un floral desde la API: 1 s cada una, sin tokens.
+- **Un diagnóstico equivocado, anotado**: el recorte de la prenda salió con dos
+  agujeros y se culpó al fondo gris. Con fondo azul salieron los mismos: era el
+  paso que quita a la figura, que tomaba por piel las sombras de la tela cruda.
+- Migración `570ce5046f74`. Los bocetos ya subidos quedan en `failed` con un
+  mensaje; no se generan solos porque cuesta dinero. 117 tests.
+
+Aparte: **el proyecto no arrancaba** porque Smart App Control de Windows
+bloqueaba `postgres.exe` (182 bloqueos en el registro de eventos). El usuario
+lo desactivó. Queda un defecto en `start-backend.ps1`: si la base no responde,
+el script muere en la comprobación de migraciones en vez de arrancar y avisar.
+
+Y se entregó el **manual de identidad visual** (`docs/identidad-visual/`), con
+la marca «Trama» propuesta para la actividad de clase. La aplicación sigue
+llamándose «Probador Virtual»: no se ha renombrado.
 
 ## Qué pasó el 2026-09-28
 
@@ -172,9 +327,9 @@ adicional, pero no es el producto.
 | Pieza | Qué es |
 |---|---|
 | `fabrics` | Catálogo de la tienda: referencia, composición, gramaje, ancho de rollo, precio/m, color, dibujo, mosaico. |
-| `garment_uploads` | La prenda o boceto del usuario, con su recorte ya calculado y guardado. |
+| `garment_uploads` | La prenda del usuario —una foto, o la generada de su boceto—, con su recorte ya calculado y guardado. |
 | `fabric_trials` | Una prueba: prenda × tela → imagen. Guarda motor, duración y tokens. |
-| `app/textil/` | El motor: recorte, retexturizado de foto, retexturizado de boceto, y proveedor generativo. |
+| `app/textil/` | El motor: recorte, retexturizado, la prenda generada de un boceto, y el acabado generativo. |
 | 4 pantallas nuevas | Portada, catálogo de telas, taller, y comparación. |
 
 Migración `84f6b95eefae`. **No toca nada de lo que ya había**: `garments` sigue
@@ -196,7 +351,8 @@ siendo el catálogo del probador con cámara.
       la textura según el gradiente del modelado.
 - [x] **Se conservan costuras, botones y bolsillos**, devolviendo una fracción
       del detalle fino después de borrar la trama del tejido viejo.
-- [x] **Retexturizado de boceto**: separa el dibujo en trazo y sombreado. El
+- [x] ~~**Retexturizado de boceto**~~ **RETIRADO el 2026-10-01** (lo sustituye
+      la prenda generada con IA): separaba el dibujo en trazo y sombreado. El
       sombreado del lápiz pasa a ser la luz que multiplica la tela —los pliegues
       que se ven son los que dibujó el diseñador— y el trazo se conserva intacto
       por encima. ~500 ms. Si el dibujo no trae tono, cae al volumen inventado.
@@ -235,15 +391,19 @@ siendo el catálogo del probador con cámara.
 
 - [x] Portada que cuenta el producto del Vision Board.
 - [x] Catálogo de telas con ficha técnica completa y filtro por dibujo.
-- [x] Taller: subir prenda o boceto, con la diferencia explicada.
+- [x] Taller: subir la fotografía de una prenda. Los bocetos, en su pantalla.
+- [x] **Bocetos** (`/bocetos`): del dibujo a la prenda con IA, lado a lado,
+      con parecido de silueta y variantes. Verificado en el navegador.
 - [x] Comparación lado a lado, con el original como referencia, y sondeo.
-- [x] **Selector de motor en la pantalla de pruebas.** Hasta hoy la IA
+- [x] ~~**Selector de motor en la pantalla de pruebas.**~~ **RETIRADO el
+      2026-10-01**: la IA generativa es solo para bocetos. Hasta entonces la IA
       estaba integrada y era **inalcanzable desde la interfaz**: el cliente
       aceptaba `method` y la pantalla nunca lo mandaba. Al elegir IA sale
       antes lo que va a pasar y lo que cuesta.
 - [x] **Probador por fotos** (`/probador`), verificado en el navegador hasta la
       llamada al modelo: sube, elige, lanza, sondea y enseña el error de cuota
-      traducido. En móvil, sin desbordamiento lateral.
+      traducido. En móvil, sin desbordamiento lateral. El 10/11/2026 no se
+      tocó la pantalla: los avisos nuevos llegan por el mismo campo.
 - [x] Build de producción verificado: 222 KB (sin MediaPipe).
 
 ---
@@ -304,7 +464,7 @@ Dos cosas que solo se ven con un dibujo real:
 
 | # | Descripción | Impacto | Plan |
 |---|---|---|---|
-| 48 | **El modelo a veces pinta cosas que no están en la prenda**, sobre ella: un cordón y un collar en una camiseta lisa, una mancha oscura en el pecho. `conservar.py` no puede quitarlas porque están dentro de la prenda. | Medio | «Otra variante» vuelve a generarla con otra semilla (gasta una prueba de la cuota). Detectarlo por color se probó y no es fiable. |
+| 48 | **El modelo a veces pinta cosas que no están en la prenda.** Desde el 10/11/2026, la ropa de más que no tiene los colores de la prenda (unas mangas largas verdes bajo una camiseta roja) se detecta y se quita donde tapaba piel, con aviso. Lo que sigue pasando: un collar, un cordón o un cinturón DENTRO de la prenda, o ropa inventada del mismo color que ella. | Medio | «Otra variante» vuelve a generarla con otra semilla (gasta una prueba de la cuota). |
 | 42 | ~~**La generación con éxito por la aplicación entera no se ha podido ver todavía.**~~ **RESUELTO** con el token del usuario: su prueba y una repetición por la API salieron completas. Las dos pruebas reales se hicieron con un script, y la conservación se verificó sobre sus salidas; por la API y la interfaz solo se llegó al error de cuota, porque sin cuenta son dos pruebas al día y se gastaron midiendo. | Alto | Con `HF_TOKEN` (cuenta gratuita) o al día siguiente: lanzar una prueba desde `/probador` y mirarla. |
 | 43 | **Cuota gratuita pequeña**: ~2 pruebas al día sin cuenta. Con cuenta gratuita, más, pero sigue siendo una cuota diaria compartida por todos los usuarios de la instalación. | Medio | Suficiente para una demostración. Para un uso real, cuenta PRO de Hugging Face o un servidor con GPU propio. |
 | 44 | **La prenda sale más blanda que el resto de la foto** en fotos grandes: el modelo trabaja a 864 px de alto y la foto se conserva a su resolución. El encuadre de la persona lo reduce, no lo elimina. | Medio | Es el límite del modelo. |
@@ -322,7 +482,14 @@ Dos cosas que solo se ven con un dibujo real:
 | 34 | ~~**En un croquis de moda, el recorte pinta también a la modelo.**~~ **RESUELTO.** La máscara es «todo lo que no es fondo», y en un dibujo de figurín eso incluye la cara, el pelo y los brazos, que salen del color de la tela. Se vio con el boceto del usuario. | — | Se separa por saturación: el lápiz es acromático (0,02) y la figura no (0,10+). Con salvaguarda: si lo detectado pasa del 30% del recorte es una prenda de color, no una persona, y no se quita nada. Medido: el croquis pierde un 4,3%; la fotografía de camiseta, 0,0%. |
 | 31 | **El retexturizado no cambia cómo CAE la tela.** Si la foto es de un vestido fluido, una lona rígida caerá como el vestido: los pliegues son los de la foto. | Medio | Es el límite de la técnica. Simular el tejido es otro problema y bastante mayor. Se dice en la portada. |
 | 32 | **Los mosaicos del catálogo son generados, no fotografías de tela real.** Son creíbles y seamless por construcción, pero no son telas de verdad. | Medio | Para el producto real, la tienda aliada fotografía sus rollos y se recorta un cuadrado limpio. Sale mejor y es gratis. |
-| 33 | **El volumen de un boceto es inventado.** Sale de la distancia al borde, no de información del dibujo. | Bajo | Es honesto y se avisa. No hay forma de deducir volumen de un dibujo de líneas. |
+| 33 | ~~El volumen de un boceto es inventado.~~ **RETIRADO**: la tela ya no se pinta sobre el dibujo. | — | — |
+| 50 | **Sin borrar la prenda vieja pueden quedar restos de ella** al pasar de manga larga a corta o de holgada a ceñida: lo avisa la ficha del modelo y pasó una vez el 28/09 (a 30 pasos). No se ha vuelto a ver en las ocho pruebas del 10/11, pero ninguna era de larga a corta. | Medio | `VTO_ERASE_FIRST=true` en `backend/.env` vuelve al modo de borrar. Medirlo con una foto de manga larga. |
+| 51 | **El encuadre por prenda solo existe para la parte de arriba.** Para la de abajo no había en el taller ninguna prenda con la que medir si el modelo trabaja bien sin ver la cabeza. Y una prenda de arriba más larga que el cuadro (un abrigo) sale cortada: se detecta y se avisa. | Bajo | Subir un pantalón o una falda y medirlo. |
+| 52 | **Donde la prenda vieja era mucho más grande que la nueva, el fondo es reconstruido**, no real: continúa las franjas de alrededor y queda borroso si el hueco es grande. Y el puño de una manga vieja que el analizador toma por brazo deja un resto de pocos píxeles. | Bajo | — |
+| 54 | **El modelo no reproduce prendas de forma compleja**: un vestido de noche con hombros caídos, corte sirena y cola sale como un palabra de honor en línea A a media pierna, con cualquier parámetro (medido el 12/11/2026 en cuatro configuraciones). Las camisetas y una chaqueta corta sí salen fieles. | Alto | Medir otro modelo de prueba virtual, gratuito, con el mismo vestido; `ModeloDePrueba` permite añadirlo sin tocar el resto. |
+| 55 | **El modelo dibuja a la persona más delgada.** Los brazos ya conservan su ancho, pero la prenda cae holgada sobre un torso más estrecho que el real. | Medio | Depende del modelo. |
+| 53 | **Las pruebas 22 y 24, anteriores al 10/11, no guardan la salida del modelo**: no se pueden recomponer, y se ven con los defectos de entonces. | Bajo | Repetirlas desde `/probador`. |
+| 49 | **La prenda generada de un boceto es una interpretación, no un calco.** `images.edit` no tiene condicionamiento estructural. Medido con UN boceto (un vestido a lápiz): fiel las tres veces. Sin medir: bocetos a color, planos técnicos, prendas con botones o bolsillos. | Medio | Se enseña junto al dibujo, con el parecido de silueta y un aviso por debajo de 0,72; «Otra variante» vuelve a pedirla. El parecido solo mide el contorno. |
 | 27 | **Una prenda casi del color del fondo no se puede recortar**, y no es cuestión de ajustar el umbral. Medido: fondo (217,218,212) contra tela en sombra (217,217,217). | Alto | Se detecta y se avisa. La solución es una fotografía sobre fondo que contraste. |
 | 24 | ~~El probador con cámara no se ha probado con una persona real.~~ **RETIRADO**: la cámara se sustituyó por el probador por fotos. | — | — |
 | 25 | ~~El probador con cámara no tiene oclusión.~~ **RETIRADO** con la cámara. En el probador por fotos, una mano delante de la prenda conserva sus píxeles originales. | — | — |
@@ -332,7 +499,8 @@ Dos cosas que solo se ven con un dibujo real:
 | 20 | **Las imágenes de Docker nunca se han construido.** | Medio | `docker compose --profile full up -d --build`. |
 | 8 | Sin límite de peticiones. **Incluye el login.** | Medio | Antes de exponer la aplicación públicamente. |
 | 10 | **El token se guarda en `localStorage`.** | Medio | Primer punto a revisar antes de un despliegue público. |
-| 11 | **Cualquier usuario registrado puede dar de alta telas.** No existe la figura de administrador. | Bajo | Columna `is_admin` cuando haya un panel que la justifique. |
+| 11 | **Cualquier usuario registrado puede dar de alta y editar telas DEL CATÁLOGO** por `/api/fabrics`. No existe la figura de administrador. Las telas propias de cada taller (`/api/my-fabrics`, 13/11/2026) sí son privadas, y por el camino del catálogo no se ven ni se tocan. | Bajo | Columna `is_admin` (historia Ep12-Hu3). |
+| 56 | **Una foto de tela subexpuesta da un mosaico gris.** El motor quita la luz desigual, pero no corrige el balance de blancos de una sola foto: no sabe qué es blanco en ella. | Bajo | Se ve en la vista previa antes de guardar. Una opción «el fondo es blanco o crudo» que use `muestra_estampada(fondo_blanco=True)`. |
 | 14 | **El registro no verifica que el buzón exista.** | Medio | Se resolverá con el acceso mediante Google. |
 
 ---
@@ -343,7 +511,8 @@ Dos cosas que solo se ven con un dibujo real:
 
 | Decisión | Alternativa descartada | Motivo |
 |---|---|---|
-| **El camino por defecto es determinista, también para bocetos** | Mandar los bocetos a la IA | Se midió con llamadas reales: dos modelos, con y sin `input_fidelity=high`, y las tres veces el modelo devolvió una prenda distinta. Para un producto que promete «mira TU diseño con otra tela», eso es el resultado equivocado — y encima se cobraba por él. |
+| **Un boceto pasa por la IA UNA vez, para convertirse en prenda; las telas, deterministas** (2026-10-01) | Pintar la tela sobre el dibujo; o pedirle a la IA la prenda con cada tela | Pintar sobre el dibujo era exacto y no servía a nadie. Pedir prenda Y tela a la vez ya había fallado (fila siguiente). Pidiendo solo la prenda, con el modelo de precisión, salió fiel tres de tres; y al generarla una vez, comparar telas sigue significando algo. |
+| ~~El camino por defecto es determinista, también para bocetos~~ (sustituida por la anterior) | Mandar los bocetos a la IA | Se midió con llamadas reales: dos modelos, con y sin `input_fidelity=high`, y las tres veces el modelo devolvió una prenda distinta. Para un producto que promete «mira TU diseño con otra tela», eso es el resultado equivocado — y encima se cobraba por él. |
 | **La IA se queda, pero como opción** | Quitarla | Sabe hacer algo que la otra vía no puede: convertir un dibujo de líneas en una imagen fotorrealista. Eso tiene valor real; lo que no tiene sentido es que sea el camino por defecto de un producto cuya promesa es la fidelidad al diseño. |
 | **Retexturizado en vez de generación, para fotos** | Generar la imagen con IA | Tres razones, y la tercera es la que manda: es gratis, es cien veces más rápido, y es **determinista**. Comparar cuatro telas lado a lado solo significa algo si lo único que cambia entre las cuatro es la tela. Un modelo generativo redibuja el corte en cada llamada. |
 | **Dividir el brillo entre el brillo propio de la prenda** | Multiplicar la tela por el brillo | Multiplicar mezcla forma y color: una prenda azul marino deja la tela nueva oscura, y una blanca la deja plana. Dividiendo, lo que queda es solo la forma. |
@@ -386,10 +555,28 @@ Dos cosas que solo se ven con un dibujo real:
 
 ## Próximos pasos
 
-1. **Medir cuántas pruebas al día da la cuenta gratuita** de Hugging Face con
-   el token del usuario (sin cuenta eran dos). Y probar el probador con más
-   fotos reales: posturas cerradas, prendas de abajo y vestidos, que todavía
-   no se han medido.
+**El probador sobre personas se midió y se corrigió el 10/11/2026** (ver arriba y
+[docs/diagnostico-probador-2026-11-10.md](docs/diagnostico-probador-2026-11-10.md)).
+Lo que queda de él, por orden:
+
+- **Un banco fijo de fotos y prendas** con sus salidas crudas guardadas, para
+  medir cada cambio de la composición sin cuota. Ya se puede: las pruebas
+  guardan la salida del modelo. Hoy son tres fotos y cuatro prendas.
+- **Medir de manga larga a manga corta** (limitación #50) y **una prenda de
+  abajo** (#51): no había con qué.
+- **Lo que el modelo inventa dentro de la prenda** (#48): sin solución aún.
+- **Medir otro modelo con el vestido de noche** (limitación #54). Ya no es «solo
+  si no basta»: el 12/11/2026 quedó medido que este no reproduce prendas de
+  forma compleja. `ModeloDePrueba` permite añadirlo sin tocar el resto; tiene
+  que ser gratuito, y el banco de salidas crudas sirve para compararlos.
+
+0. **Medir la generación de prendas con más bocetos**: a color, planos
+   técnicos, y prendas con botones, bolsillos o cuello, que es donde el modelo
+   fallaba antes. Hoy está medida con un solo vestido a lápiz.
+1. **Probar el probador con más fotos reales**: posturas cerradas, prendas de
+   abajo y manga larga, que todavía no se han medido. La cuenta gratuita de
+   Hugging Face dio ocho pruebas el 10/11/2026 y la novena falló por cuota
+   agotada; con 50 pasos el tope puede ser menor que con 30.
 2. **Acabados sin IA generativa, gratis**: mapas de relieve y de brillo por
    tela, calculados desde su mosaico —como los configuradores profesionales—.
    El usuario descartó pagar Fal.ai o Replicate.
@@ -397,7 +584,8 @@ Dos cosas que solo se ven con un dibujo real:
    personas del probador está entrenado con fotos; habría que medir si
    reconoce la piel de una figura dibujada antes de usarlo ahí.
 4. **Fotografiar telas reales.** Un cuadrado limpio de cada rollo mejora el
-   resultado más que cualquier ajuste del motor, y es gratis.
+   resultado más que cualquier ajuste del motor, y es gratis. Desde el
+   13/11/2026 lo puede hacer el propio usuario desde «Mis telas».
 5. **Probar con prendas, bocetos y personas reales de un taller.** Lo que hay
    está medido contra ocho prendas y dos fotos de persona.
 6. **La conversión prueba→compra.** El Vision Board la pone como métrica y hoy

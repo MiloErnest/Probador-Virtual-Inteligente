@@ -151,8 +151,18 @@ class Settings(BaseSettings):
     #: https://huggingface.co/settings/tokens y va en el .env, nunca en código.
     HF_TOKEN: str = ""
 
-    #: Pasos del modelo (10–50). Medido: 30 pasos, unos 28 s por prueba.
-    VTO_STEPS: int = 30
+    #: Pasos del modelo (10–50). 50 es el valor del propio Space y el que su
+    #: ficha llama «calidad». Medido el 10/11/2026 con la misma foto, prenda y
+    #: semilla: a 30 pasos un vestido salió con dos agujeros en las rodillas,
+    #: a 50 sale entero. Unos 20 s por prueba; gasta más cuota de GPU que 30.
+    VTO_STEPS: int = 50
+
+    #: Si el modelo borra la prenda que la persona lleva puesta antes de
+    #: pintar la nueva. Por defecto no: borrando, la prenda nueva queda
+    #: recortada a la silueta de la vieja (un vestido largo sobre un pantalón
+    #: corto salió como minivestido). Ponlo en true solo si al pasar de manga
+    #: larga a corta quedan restos de la prenda vieja. Ver `probador/fashn.py`.
+    VTO_ERASE_FIRST: bool = False
     VTO_TIMEOUT_SECONDS: int = 240
 
     #: Lado mayor con que se guarda la foto de una persona. Por encima, el

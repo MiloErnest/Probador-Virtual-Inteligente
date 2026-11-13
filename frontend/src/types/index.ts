@@ -7,8 +7,8 @@
  * DOS PRODUCTOS EN UN MISMO CONTRATO
  * ----------------------------------
  * `Fabric`, `GarmentUpload` y `Trial` son el probador de telas: el producto
- * que describe el Product Vision Board. `Garment` es el catálogo del probador
- * con cámara, que es la funcionalidad adicional. No se mezclan.
+ * que describe el Product Vision Board. `PersonPhoto` y `TryOn` son el
+ * probador sobre la foto de una persona. No se mezclan.
  */
 
 export type HealthStatus = 'ok' | 'degraded'
@@ -66,9 +66,37 @@ export interface Fabric {
   texture_url: string | null
   default_repeat: number
   active: boolean
+  /** Es del taller de quien la ve: la fotografió él, y solo él la ve. */
+  own: boolean
 
   created_at: string
   updated_at: string
+}
+
+/** Los dibujos que se pueden sacar de una foto: un cuadro va como estampado. */
+export type OwnFabricPattern = 'solid' | 'stripes' | 'print'
+
+export const OWN_FABRIC_PATTERN_LABELS: Record<OwnFabricPattern, string> = {
+  solid: 'Lisa',
+  stripes: 'De rayas',
+  print: 'Estampada o de cuadros',
+}
+
+/** El mosaico que saldría de una foto, antes de guardar nada. */
+export interface FabricPreview {
+  mosaic_data_url: string
+  color_hex: string
+  /** Junta medida. Por debajo de `seam_limit` no se ve al repetir. */
+  seam: number
+  seam_limit: number
+  seam_visible: boolean
+  /** Lo que tiene mal la foto, con lo que hay que hacer. */
+  warnings: string[]
+}
+
+export interface OwnFabricCreated extends Fabric {
+  warnings: string[]
+  seam: number | null
 }
 
 export const FABRIC_PATTERN_LABELS: Record<FabricPattern, string> = {
@@ -81,15 +109,26 @@ export const FABRIC_PATTERN_LABELS: Record<FabricPattern, string> = {
 
 // --- Prendas que sube el usuario --------------------------------------------
 
+/** De dónde sale la prenda: de una fotografía, o de un boceto que la IA convirtió en prenda. */
 export type GarmentKind = 'photo' | 'sketch'
+
+/**
+ * Solo `ready` se puede probar. Una fotografía nace lista; un boceto pasa por
+ * `pending` y `processing` mientras la IA genera su prenda, y hay que sondear.
+ */
+export type GarmentStatus = 'ready' | 'pending' | 'processing' | 'failed'
 
 export interface GarmentUpload {
   id: number
   user_id: number
   name: string
   kind: GarmentKind
+  status: GarmentStatus
 
+  /** La prenda. En un boceto sin generar todavía, el propio dibujo. */
   image_url: string | null
+  /** El dibujo original. Nulo en una fotografía. */
+  sketch_url: string | null
   /** El recorte. Verlo es la única forma de entender una prueba mal salida. */
   mask_url: string | null
   mask_coverage: number | null
@@ -99,13 +138,21 @@ export interface GarmentUpload {
   /** Nulo si el recorte está bien. Si no, dice qué hacer. */
   mask_warning: string | null
 
+  // Solo en un boceto: lo que dejó la generación.
+  error_message: string | null
+  /** Coincidencia de la silueta de la prenda con la del dibujo, de 0 a 1. */
+  similarity: number | null
+  /** Si la silueta se aparta del dibujo, qué hacer. Nulo si se parece. */
+  similarity_warning: string | null
+  tokens_used: number | null
+
   created_at: string
   updated_at: string
 }
 
 export const GARMENT_KIND_LABELS: Record<GarmentKind, string> = {
   photo: 'Fotografía',
-  sketch: 'Boceto',
+  sketch: 'De boceto',
 }
 
 // --- Pruebas de tela --------------------------------------------------------
@@ -115,10 +162,10 @@ export type TrialStatus = 'pending' | 'processing' | 'completed' | 'failed'
 /**
  * Con qué motor se generó.
  *
- * `retexture` reutiliza la luz de la fotografía —y en un boceto rellena el
- * dibujo conservando el trazo—: gratis, instantáneo y determinista. `ai` dibuja
- * la imagen entera: cuesta dinero, tarda, y reinterpreta el diseño. Se pide a
- * conciencia, nunca por defecto.
+ * `retexture` reutiliza la luz de la prenda: gratis, instantáneo y
+ * determinista. Es el único que ofrece la interfaz. `ai` es el acabado
+ * generativo de una prueba: quedan pruebas antiguas hechas con él, y la
+ * etiqueta sirve para explicarlas.
  */
 export type TrialMethod = 'retexture' | 'ai'
 

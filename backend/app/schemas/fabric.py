@@ -76,6 +76,45 @@ class FabricRead(BaseModel):
     texture_url: str | None = None
     default_repeat: int
     active: bool
+    #: Verdadero si la tela es del taller de quien pregunta (solo él la ve).
+    own: bool = False
 
     created_at: datetime
     updated_at: datetime
+
+
+# --- Las telas del propio taller (Ep6-Hu7 a Hu11) ---------------------------
+
+
+class OwnFabricUpdate(BaseModel):
+    """Lo que el usuario puede cambiar de una tela suya.
+
+    El mosaico no se edita: sale de la foto. Para otro mosaico, otra foto.
+    """
+
+    name: str | None = Field(default=None, min_length=1, max_length=160)
+    composition: str | None = Field(default=None, max_length=160)
+    description: str | None = None
+    default_repeat: int | None = Field(default=None, ge=1, le=40)
+
+
+class FabricPreview(BaseModel):
+    """El mosaico calculado de una foto, ANTES de guardar nada."""
+
+    #: El mosaico en JPEG, como `data:` URL: no se guarda en ningún sitio hasta
+    #: que el usuario dice que le sirve.
+    mosaic_data_url: str
+    color_hex: str
+    #: `medir_junta` del mosaico. Por debajo de `seam_limit` no se ve al repetir.
+    seam: float
+    seam_limit: float
+    seam_visible: bool
+    #: Lo que tiene mal la foto, con lo que hay que hacer para arreglarlo.
+    warnings: list[str]
+
+
+class OwnFabricCreated(FabricRead):
+    """La tela recién guardada, con los avisos de su foto."""
+
+    warnings: list[str] = []
+    seam: float | None = None

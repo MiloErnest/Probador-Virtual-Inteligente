@@ -28,7 +28,7 @@ import {
   createTryOn,
   deletePersonPhoto,
   deleteTryOn,
-  fetchFabrics,
+  fetchFabricsToTry,
   fetchGarmentUploads,
   fetchPersonPhotos,
   fetchTrials,
@@ -62,7 +62,7 @@ export default function ProbadorPage() {
   const prendas = useApi(prendasFetcher)
   const pruebasTelaFetcher = useCallback((signal: AbortSignal) => fetchTrials({ signal }), [])
   const pruebasTela = useApi(pruebasTelaFetcher)
-  const telasFetcher = useCallback((signal: AbortSignal) => fetchFabrics({ signal }), [])
+  const telasFetcher = useCallback((signal: AbortSignal) => fetchFabricsToTry(signal), [])
   const telas = useApi(telasFetcher)
   const probadasFetcher = useCallback((signal: AbortSignal) => fetchTryOns(signal), [])
   const probadasIniciales = useApi(probadasFetcher)
@@ -556,12 +556,15 @@ function ElegirPrenda({
               onChange={(e) => subir(e.target.files?.[0])}
             />
           </li>
-          {(prendas ?? []).map((p) => (
+          {/* Un boceto sin prenda generada todavía no se puede poner. */}
+          {(prendas ?? [])
+            .filter((p) => p.status === 'ready')
+            .map((p) => (
             <Miniatura
               key={p.id}
               imagen={p.image_url}
               titulo={p.name}
-              detalle={p.kind === 'sketch' ? 'Boceto' : undefined}
+              detalle={p.kind === 'sketch' ? 'De boceto' : undefined}
               elegida={esta({ tipo: 'prenda', id: p.id })}
               onElegir={() => onElegir({ tipo: 'prenda', id: p.id })}
             />

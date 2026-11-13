@@ -382,9 +382,23 @@ def _corte_minimo(coste: np.ndarray) -> np.ndarray:
     fila a fila quedándose con el mejor de los tres vecinos de encima, y se
     reconstruye el camino desde abajo. Devuelve, para cada fila, la columna del
     corte.
+
+    EL CAMINO EMPIEZA Y ACABA EN LA MISMA COLUMNA
+    ---------------------------------------------
+    Al cerrar el segundo eje, las «filas» de este camino son las columnas de la
+    imagen, y la primera y la última son vecinas al repetir el mosaico. Si el
+    corte entra por un sitio y sale por otro, en las filas de en medio un lado
+    del borde viene de la imagen original y el otro de la desplazada: el borde
+    que se acababa de cerrar se vuelve a abrir. Medido el 13/11/2026 con un
+    estampado de círculos sueltos: junta 7,4 y los círculos cortados por la
+    mitad al repetir. Se fija la entrada y la salida en la columna que menos
+    cuesta en las dos filas extremas.
     """
     alto, ancho = coste.shape
     acumulado = coste.astype(np.float64).copy()
+    entrada = int(np.argmin(coste[0] + coste[-1]))
+    acumulado[0, :] = np.inf
+    acumulado[0, entrada] = coste[0, entrada]
     for y in range(1, alto):
         arriba = acumulado[y - 1]
         izquierda = np.concatenate([[np.inf], arriba[:-1]])
@@ -392,7 +406,9 @@ def _corte_minimo(coste: np.ndarray) -> np.ndarray:
         acumulado[y] += np.minimum(np.minimum(izquierda, arriba), derecha)
 
     camino = np.empty(alto, dtype=np.int64)
-    camino[-1] = int(np.argmin(acumulado[-1]))
+    # Con más filas que columnas siempre se llega de vuelta a la entrada; si
+    # no, se toma la mejor salida alcanzable.
+    camino[-1] = entrada if np.isfinite(acumulado[-1, entrada]) else int(np.argmin(acumulado[-1]))
     for y in range(alto - 2, -1, -1):
         x = camino[y + 1]
         desde, hasta = max(0, x - 1), min(ancho, x + 2)

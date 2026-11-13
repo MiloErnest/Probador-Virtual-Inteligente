@@ -1,0 +1,767 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Manual de Identidad Visual — Trama</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500&display=swap" rel="stylesheet">
+<style>
+  @page { size: 297mm 210mm; margin: 0; }
+  :root {
+    --tinta: #0A0A0B; --papel: #FFFFFF; --hueso: #F7F7F5;
+    --g80: #3A3A3D; --g60: #66666B; --g40: #94949A; --g20: #C7C7CC; --g10: #E4E4E7;
+    --indigo: #26365F; --terracota: #B4533A; --lino: #D8CBB2; --oliva: #6A7250;
+    --serif: 'Playfair Display', Georgia, serif;
+    --sans: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family: var(--sans); color: var(--tinta); font-size: 10.5pt; line-height: 1.5; }
+
+  .pos { --fg: var(--tinta); --bg: var(--papel); background: var(--bg); color: var(--fg); }
+  .neg { --fg: var(--papel); --bg: var(--tinta); background: var(--bg); color: var(--fg); }
+  .hueso { --fg: var(--tinta); --bg: var(--hueso); background: var(--bg); color: var(--fg); }
+
+  .page { width: 297mm; height: 210mm; padding: 16mm 20mm 20mm; position: relative; overflow: hidden;
+          page-break-after: always; break-after: page; display: flex; flex-direction: column; }
+  .page:last-child { page-break-after: auto; break-after: auto; }
+  .pie { position: absolute; left: 20mm; right: 20mm; bottom: 9mm; display: flex; justify-content: space-between;
+         font-size: 7.5pt; letter-spacing: .16em; text-transform: uppercase; opacity: .55; }
+  .rotulo { font-size: 7.5pt; letter-spacing: .18em; text-transform: uppercase; font-weight: 600; opacity: .6; }
+  h1 { font-family: var(--serif); font-weight: 600; font-size: 30pt; line-height: 1.05; letter-spacing: -.02em; margin: 3mm 0 5mm; }
+  h2 { font-family: var(--serif); font-weight: 600; font-size: 15pt; line-height: 1.15; margin-bottom: 2mm; }
+  p { max-width: 150mm; }
+  p + p { margin-top: 3mm; }
+  .suave { opacity: .7; }
+  .cuerpo { flex: 1; display: flex; gap: 12mm; min-height: 0; }
+  .col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .lienzo { flex: 1; display: flex; align-items: center; justify-content: center; border-radius: 2mm; position: relative; min-height: 0; }
+  .borde { border: .3mm solid var(--g10); }
+  .nota { font-size: 8.5pt; opacity: .7; margin-top: 3mm; }
+
+  /* --- La marca ------------------------------------------------------- */
+  .iso { display: block; }
+  .hilo { fill: var(--fg); }
+  .hueco { fill: var(--bg); }
+  .logo { font-family: var(--serif); font-weight: 600; letter-spacing: -.035em; line-height: .9; color: var(--fg); }
+  .desc { font-family: var(--sans); font-weight: 600; letter-spacing: .2em; text-transform: uppercase; color: var(--fg); white-space: nowrap; }
+  .imago { display: inline-flex; align-items: center; color: var(--fg); }
+  .imago.v { flex-direction: column; text-align: center; }
+  .etiqueta { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; position: relative; border-radius: 1.2mm; }
+  .etiqueta::before { content: ''; position: absolute; inset: 6%; border: .35mm dashed var(--fg); border-radius: .6mm; opacity: .75; }
+
+  /* --- Portada y separadores ------------------------------------------ */
+  .portada { justify-content: space-between; padding: 22mm 24mm; }
+  .portada > div { position: relative; z-index: 1; }
+  .separador { justify-content: flex-end; padding-bottom: 30mm; }
+  .separador .num { font-family: var(--serif); font-size: 120pt; line-height: .8; opacity: .18; position: absolute; right: 20mm; top: 14mm; }
+  .separador h1 { font-size: 46pt; }
+  .trama-fondo { position: absolute; right: -40mm; bottom: -40mm; opacity: .07; }
+
+  /* --- Tablas y fichas ------------------------------------------------- */
+  .indice { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10mm; margin-top: 6mm; }
+  .indice h2 { font-size: 13pt; border-top: .4mm solid var(--tinta); padding-top: 3mm; }
+  .indice li { list-style: none; font-size: 9.5pt; padding: 1.2mm 0; border-bottom: .2mm solid var(--g10); display: flex; justify-content: space-between; }
+  .valores { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6mm; margin-top: 4mm; }
+  .valor { border-top: .4mm solid var(--tinta); padding-top: 3mm; }
+  .valor b { font-family: var(--serif); font-size: 19pt; font-weight: 600; display: block; margin-bottom: 3mm; }
+  .valor span { font-size: 10.5pt; line-height: 1.5; opacity: .75; display: block; }
+  .color { flex: 1; display: flex; flex-direction: column; border-radius: 2mm; overflow: hidden; border: .3mm solid var(--g10); }
+  .color .muestra { flex: 1; min-height: 30mm; padding: 5mm; display: flex; align-items: flex-end; font-family: var(--serif); font-size: 17pt; font-weight: 600; }
+  .color dl { padding: 4mm 5mm; font-size: 8.5pt; display: grid; grid-template-columns: 14mm 1fr; row-gap: .8mm; background: #fff; color: var(--tinta); }
+  .color dt { opacity: .55; letter-spacing: .08em; }
+  .color .uso { grid-column: 1 / -1; margin-top: 2mm; opacity: .75; }
+  .abc { font-size: 13pt; line-height: 1.5; word-break: break-all; }
+  .pesos { display: flex; gap: 8mm; margin-top: 5mm; }
+  .pesos div { font-size: 8pt; opacity: .8; }
+  .pesos b { display: block; font-size: 26pt; line-height: 1.1; opacity: 1; }
+  .mal { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6mm; flex: 1; }
+  .mal figure { display: flex; flex-direction: column; }
+  .mal .caja { flex: 1; border: .3mm solid var(--g10); border-radius: 2mm; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; min-height: 38mm; }
+  .mal .caja::after { content: '×'; position: absolute; top: 1.5mm; right: 3mm; font-size: 16pt; line-height: 1; font-weight: 300; color: var(--tinta); background: #fff; border: .3mm solid var(--tinta); width: 6mm; height: 6mm; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding-bottom: .6mm; }
+  .mal figcaption { font-size: 8.5pt; margin-top: 2mm; }
+  .mal figcaption b { display: block; }
+  .cota { position: absolute; font-size: 7.5pt; letter-spacing: .1em; opacity: .6; }
+  .sombra { box-shadow: 0 5mm 12mm -6mm rgba(10,10,11,.45); }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <!-- Isotipo: tafetán de 3 × 3. Tres hilos de urdimbre y tres de trama, uno por encima y uno por debajo. -->
+    <symbol id="iso" viewBox="0 0 100 100">
+      <g class="hilo">
+        <rect x="8" y="0" width="20" height="100"/><rect x="40" y="0" width="20" height="100"/><rect x="72" y="0" width="20" height="100"/>
+        <rect x="0" y="8" width="100" height="20"/><rect x="0" y="40" width="100" height="20"/><rect x="0" y="72" width="100" height="20"/>
+      </g>
+      <g class="hueco">
+        <!-- la trama pasa por encima: se corta la urdimbre arriba y abajo -->
+        <rect x="8" y="4" width="20" height="4"/><rect x="8" y="28" width="20" height="4"/>
+        <rect x="72" y="4" width="20" height="4"/><rect x="72" y="28" width="20" height="4"/>
+        <rect x="40" y="36" width="20" height="4"/><rect x="40" y="60" width="20" height="4"/>
+        <rect x="8" y="68" width="20" height="4"/><rect x="8" y="92" width="20" height="4"/>
+        <rect x="72" y="68" width="20" height="4"/><rect x="72" y="92" width="20" height="4"/>
+        <!-- la urdimbre pasa por encima: se corta la trama a izquierda y derecha -->
+        <rect x="36" y="8" width="4" height="20"/><rect x="60" y="8" width="4" height="20"/>
+        <rect x="4" y="40" width="4" height="20"/><rect x="28" y="40" width="4" height="20"/>
+        <rect x="68" y="40" width="4" height="20"/><rect x="92" y="40" width="4" height="20"/>
+        <rect x="36" y="72" width="4" height="20"/><rect x="60" y="72" width="4" height="20"/>
+      </g>
+    </symbol>
+  </defs>
+</svg>
+
+<!-- 1 · PORTADA -->
+<section class="page neg portada">
+  <svg class="iso trama-fondo" width="230mm" height="230mm" style="opacity:.06"><use href="#iso"/></svg>
+  <div class="rotulo">Manual de identidad visual · 2026</div>
+  <div>
+    <div class="imago" style="gap:9mm">
+      <svg class="iso" width="34mm" height="34mm"><use href="#iso"/></svg>
+      <div>
+        <div class="logo" style="font-size:92pt">Trama</div>
+        <div class="desc" style="font-size:9.5pt; margin-top:4mm; margin-left:1.5mm">Probador virtual de telas</div>
+      </div>
+    </div>
+    <p style="font-family:var(--serif); font-style:italic; font-size:17pt; margin-top:12mm">Elige la tela antes de cortarla.</p>
+  </div>
+  <div style="display:flex; justify-content:space-between; align-items:flex-end; font-size:9.5pt">
+    <div>
+      <div class="rotulo" style="margin-bottom:2mm">Autores</div>
+      Camilo Ernesto Amaya López — 0192265<br>
+      Ángel Jhosep Sánchez Oviedo — 0192411<br>
+      Miguel Felipe Quintero Santos — 0192334
+    </div>
+    <div style="text-align:right">
+      <div class="rotulo" style="margin-bottom:2mm">Docente</div>
+      Duvan Andrey Márquez Pinzón<br>
+      Ingeniería de Sistemas · Facultad de Ingenierías<br>
+      Universidad Francisco de Paula Santander Ocaña
+    </div>
+  </div>
+</section>
+
+<!-- 2 · CONTENIDO -->
+<section class="page pos">
+  <div class="rotulo">Contenido</div>
+  <h1>Qué hay en este manual</h1>
+  <div class="indice">
+    <div><h2>1 · Introducción</h2><ul>
+      <li>Para qué sirve <span>03</span></li><li>El proyecto <span>04</span></li><li>Misión y visión <span>05</span></li><li>Valores <span>06</span></li></ul></div>
+    <div><h2>2 · Identidad visual</h2><ul>
+      <li>Logotipo <span>08</span></li><li>Isotipo <span>09</span></li><li>Imagotipo <span>10</span></li><li>Isologo <span>11</span></li>
+      <li>Colores principales <span>12</span></li><li>Colores secundarios <span>13</span></li><li>Positivo y negativo <span>14</span></li>
+      <li>Eslogan <span>15</span></li><li>Tipografías <span>16</span></li></ul></div>
+    <div><h2>3 · Normas de uso</h2><ul>
+      <li>Área de protección <span>19</span></li><li>Tamaños mínimos <span>19</span></li><li>Usos no correctos <span>20</span></li></ul></div>
+    <div><h2>4 · Aplicaciones</h2><ul>
+      <li>Tarjetas de presentación <span>22</span></li><li>Papelería corporativa <span>23</span></li><li>Redes sociales <span>24</span></li>
+      <li>Producto y empaque <span>25</span></li><li>La aplicación web <span>26</span></li></ul></div>
+  </div>
+  <div class="pie"><span>Trama · Manual de identidad visual</span><span>02</span></div>
+</section>
+
+<!-- 3 · INTRODUCCIÓN -->
+<section class="page pos">
+  <div class="rotulo">1 · Introducción</div>
+  <h1>Para qué sirve este manual</h1>
+  <div class="cuerpo">
+    <div class="col">
+      <p>Este manual reúne los elementos que forman la identidad visual de <b>Trama</b>, el probador virtual de telas, y las normas para usarlos. Lo que se busca es que la marca se vea igual en la aplicación, en una tarjeta, en una publicación y en una etiqueta.</p>
+      <p>Está dirigido a quienes desarrollan la plataforma y a cualquiera que tenga que producir una pieza con la marca: una presentación, un documento o un anuncio.</p>
+      <p>Se divide en cuatro partes. La primera presenta el proyecto y lo que defiende. La segunda describe la marca: logotipo, isotipo, imagotipo, isologo, colores, eslogan y tipografías. La tercera dice cómo usarla y cómo no. La cuarta la muestra aplicada.</p>
+      <p class="suave">La identidad no se inventó para este documento. Parte de las decisiones que ya tiene la aplicación en funcionamiento: blanco y negro, dos tipografías y ningún color de acento en la interfaz.</p>
+    </div>
+    <div class="col">
+      <div class="lienzo hueso">
+        <div class="imago v" style="gap:7mm">
+          <svg class="iso" width="38mm" height="38mm"><use href="#iso"/></svg>
+          <div><div class="logo" style="font-size:54pt">Trama</div><div class="desc" style="font-size:7pt; margin-top:3mm">Probador virtual de telas</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="pie"><span>Trama · Introducción</span><span>03</span></div>
+</section>
+
+<!-- 4 · EL PROYECTO -->
+<section class="page pos">
+  <div class="rotulo">1 · Introducción</div>
+  <h1>El proyecto</h1>
+  <div class="cuerpo">
+    <div class="col">
+      <p><b>Trama</b> es una plataforma web de prueba virtual de telas. Un diseñador, una modista o un taller sube la fotografía de una prenda, o el boceto de una que todavía no existe. Le prueba telas del catálogo y compara los resultados lado a lado, sin pedir muestras ni gastar metraje.</p>
+      <p>Quien usa Trama no es quien se pone la ropa: es quien tiene que elegir la tela. Por eso el catálogo es de telas, y las prendas las pone el usuario.</p>
+      <h2 style="margin-top:7mm">El nombre</h2>
+      <p>En un tejido, la <b>trama</b> es el hilo que cruza de lado a lado, y la urdimbre el que corre a lo largo. Cruzados uno por encima y otro por debajo forman la tela. El nombre es corto, está en español y habla del oficio de quien usa la plataforma.</p>
+    </div>
+    <div class="col">
+      <div class="rotulo" style="margin-bottom:3mm">Lo que hace</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:4mm; flex:1">
+        <div class="hueso" style="padding:5mm; border-radius:2mm"><h2>Catálogo de telas</h2><span class="suave" style="font-size:9pt">Cada tela con su ficha técnica y su muestra.</span></div>
+        <div class="hueso" style="padding:5mm; border-radius:2mm"><h2>Prenda o boceto</h2><span class="suave" style="font-size:9pt">Sirve una fotografía y sirve un dibujo a lápiz.</span></div>
+        <div class="hueso" style="padding:5mm; border-radius:2mm"><h2>La tela aplicada</h2><span class="suave" style="font-size:9pt">La prenda conserva su forma, sus pliegues y su luz.</span></div>
+        <div class="hueso" style="padding:5mm; border-radius:2mm"><h2>Lado a lado</h2><span class="suave" style="font-size:9pt">Entre dos pruebas solo cambia la tela.</span></div>
+        <div class="hueso" style="padding:5mm; border-radius:2mm"><h2>Galería e historial</h2><span class="suave" style="font-size:9pt">Todas las pruebas del taller, guardadas.</span></div>
+        <div class="neg" style="padding:5mm; border-radius:2mm"><h2>El probador</h2><span class="suave" style="font-size:9pt">La prenda del taller sobre la foto de una persona.</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="pie"><span>Trama · Introducción</span><span>04</span></div>
+</section>
+
+<!-- 5 · MISIÓN Y VISIÓN -->
+<section class="page hueso">
+  <div class="rotulo">1 · Introducción</div>
+  <h1>Misión y visión</h1>
+  <div class="cuerpo" style="gap:16mm">
+    <div class="col" style="border-top:.5mm solid var(--tinta); padding-top:5mm">
+      <div class="rotulo">Misión</div>
+      <p style="font-family:var(--serif); font-size:23pt; line-height:1.28; margin-top:6mm">Ayudar a diseñadores, modistas y talleres a elegir la tela de una prenda viéndola puesta antes de comprarla, para que decidan con certeza y sin desperdiciar muestras ni metraje.</p>
+    </div>
+    <div class="col" style="border-top:.5mm solid var(--tinta); padding-top:5mm">
+      <div class="rotulo">Visión</div>
+      <p style="font-family:var(--serif); font-size:23pt; line-height:1.28; margin-top:6mm">Ser en 2030 la herramienta con la que los talleres de confección de la región prueban sus telas, y el puente entre ellos y las tiendas textiles que las venden.</p>
+    </div>
+  </div>
+  <div class="pie"><span>Trama · Introducción</span><span>05</span></div>
+</section>
+
+<!-- 6 · VALORES -->
+<section class="page pos">
+  <div class="rotulo">1 · Introducción</div>
+  <h1>Valores</h1>
+  <p>Cinco ideas guían el producto, y de ellas sale la identidad visual. La última columna de cada una dice cómo se ve.</p>
+  <div class="valores" style="margin-top:10mm">
+    <div class="valor"><b>Fidelidad</b><span>La prenda que se muestra es la del usuario: misma forma, mismos pliegues. Solo cambia la tela.</span><span style="margin-top:6mm; padding-top:4mm; border-top:.2mm solid var(--g20); opacity:1"><i>Se ve en:</i> un símbolo exacto, hecho sobre una retícula.</span></div>
+    <div class="valor"><b>Oficio</b><span>La plataforma habla el idioma del taller: urdimbre, trama, veta, caída.</span><span style="margin-top:6mm; padding-top:4mm; border-top:.2mm solid var(--g20); opacity:1"><i>Se ve en:</i> el nombre y el tejido del isotipo.</span></div>
+    <div class="valor"><b>Claridad</b><span>Comparar tiene que ser fácil. Nada compite con la tela.</span><span style="margin-top:6mm; padding-top:4mm; border-top:.2mm solid var(--g20); opacity:1"><i>Se ve en:</i> blanco, negro y mucho espacio libre.</span></div>
+    <div class="valor"><b>Ahorro</b><span>Cada prueba virtual es una muestra que no se pide y un metro que no se corta.</span><span style="margin-top:6mm; padding-top:4mm; border-top:.2mm solid var(--g20); opacity:1"><i>Se ve en:</i> una marca que se imprime a una tinta.</span></div>
+    <div class="valor"><b>Honestidad</b><span>Se dice lo que la herramienta hace y lo que no. La inteligencia artificial no cambia la prenda.</span><span style="margin-top:6mm; padding-top:4mm; border-top:.2mm solid var(--g20); opacity:1"><i>Se ve en:</i> sin efectos, degradados ni adornos.</span></div>
+  </div>
+  <div class="pie"><span>Trama · Introducción</span><span>06</span></div>
+</section>
+
+<!-- 7 · SEPARADOR -->
+<section class="page neg separador">
+  <div class="num">2</div>
+  <div class="rotulo">Segunda parte</div>
+  <h1>Identidad visual</h1>
+  <p class="suave">Logotipo, isotipo, imagotipo e isologo. Colores, eslogan y tipografías.</p>
+  <div class="pie"><span>Trama · Identidad visual</span><span>07</span></div>
+</section>
+
+<!-- 8 · LOGOTIPO -->
+<section class="page pos">
+  <div class="rotulo">2 · Identidad visual</div>
+  <h1>Logotipo</h1>
+  <div class="cuerpo">
+    <div class="col" style="flex:.8">
+      <p>El logotipo es el nombre escrito: la palabra <b>Trama</b> en Playfair Display seminegra, con la inicial en mayúscula y las letras algo más juntas de lo normal (−35 milésimas).</p>
+      <p>Es una letra con remates y mucho contraste entre trazos gruesos y finos, la misma familia de formas que usan las cabeceras de las revistas de moda. Dice «moda» sin necesidad de dibujar una prenda.</p>
+      <p>Debajo puede llevar el descriptor <b>Probador virtual de telas</b>, en Inter seminegra, en mayúsculas y muy espaciado. El descriptor se usa siempre que el público no conozca la marca.</p>
+    </div>
+    <div class="col" style="gap:5mm">
+      <div class="lienzo borde"><div class="logo" style="font-size:96pt">Trama</div></div>
+      <div class="lienzo hueso" style="flex:.7"><div style="text-align:center"><div class="logo" style="font-size:54pt">Trama</div><div class="desc" style="font-size:7pt; margin-top:3mm">Probador virtual de telas</div></div></div>
+    </div>
+  </div>
+  <div class="pie"><span>Trama · Identidad visual</span><span>08</span></div>
+</section>
+
+<!-- 9 · ISOTIPO -->
+<section class="page pos">
+  <div class="rotulo">2 · Identidad visual</div>
+  <h1>Isotipo</h1>
+  <div class="cuerpo">
+    <div class="col" style="flex:.8">
+      <p>El isotipo es el símbolo, y funciona sin palabras. Dibuja un <b>tafetán</b>, el tejido más sencillo que existe: tres hilos de urdimbre y tres de trama que se cruzan pasando uno por encima y otro por debajo.</p>
+      <p>Es lo primero que ve quien mira una tela con lupa, y es también una cuadrícula de píxeles. Ahí está el producto: tela e imagen digital.</p>
+      <h2 style="margin-top:5mm">Construcción</h2>
+      <p>Se dibuja en una retícula de 25 × 25 módulos. Cada hilo mide 5 módulos de ancho, la separación entre hilos es de 3 y el corte que marca qué hilo pasa por debajo es de 1.</p>
+      <p class="nota">Se usa solo como icono de la aplicación, foto de perfil y sello. En esos casos el nombre ya aparece al lado.</p>
+    </div>
+    <div class="col" style="gap:5mm; flex-direction:row">
+      <div class="lienzo borde">
+        <svg width="92mm" height="92mm" viewBox="-6 -6 112 112" class="iso">
+          <use href="#iso" x="0" y="0" width="100" height="100"/>
+          <g stroke="#94949A" stroke-width=".18" fill="none">
+            <path d="M0 0H100M0 4H100M0 8H100M0 12H100M0 16H100M0 20H100M0 24H100M0 28H100M0 32H100M0 36H100M0 40H100M0 44H100M0 48H100M0 52H100M0 56H100M0 60H100M0 64H100M0 68H100M0 72H100M0 76H100M0 80H100M0 84H100M0 88H100M0 92H100M0 96H100M0 100H100"/>
+            <path d="M0 0V100M4 0V100M8 0V100M12 0V100M16 0V100M20 0V100M24 0V100M28 0V100M32 0V100M36 0V100M40 0V100M44 0V100M48 0V100M52 0V100M56 0V100M60 0V100M64 0V100M68 0V100M72 0V100M76 0V100M80 0V100M84 0V100M88 0V100M92 0V100M96 0V100M100 0V100"/>
+          </g>
+          <g font-family="Inter, sans-serif" font-size="3.2" fill="#66666B">
+            <text x="18" y="-2" text-anchor="middle">5</text><text x="34" y="-2" text-anchor="middle">3</text><text x="50" y="-2" text-anchor="middle">5</text>
+            <text x="-3.5" y="19" text-anchor="middle">5</text><text x="-3.5" y="35" text-anchor="middle">3</text>
+          </g>
+        </svg>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:5mm; width:42mm">
+        <div class="lienzo neg"><svg class="iso" width="24mm" height="24mm"><use href="#iso"/></svg></div>
+        <div class="lienzo hueso"><svg class="iso" width="24mm" height="24mm"><use href="#iso"/></svg></div>
+      </div>
+    </div>
+  </div>
+  <div class="pie"><span>Trama · Identidad visual</span><span>09</span></div>
+</section>
+
+<!-- 10 · IMAGOTIPO -->
+<section class="page pos">
+  <div class="rotulo">2 · Identidad visual</div>
+  <h1>Imagotipo</h1>
+  <div class="cuerpo">
+    <div class="col" style="flex:.7">
+      <p>El imagotipo junta el isotipo y el logotipo. Van uno al lado del otro, sin tocarse, así que se pueden separar: cada uno funciona por su cuenta.</p>
+      <p><b>Es la versión principal de la marca.</b> Se usa en la cabecera de la aplicación, en documentos y en cualquier pieza donde quepa.</p>
+      <h2 style="margin-top:5mm">Dos disposiciones</h2>
+      <p><b>Horizontal:</b> el símbolo mide lo mismo que la altura de la T mayúscula, y la separación es media anchura del símbolo.</p>
+      <p><b>Vertical:</b> el símbolo va centrado encima. Para formatos cuadrados o estrechos.</p>
+    </div>
+    <div class="col" style="gap:5mm">
+      <div class="lienzo borde">
+        <div class="imago" style="gap:8mm">
+          <svg class="iso" width="27mm" height="27mm"><use href="#iso"/></svg>
+          <div><div class="logo" style="font-size:80pt">Trama</div><div class="desc" style="font-size:8.3pt; margin-top:3.5mm; margin-left:1mm">Probador virtual de telas</div></div>
+        </div>
+        <span class="cota" style="left:5mm; top:4mm">HORIZONTAL · PRINCIPAL</span>
+      </div>
+      <div style="flex:1; display:flex; gap:5mm">
+        <div class="lienzo hueso">
+          <div class="imago v" style="gap:5mm">
+            <svg class="iso" width="20mm" height="20mm"><use href="#iso"/></svg>
+            <div><div class="logo" style="font-size:38pt">Trama</div><div class="desc" style="font-size:5pt; margin-top:2mm">Probador virtual de telas</div></div>
+          </div>
+          <span class="cota" style="left:5mm; top:4mm">VERTICAL</span>
+        </div>
+        <div class="lienzo hueso">
+          <div class="imago" style="gap:4.5mm"><svg class="iso" width="13mm" height="13mm"><use href="#iso"/></svg><div class="logo" style="font-size:40pt">Trama</div></div>
+          <span class="cota" style="left:5mm; top:4mm">SIN DESCRIPTOR</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="pie"><span>Trama · Identidad visual</span><span>10</span></div>
+</section>
+
+<!-- 11 · ISOLOGO -->
+<section class="page pos">
+  <div class="rotulo">2 · Identidad visual</div>
+  <h1>Isologo</h1>
+  <div class="cuerpo">
+    <div class="col" style="flex:.7">
+      <p>En el isologo el texto y el símbolo forman un solo bloque que no se puede dividir. Tiene la forma de la <b>etiqueta tejida</b> que se cose dentro de una prenda: un rectángulo con su pespunte, el tejido arriba y el nombre debajo.</p>
+      <p>Quitarle el nombre o el símbolo lo rompe. Si hace falta uno solo, se usa el isotipo o el logotipo.</p>
+      <h2 style="margin-top:5mm">Cuándo se usa</h2>
+      <p>Como sello: en etiquetas colgantes, adhesivos, el cierre de un empaque y la marca de agua de una imagen generada. No sustituye al imagotipo en la aplicación ni en los documentos.</p>
+      <p class="nota">Proporción 4 : 5. El pespunte va a un 6 % del borde.</p>
+    </div>
+    <div class="col" style="gap:5mm; flex-direction:row">
+      <div class="lienzo hueso">
+        <div class="etiqueta neg" style="width:72mm; height:90mm; gap:6mm">
+          <svg class="iso" width="26mm" height="26mm"><use href="#iso"/></svg>
+          <div style="text-align:center"><div class="logo" style="font-size:40pt">Trama</div><div class="desc" style="font-size:5.2pt; margin-top:2.5mm">Probador virtual de telas</div></div>
+        </div>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:5mm; width:56mm">
+        <div class="lienzo neg">
+          <div class="etiqueta pos" style="width:32mm; height:40mm; gap:2.5mm">
+            <svg class="iso" width="11.5mm" height="11.5mm"><use href="#iso"/></svg>
+            <div style="text-align:center"><div class="logo" style="font-size:18pt">Trama</div><div class="desc" style="font-size:2.4pt; margin-top:1mm">Probador virtual de telas</div></div>
+          </div>
+        </div>
+        <div class="lienzo" style="background:var(--lino)">
+          <div class="etiqueta neg" style="width:32mm; height:40mm; gap:2.5mm">
+            <svg class="iso" width="11.5mm" height="11.5mm"><use href="#iso"/></svg>
+            <div style="text-align:center"><div class="logo" style="font-size:18pt">Trama</div><div class="desc" style="font-size:2.4pt; margin-top:1mm">Probador virtual de telas</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="pie"><span>Trama · Identidad visual</span><span>11</span></div>
+</section>
+
+<!-- 12 · COLORES PRINCIPALES -->
+<section class="page pos">
+  <div class="rotulo">2 · Sistema cromático</div>
+  <h1>Colores principales</h1>
+  <p>La marca es en blanco y negro. Un catálogo de telas se ve mejor sobre blanco, y así ningún color de la marca compite con el de la tela que se está eligiendo. Los grises no son colores nuevos: son la tinta a menor intensidad.</p>
+  <div class="cuerpo" style="margin-top:6mm; gap:6mm">
+    <div class="color" style="flex:1.4"><div class="muestra" style="background:var(--tinta); color:#fff">Tinta</div>
+      <dl><dt>HEX</dt><dd>#0A0A0B</dd><dt>RGB</dt><dd>10 · 10 · 11</dd><dt>CMYK</dt><dd>0 · 0 · 0 · 96</dd><dd class="uso">La marca, los textos y los fondos oscuros.</dd></dl></div>
+    <div class="color" style="flex:1.4"><div class="muestra" style="background:#fff">Papel</div>
+      <dl><dt>HEX</dt><dd>#FFFFFF</dd><dt>RGB</dt><dd>255 · 255 · 255</dd><dt>CMYK</dt><dd>0 · 0 · 0 · 0</dd><dd class="uso">El fondo principal y la marca en negativo.</dd></dl></div>
+    <div class="color"><div class="muestra" style="background:var(--hueso)">Hueso</div>
+      <dl><dt>HEX</dt><dd>#F7F7F5</dd><dt>RGB</dt><dd>247 · 247 · 245</dd><dt>CMYK</dt><dd>0 · 0 · 1 · 3</dd><dd class="uso">Fondo de sección.</dd></dl></div>
+    <div class="color"><div class="muestra" style="background:var(--g60); color:#fff">Gris 60</div>
+      <dl><dt>HEX</dt><dd>#66666B</dd><dt>RGB</dt><dd>102 · 102 · 107</dd><dt>CMYK</dt><dd>5 · 5 · 0 · 58</dd><dd class="uso">Texto secundario.</dd></dl></div>
+    <div class="color"><div class="muestra" style="background:var(--g10)">Gris 10</div>
+      <dl><dt>HEX</dt><dd>#E4E4E7</dd><dt>RGB</dt><dd>228 · 228 · 231</dd><dt>CMYK</dt><dd>1 · 1 · 0 · 9</dd><dd class="uso">Líneas y bordes.</dd></dl></div>
+  </div>
+  <div class="pie"><span>Trama · Identidad visual</span><span>12</span></div>
+</section>
+
+<!-- 13 · COLORES SECUNDARIOS -->
+<section class="page pos">
+  <div class="rotulo">2 · Sistema cromático</div>
+  <h1>Colores secundarios</h1>
+  <p>Cuatro colores tomados de telas reales acompañan a la marca en publicidad, redes y empaques. <b>Nunca tiñen el logotipo ni aparecen en la interfaz de la aplicación</b>: allí el color lo ponen las telas. Se usan como fondo, uno por pieza.</p>
+  <div class="cuerpo" style="margin-top:6mm; gap:6mm">
+    <div class="color"><div class="muestra" style="background:var(--indigo); color:#fff">Índigo</div>
+      <dl><dt>HEX</dt><dd>#26365F</dd><dt>RGB</dt><dd>38 · 54 · 95</dd><dt>CMYK</dt><dd>60 · 43 · 0 · 63</dd><dd class="uso">El azul del denim. Marca encima: en blanco.</dd></dl></div>
+    <div class="color"><div class="muestra" style="background:var(--terracota); color:#fff">Terracota</div>
+      <dl><dt>HEX</dt><dd>#B4533A</dd><dt>RGB</dt><dd>180 · 83 · 58</dd><dt>CMYK</dt><dd>0 · 54 · 68 · 29</dd><dd class="uso">Un tinte de tierra. Marca encima: en blanco.</dd></dl></div>
+    <div class="color"><div class="muestra" style="background:var(--lino)">Lino</div>
+      <dl><dt>HEX</dt><dd>#D8CBB2</dd><dt>RGB</dt><dd>216 · 203 · 178</dd><dt>CMYK</dt><dd>0 · 6 · 18 · 15</dd><dd class="uso">La fibra sin teñir. Marca encima: en tinta.</dd></dl></div>
+    <div class="color"><div class="muestra" style="background:var(--oliva); color:#fff">Oliva</div>
+      <dl><dt>HEX</dt><dd>#6A7250</dd><dt>RGB</dt><dd>106 · 114 · 80</dd><dt>CMYK</dt><dd>7 · 0 · 30 · 55</dd><dd class="uso">Una lona de trabajo. Marca encima: en blanco.</dd></dl></div>
+  </div>
+  <div class="pie"><span>Trama · Identidad visual</span><span>13</span></div>
+</section>
+
+<!-- 14 · POSITIVO Y NEGATIVO -->
+<section class="page pos">
+  <div class="rotulo">2 · Sistema cromático</div>
+  <h1>Positivo y negativo</h1>
+  <p>La marca tiene dos versiones y ninguna más: tinta sobre fondo claro (positivo) y blanco sobre fondo oscuro (negativo). Sobre un color secundario se elige la que dé más contraste.</p>
+  <div class="cuerpo" style="margin-top:6mm; gap:5mm; flex-direction:column">
+    <div style="flex:1.5; display:flex; gap:5mm">
+      <div class="lienzo pos borde"><div class="imago" style="gap:6mm"><svg class="iso" width="19mm" height="19mm"><use href="#iso"/></svg><div class="logo" style="font-size:58pt">Trama</div></div><span class="cota" style="left:5mm; top:4mm">POSITIVO</span></div>
+      <div class="lienzo neg"><div class="imago" style="gap:6mm"><svg class="iso" width="19mm" height="19mm"><use href="#iso"/></svg><div class="logo" style="font-size:58pt">Trama</div></div><span class="cota" style="left:5mm; top:4mm">NEGATIVO</span></div>
+    </div>
+    <div style="flex:1; display:flex; gap:5mm">
+      <div class="lienzo" style="--fg:#fff; --bg:var(--indigo); background:var(--bg)"><div class="imago" style="gap:2.8mm"><svg class="iso" width="8mm" height="8mm"><use href="#iso"/></svg><div class="logo" style="font-size:24pt">Trama</div></div></div>
+      <div class="lienzo" style="--fg:#fff; --bg:var(--terracota); background:var(--bg)"><div class="imago" style="gap:2.8mm"><svg class="iso" width="8mm" height="8mm"><use href="#iso"/></svg><div class="logo" style="font-size:24pt">Trama</div></div></div>
+      <div class="lienzo" style="--fg:var(--tinta); --bg:var(--lino); background:var(--bg)"><div class="imago" style="gap:2.8mm"><svg class="iso" width="8mm" height="8mm"><use href="#iso"/></svg><div class="logo" style="font-size:24pt">Trama</div></div></div>
+      <div class="lienzo" style="--fg:#fff; --bg:var(--oliva); background:var(--bg)"><div class="imago" style="gap:2.8mm"><svg class="iso" width="8mm" height="8mm"><use href="#iso"/></svg><div class="logo" style="font-size:24pt">Trama</div></div></div>
+      <div class="lienzo hueso"><div class="imago" style="gap:2.8mm"><svg class="iso" width="8mm" height="8mm"><use href="#iso"/></svg><div class="logo" style="font-size:24pt">Trama</div></div></div>
+    </div>
+  </div>
+  <div class="pie"><span>Trama · Identidad visual</span><span>14</span></div>
+</section>
+
+<!-- 15 · ESLOGAN -->
+<section class="page neg" style="justify-content:center">
+  <div class="rotulo">2 · Elementos de comunicación · Eslogan</div>
+  <div style="font-family:var(--serif); font-size:60pt; font-weight:500; line-height:1.02; letter-spacing:-.02em; margin:8mm 0 10mm">Elige la tela<br><i>antes</i> de cortarla.</div>
+  <div style="display:flex; gap:14mm; font-size:9.5pt">
+    <p style="max-width:95mm" class="suave">Seis palabras que dicen lo que promete la marca: la decisión se toma antes del gasto. Habla al oficio con su propio verbo, cortar, que es el momento en que una tela ya no tiene vuelta atrás.</p>
+    <p style="max-width:95mm; margin-top:0" class="suave">Se escribe en Playfair Display, con punto final y sin comillas. Puede ir debajo del imagotipo o solo, como titular. No se traduce ni se abrevia.</p>
+  </div>
+  <div class="pie"><span>Trama · Identidad visual</span><span>15</span></div>
+</section>
+
+<!-- 16 · TIPOGRAFÍA PRINCIPAL -->
+<section class="page pos">
+  <div class="rotulo">2 · Elementos de comunicación</div>
+  <h1>Tipografía principal</h1>
+  <div class="cuerpo">
+    <div class="col" style="flex:.7">
+      <h2>Playfair Display</h2>
+      <p>Es la tipografía corporativa: la del logotipo, los titulares y el eslogan. Tiene remates y trazos muy contrastados, y a tamaño grande resulta elegante.</p>
+      <p>Se usa de 14 puntos en adelante. Por debajo de ese tamaño sus trazos finos se pierden, y el texto pasa a la tipografía secundaria.</p>
+      <p class="nota">Diseñada por Claus Eggers Sørensen. Licencia abierta (SIL Open Font License). Se descarga gratis en fonts.google.com/specimen/Playfair+Display</p>
+    </div>
+    <div class="col hueso" style="padding:8mm 10mm; border-radius:2mm; font-family:var(--serif)">
+      <div style="font-size:74pt; line-height:1; font-weight:600">Aa Gg Rr</div>
+      <div class="abc" style="margin-top:5mm">ABCDEFGHIJKLMNÑOPQRSTUVWXYZ<br>abcdefghijklmnñopqrstuvwxyz<br>0123456789 ¿? ¡! &amp; — «»</div>
+      <div class="pesos">
+        <div><b style="font-weight:500">Tela</b><span style="font-family:var(--sans)">Media · 500</span></div>
+        <div><b style="font-weight:600">Tela</b><span style="font-family:var(--sans)">Seminegra · 600</span></div>
+        <div><b style="font-weight:700">Tela</b><span style="font-family:var(--sans)">Negra · 700</span></div>
+        <div><b style="font-weight:500; font-style:italic">Tela</b><span style="font-family:var(--sans)">Cursiva · 500</span></div>
+      </div>
+      <div style="margin-top:auto; border-top:.3mm solid var(--g20); padding-top:4mm">
+        <div class="rotulo" style="font-family:var(--sans)">Así se usa · titular</div>
+        <div style="font-size:24pt; line-height:1.1; font-weight:600; letter-spacing:-.02em; margin-top:2mm">Doce telas sobre un mismo vestido.</div>
+      </div>
+    </div>
+  </div>
+  <div class="pie"><span>Trama · Identidad visual</span><span>16</span></div>
+</section>
+
+<!-- 17 · TIPOGRAFÍA SECUNDARIA -->
+<section class="page pos">
+  <div class="rotulo">2 · Elementos de comunicación</div>
+  <h1>Tipografía secundaria</h1>
+  <div class="cuerpo">
+    <div class="col" style="flex:.7">
+      <h2>Inter</h2>
+      <p>Es la tipografía de apoyo: los párrafos, los botones, las fichas técnicas y los rótulos. No tiene remates y se lee bien en pantalla a tamaños pequeños.</p>
+      <p>Los rótulos van en mayúsculas, seminegra y muy espaciados, como el descriptor de la marca.</p>
+      <p class="nota">Diseñada por Rasmus Andersson. Licencia abierta (SIL Open Font License). Se descarga gratis en fonts.google.com/specimen/Inter</p>
+      <p class="nota">Si ninguna de las dos está disponible, por ejemplo en un correo, se sustituyen por Georgia y Arial.</p>
+    </div>
+    <div class="col hueso" style="padding:8mm 10mm; border-radius:2mm">
+      <div style="font-size:74pt; line-height:1; font-weight:600; letter-spacing:-.03em">Aa Gg Rr</div>
+      <div class="abc" style="margin-top:5mm">ABCDEFGHIJKLMNÑOPQRSTUVWXYZ<br>abcdefghijklmnñopqrstuvwxyz<br>0123456789 ¿? ¡! &amp; — «»</div>
+      <div class="pesos">
+        <div><b style="font-weight:400">Tela</b>Normal · 400</div>
+        <div><b style="font-weight:500">Tela</b>Media · 500</div>
+        <div><b style="font-weight:600">Tela</b>Seminegra · 600</div>
+        <div><b style="font-weight:700">Tela</b>Negra · 700</div>
+      </div>
+      <div style="margin-top:auto; border-top:.3mm solid var(--g20); padding-top:4mm">
+        <div class="rotulo">Así se usa · rótulo y párrafo</div>
+        <p style="margin-top:2mm; font-size:10.5pt">Sube la fotografía de la prenda o el boceto. Elige una tela del catálogo y espera unos segundos: la prenda conserva su forma, sus pliegues y su luz, y solo cambia la tela.</p>
+      </div>
+    </div>
+  </div>
+  <div class="pie"><span>Trama · Identidad visual</span><span>17</span></div>
+</section>
+
+<!-- 18 · SEPARADOR -->
+<section class="page neg separador">
+  <div class="num">3</div>
+  <div class="rotulo">Tercera parte</div>
+  <h1>Normas de uso</h1>
+  <p class="suave">El espacio que necesita la marca, su tamaño mínimo y lo que no se le puede hacer.</p>
+  <div class="pie"><span>Trama · Normas de uso</span><span>18</span></div>
+</section>
+
+<!-- 19 · ÁREA DE PROTECCIÓN Y TAMAÑOS -->
+<section class="page pos">
+  <div class="rotulo">3 · Normas de uso</div>
+  <h1>Área de protección y tamaños mínimos</h1>
+  <div class="cuerpo">
+    <div class="col">
+      <p>Alrededor de la marca se deja libre un margen igual a <b>X</b>, la anchura de un hilo del isotipo más su separación (8 de los 25 módulos). Dentro de ese margen no entra texto, imagen ni el borde de la página.</p>
+      <div class="lienzo hueso" style="margin-top:5mm">
+        <div style="padding:7mm; border:.3mm dashed var(--g40); position:relative; background:#fff">
+          <div class="imago" style="gap:5.5mm"><svg class="iso" width="22mm" height="22mm"><use href="#iso"/></svg><div class="logo" style="font-size:64pt">Trama</div></div>
+          <span class="cota" style="left:2.6mm; top:1.4mm">X</span><span class="cota" style="right:2.6mm; bottom:1.4mm">X</span>
+          <span style="position:absolute; left:0; top:0; width:7mm; height:7mm; border-right:.2mm solid var(--g40); border-bottom:.2mm solid var(--g40)"></span>
+          <span style="position:absolute; right:0; bottom:0; width:7mm; height:7mm; border-left:.2mm solid var(--g40); border-top:.2mm solid var(--g40)"></span>
+        </div>
+      </div>
+    </div>
+    <div class="col" style="flex:.8">
+      <p>Por debajo de estos tamaños los cortes del tejido se cierran y el símbolo se vuelve una mancha.</p>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:5mm; margin-top:5mm; flex:1">
+        <div class="lienzo borde" style="flex-direction:column; gap:4mm"><div class="imago" style="gap:1.6mm"><svg class="iso" width="5.4mm" height="5.4mm"><use href="#iso"/></svg><div class="logo" style="font-size:17pt">Trama</div></div><div style="text-align:center; font-size:8.5pt"><b>Imagotipo</b><br>25 mm de ancho · 120 px</div></div>
+        <div class="lienzo borde" style="flex-direction:column; gap:4mm"><svg class="iso" width="6mm" height="6mm"><use href="#iso"/></svg><div style="text-align:center; font-size:8.5pt"><b>Isotipo</b><br>6 mm · 24 px</div></div>
+        <div class="lienzo borde" style="flex-direction:column; gap:4mm"><div class="logo" style="font-size:16pt">Trama</div><div style="text-align:center; font-size:8.5pt"><b>Logotipo</b><br>18 mm de ancho · 80 px</div></div>
+        <div class="lienzo borde" style="flex-direction:column; gap:4mm">
+          <div class="etiqueta neg" style="width:15mm; height:18.75mm; gap:1.2mm"><svg class="iso" width="5.4mm" height="5.4mm"><use href="#iso"/></svg><div class="logo" style="font-size:8.5pt">Trama</div></div>
+          <div style="text-align:center; font-size:8.5pt"><b>Isologo</b><br>15 mm de ancho · 72 px<br><span class="suave">A este tamaño va sin descriptor.</span></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="pie"><span>Trama · Normas de uso</span><span>19</span></div>
+</section>
+
+<!-- 20 · USOS NO CORRECTOS -->
+<section class="page pos">
+  <div class="rotulo">3 · Normas de uso</div>
+  <h1>Usos no correctos</h1>
+  <div class="mal">
+    <figure><div class="caja"><div class="imago" style="gap:3mm; transform:scaleX(1.55)"><svg class="iso" width="8mm" height="8mm"><use href="#iso"/></svg><div class="logo" style="font-size:25pt">Trama</div></div></div><figcaption><b>No deformar</b>Ni estirar ni aplastar. Se escala siempre en proporción.</figcaption></figure>
+    <figure><div class="caja" style="--fg:#D4145A"><div class="imago" style="gap:3mm"><svg class="iso" width="10mm" height="10mm"><use href="#iso"/></svg><div class="logo" style="font-size:31pt">Trama</div></div></div><figcaption><b>No cambiar el color</b>La marca es tinta o blanca. Tampoco en un color secundario.</figcaption></figure>
+    <figure><div class="caja"><div class="imago" style="gap:3mm; transform:rotate(-18deg)"><svg class="iso" width="10mm" height="10mm"><use href="#iso"/></svg><div class="logo" style="font-size:31pt">Trama</div></div></div><figcaption><b>No girar</b>Los hilos van siempre en horizontal y en vertical.</figcaption></figure>
+    <figure><div class="caja"><div class="imago" style="gap:3mm; filter:drop-shadow(1.2mm 1.2mm .8mm rgba(0,0,0,.55))"><svg class="iso" width="10mm" height="10mm"><use href="#iso"/></svg><div class="logo" style="font-size:31pt">Trama</div></div></div><figcaption><b>No añadir efectos</b>Sin sombras, brillos, relieves ni degradados.</figcaption></figure>
+    <figure><div class="caja"><div class="imago" style="gap:3mm"><svg class="iso" width="10mm" height="10mm"><use href="#iso"/></svg><div style="font-family:'Comic Sans MS','Segoe Print',cursive; font-size:27pt; font-weight:700">Trama</div></div></div><figcaption><b>No cambiar la letra</b>El nombre va en Playfair Display seminegra.</figcaption></figure>
+    <figure><div class="caja"><div class="imago" style="gap:3mm; flex-direction:row-reverse; align-items:flex-start"><svg class="iso" width="17mm" height="17mm"><use href="#iso"/></svg><div class="logo" style="font-size:21pt">Trama</div></div></div><figcaption><b>No recomponer</b>Ni otro orden ni otras proporciones entre símbolo y nombre.</figcaption></figure>
+    <figure><div class="caja" style="--fg:#C9C9CD; --bg:#D8D8DC; background:#D8D8DC"><div class="imago" style="gap:3mm"><svg class="iso" width="10mm" height="10mm"><use href="#iso"/></svg><div class="logo" style="font-size:31pt">Trama</div></div></div><figcaption><b>No usar con poco contraste</b>Si no se lee de un vistazo, el fondo no sirve.</figcaption></figure>
+    <figure><div class="caja" style="--bg:transparent; background:repeating-linear-gradient(45deg,#B4533A 0 3mm,#D8CBB2 3mm 6mm,#26365F 6mm 9mm,#6A7250 9mm 12mm)"><div class="imago" style="gap:3mm"><svg class="iso" width="10mm" height="10mm"><use href="#iso"/></svg><div class="logo" style="font-size:31pt">Trama</div></div></div><figcaption><b>No poner sobre un estampado</b>Sobre una tela o una foto va dentro de un bloque liso.</figcaption></figure>
+  </div>
+  <div class="pie"><span>Trama · Normas de uso</span><span>20</span></div>
+</section>
+
+<!-- 21 · SEPARADOR -->
+<section class="page neg separador">
+  <div class="num">4</div>
+  <div class="rotulo">Cuarta parte</div>
+  <h1>Aplicaciones</h1>
+  <p class="suave">La marca puesta en tarjetas, papelería, redes sociales, producto y en la propia aplicación.</p>
+  <div class="pie"><span>Trama · Aplicaciones</span><span>21</span></div>
+</section>
+
+<!-- 22 · TARJETAS -->
+<section class="page hueso">
+  <div class="rotulo">4 · Aplicaciones</div>
+  <h1>Tarjetas de presentación</h1>
+  <div class="cuerpo" style="align-items:center; justify-content:center; gap:14mm">
+    <div class="neg sombra" style="width:122mm; height:74.5mm; border-radius:1.5mm; display:flex; align-items:center; justify-content:center">
+      <div class="imago v" style="gap:4.5mm"><svg class="iso" width="17mm" height="17mm"><use href="#iso"/></svg><div><div class="logo" style="font-size:34pt">Trama</div><div class="desc" style="font-size:4.6pt; margin-top:2mm">Probador virtual de telas</div></div></div>
+    </div>
+    <div class="pos sombra" style="width:122mm; height:74.5mm; border-radius:1.5mm; padding:9mm 10mm; display:flex; flex-direction:column; justify-content:space-between">
+      <div class="imago" style="gap:2.4mm"><svg class="iso" width="6.4mm" height="6.4mm"><use href="#iso"/></svg><div class="logo" style="font-size:19pt">Trama</div></div>
+      <div>
+        <div style="font-family:var(--serif); font-size:15pt; font-weight:600; line-height:1.15">Camilo Ernesto Amaya López</div>
+        <div class="desc" style="font-size:5.4pt; margin-top:1.5mm; opacity:.6">Desarrollo de producto</div>
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:flex-end; font-size:7.3pt; line-height:1.55">
+        <div>camilo@trama.example<br>+57 300 000 00 00<br>Ocaña, Norte de Santander</div>
+        <div style="font-family:var(--serif); font-style:italic; font-size:8.5pt">Elige la tela antes de cortarla.</div>
+      </div>
+    </div>
+  </div>
+  <p class="nota" style="max-width:none">90 × 55 mm, cartulina blanca mate de 300 g, una sola tinta por cara. Los datos de contacto son de muestra.</p>
+  <div class="pie"><span>Trama · Aplicaciones</span><span>22</span></div>
+</section>
+
+<!-- 23 · PAPELERÍA -->
+<section class="page hueso">
+  <div class="rotulo">4 · Aplicaciones</div>
+  <h1>Papelería corporativa</h1>
+  <div class="cuerpo" style="align-items:center; justify-content:center; gap:12mm">
+    <div class="pos sombra" style="width:92mm; height:130mm; padding:9mm 9mm 7mm; display:flex; flex-direction:column; font-size:5pt; line-height:1.7">
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:.25mm solid var(--tinta); padding-bottom:4mm">
+        <div class="imago" style="gap:1.8mm"><svg class="iso" width="5.4mm" height="5.4mm"><use href="#iso"/></svg><div class="logo" style="font-size:15pt">Trama</div></div>
+        <div class="desc" style="font-size:3.4pt; opacity:.6">Probador virtual de telas</div>
+      </div>
+      <div style="margin-top:7mm; opacity:.6">Ocaña, 30 de septiembre de 2026</div>
+      <div style="font-family:var(--serif); font-size:10pt; font-weight:600; margin:5mm 0 3mm">Estimado taller:</div>
+      <div style="display:flex; flex-direction:column; gap:1.6mm; flex:1">
+        <i style="height:.9mm; background:var(--g10); width:100%"></i><i style="height:.9mm; background:var(--g10); width:96%"></i><i style="height:.9mm; background:var(--g10); width:99%"></i><i style="height:.9mm; background:var(--g10); width:62%"></i>
+        <i style="height:.9mm; background:var(--g10); width:100%; margin-top:3mm"></i><i style="height:.9mm; background:var(--g10); width:93%"></i><i style="height:.9mm; background:var(--g10); width:97%"></i><i style="height:.9mm; background:var(--g10); width:100%"></i><i style="height:.9mm; background:var(--g10); width:44%"></i>
+        <i style="height:.9mm; background:var(--g10); width:98%; margin-top:3mm"></i><i style="height:.9mm; background:var(--g10); width:100%"></i><i style="height:.9mm; background:var(--g10); width:71%"></i>
+      </div>
+      <div style="display:flex; justify-content:space-between; border-top:.2mm solid var(--g10); padding-top:3mm; opacity:.7">
+        <span>hola@trama.example · Ocaña, Norte de Santander</span><span style="font-family:var(--serif); font-style:italic">Elige la tela antes de cortarla.</span>
+      </div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:9mm">
+      <div class="pos sombra" style="width:118mm; height:57mm; padding:7mm 8mm; position:relative">
+        <div class="imago" style="gap:1.8mm"><svg class="iso" width="5.4mm" height="5.4mm"><use href="#iso"/></svg><div class="logo" style="font-size:15pt">Trama</div></div>
+        <div style="font-size:5pt; margin-top:1.5mm; opacity:.6">Ocaña, Norte de Santander</div>
+        <div style="position:absolute; right:8mm; top:7mm; width:13mm; height:15mm; border:.25mm dashed var(--g40)"></div>
+        <div style="position:absolute; left:52mm; top:31mm; display:flex; flex-direction:column; gap:2mm"><i style="height:.9mm; width:44mm; background:var(--g20)"></i><i style="height:.9mm; width:36mm; background:var(--g20)"></i><i style="height:.9mm; width:40mm; background:var(--g20)"></i></div>
+      </div>
+      <div class="neg sombra" style="width:118mm; height:57mm; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center">
+        <div style="position:absolute; inset:0; background:linear-gradient(to bottom right, transparent 49.7%, rgba(255,255,255,.28) 50%, transparent 50.3%), linear-gradient(to bottom left, transparent 49.7%, rgba(255,255,255,.28) 50%, transparent 50.3%); height:60%"></div>
+        <div class="etiqueta pos" style="width:17mm; height:21.25mm; gap:1.3mm; position:relative"><svg class="iso" width="6mm" height="6mm"><use href="#iso"/></svg><div class="logo" style="font-size:9.5pt">Trama</div></div>
+      </div>
+    </div>
+  </div>
+  <p class="nota" style="max-width:none">Hoja tamaño carta con cabecera y pie a una tinta. Sobre: el anverso lleva el imagotipo; el reverso, en negro, se cierra con el isologo como sello.</p>
+  <div class="pie"><span>Trama · Aplicaciones</span><span>23</span></div>
+</section>
+
+<!-- 24 · REDES SOCIALES -->
+<section class="page hueso">
+  <div class="rotulo">4 · Aplicaciones</div>
+  <h1>Publicidad digital y redes sociales</h1>
+  <div class="cuerpo" style="align-items:center; justify-content:center; gap:9mm">
+    <div style="text-align:center">
+      <div class="neg sombra" style="width:38mm; height:38mm; border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto"><svg class="iso" width="19mm" height="19mm"><use href="#iso"/></svg></div>
+      <div class="nota">Foto de perfil</div>
+    </div>
+    <div>
+      <div class="sombra" style="width:92mm; height:92mm; --fg:#fff; --bg:var(--indigo); background:var(--bg); color:#fff; padding:9mm; display:flex; flex-direction:column; justify-content:space-between">
+        <div class="imago" style="gap:2.2mm"><svg class="iso" width="6mm" height="6mm"><use href="#iso"/></svg><div class="logo" style="font-size:18pt">Trama</div></div>
+        <div style="font-family:var(--serif); font-size:28pt; line-height:1.05; font-weight:500">Una prenda.<br>Doce telas.<br><i>Cero muestras.</i></div>
+        <div class="desc" style="font-size:5.4pt">Pruébalo gratis · trama.example</div>
+      </div>
+      <div class="nota">Publicación cuadrada · 1080 × 1080 px</div>
+    </div>
+    <div>
+      <div class="sombra" style="width:92mm; height:92mm; background:var(--lino); display:flex; flex-direction:column">
+        <div style="flex:1; display:flex">
+          <div style="flex:1; background:repeating-linear-gradient(90deg,#26365F 0 2mm,#3B4E80 2mm 2.6mm); display:flex; align-items:flex-end; padding:3mm; color:#fff; font-size:6pt; letter-spacing:.14em">DENIM</div>
+          <div style="flex:1; background:repeating-conic-gradient(#B4533A 0 25%, #E9DFCC 0 50%) 0 0 / 7mm 7mm; display:flex; align-items:flex-end; padding:3mm; font-size:6pt; letter-spacing:.14em"><span style="background:#fff; padding:.5mm 1.5mm">VICHY</span></div>
+          <div style="flex:1; background:repeating-linear-gradient(0deg,#6A7250 0 1.2mm,#7C8560 1.2mm 2.4mm); display:flex; align-items:flex-end; padding:3mm; color:#fff; font-size:6pt; letter-spacing:.14em">LONA</div>
+        </div>
+        <div class="pos" style="padding:6mm 7mm; display:flex; justify-content:space-between; align-items:center">
+          <div style="font-family:var(--serif); font-size:13pt; font-weight:600; line-height:1.1">¿Cuál le queda mejor<br>a tu diseño?</div>
+          <div class="imago" style="gap:1.8mm"><svg class="iso" width="5mm" height="5mm"><use href="#iso"/></svg><div class="logo" style="font-size:15pt">Trama</div></div>
+        </div>
+      </div>
+      <div class="nota">Sobre una tela, la marca va en un bloque blanco</div>
+    </div>
+  </div>
+  <div class="pie"><span>Trama · Aplicaciones</span><span>24</span></div>
+</section>
+
+<!-- 25 · PRODUCTO Y EMPAQUE -->
+<section class="page hueso">
+  <div class="rotulo">4 · Aplicaciones</div>
+  <h1>Producto y empaque</h1>
+  <div class="cuerpo" style="align-items:center; justify-content:center; gap:13mm">
+    <div style="text-align:center">
+      <div style="position:relative; padding-top:14mm">
+        <div style="position:absolute; left:50%; top:0; width:.3mm; height:18mm; background:var(--g40)"></div>
+        <div class="etiqueta neg sombra" style="width:50mm; height:78mm; gap:4mm; border-radius:1.5mm">
+          <div style="position:absolute; top:5.5mm; width:3.4mm; height:3.4mm; border-radius:50%; background:var(--hueso)"></div>
+          <svg class="iso" width="17mm" height="17mm"><use href="#iso"/></svg>
+          <div><div class="logo" style="font-size:26pt">Trama</div><div class="desc" style="font-size:3.5pt; margin-top:1.8mm">Probador virtual de telas</div></div>
+        </div>
+      </div>
+      <div class="nota">Etiqueta colgante de la muestra</div>
+    </div>
+    <div style="text-align:center">
+      <div class="pos sombra" style="width:74mm; height:92mm; display:flex; flex-direction:column">
+        <div style="flex:1; background:repeating-conic-gradient(#26365F 0 25%, #F7F7F5 0 50%) 0 0 / 5mm 5mm"></div>
+        <div style="padding:4.5mm 5mm; text-align:left; font-size:6.3pt; line-height:1.6">
+          <div style="display:flex; justify-content:space-between; align-items:center"><b style="font-family:var(--serif); font-size:12pt">Vichy azul</b><svg class="iso" width="5mm" height="5mm"><use href="#iso"/></svg></div>
+          <div class="suave">100 % algodón · 120 g/m² · ancho 150 cm</div>
+          <div class="desc" style="font-size:4.4pt; margin-top:1.5mm; opacity:.6">Pruébala en tu diseño · trama.example</div>
+        </div>
+      </div>
+      <div class="nota">Ficha del muestrario de la tienda textil</div>
+    </div>
+    <div style="text-align:center">
+      <div style="position:relative; padding-top:20mm">
+        <div style="position:absolute; left:50%; top:0; width:34mm; height:30mm; margin-left:-17mm; border:1.2mm solid var(--terracota); border-bottom:0; border-radius:17mm 17mm 0 0"></div>
+        <div class="sombra" style="position:relative; width:74mm; height:78mm; --fg:var(--tinta); --bg:var(--lino); background:var(--lino); display:flex; align-items:center; justify-content:center">
+          <div class="imago v" style="gap:4mm"><svg class="iso" width="19mm" height="19mm"><use href="#iso"/></svg><div class="logo" style="font-size:30pt">Trama</div></div>
+        </div>
+      </div>
+      <div class="nota">Bolsa de tela, a una tinta</div>
+    </div>
+  </div>
+  <div class="pie"><span>Trama · Aplicaciones</span><span>25</span></div>
+</section>
+
+<!-- 26 · LA APLICACIÓN -->
+<section class="page hueso">
+  <div class="rotulo">4 · Aplicaciones</div>
+  <h1>La aplicación web</h1>
+  <div class="cuerpo" style="gap:12mm; align-items:center">
+    <div class="pos sombra" style="flex:1.7; height:118mm; border-radius:2mm; overflow:hidden; display:flex; flex-direction:column; border:.3mm solid var(--g10)">
+      <div style="height:6mm; background:var(--g10); display:flex; align-items:center; gap:1.4mm; padding-left:3mm"><i style="width:2mm; height:2mm; border-radius:50%; background:var(--g40)"></i><i style="width:2mm; height:2mm; border-radius:50%; background:var(--g40)"></i><i style="width:2mm; height:2mm; border-radius:50%; background:var(--g40)"></i></div>
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:4mm 7mm; border-bottom:.25mm solid var(--g10)">
+        <div class="imago" style="gap:1.8mm"><svg class="iso" width="5mm" height="5mm"><use href="#iso"/></svg><div class="logo" style="font-size:14pt">Trama</div></div>
+        <div style="display:flex; gap:6mm; font-size:6.3pt; align-items:center">Telas<span>Taller</span><span>Comparar</span><span>Galería</span><span class="neg" style="padding:1.3mm 3.5mm; border-radius:1mm">Entrar</span></div>
+      </div>
+      <div style="flex:1; display:flex; padding:7mm; gap:7mm">
+        <div style="flex:1; display:flex; flex-direction:column; justify-content:center">
+          <div class="desc" style="font-size:4.8pt; opacity:.55">Probador virtual de telas</div>
+          <div style="font-family:var(--serif); font-size:25pt; line-height:1; font-weight:600; letter-spacing:-.02em; margin:3mm 0 4mm">Elige la tela antes de cortarla.</div>
+          <div style="font-size:6.8pt; opacity:.7; max-width:62mm">Sube tu prenda o tu boceto, pruébale las telas del catálogo y compáralas lado a lado.</div>
+          <div style="margin-top:5mm; display:flex; gap:2.5mm; font-size:6.5pt"><span class="neg" style="padding:2mm 4.5mm; border-radius:1mm">Subir una prenda</span><span style="padding:2mm 4.5mm; border-radius:1mm; border:.25mm solid var(--tinta)">Ver las telas</span></div>
+        </div>
+        <div style="flex:.9; display:grid; grid-template-columns:1fr 1fr; gap:2.5mm">
+          <div style="background:repeating-linear-gradient(90deg,#26365F 0 1.6mm,#3B4E80 1.6mm 2.1mm); border-radius:1mm"></div>
+          <div style="background:repeating-conic-gradient(#B4533A 0 25%, #E9DFCC 0 50%) 0 0 / 5mm 5mm; border-radius:1mm"></div>
+          <div style="background:var(--lino); border-radius:1mm"></div>
+          <div style="background:repeating-linear-gradient(0deg,#6A7250 0 1mm,#7C8560 1mm 2mm); border-radius:1mm"></div>
+        </div>
+      </div>
+    </div>
+    <div class="col" style="flex:.8">
+      <div style="display:flex; gap:6mm; align-items:center; margin-bottom:7mm">
+        <div class="neg sombra" style="width:24mm; height:24mm; border-radius:5.5mm; display:flex; align-items:center; justify-content:center"><svg class="iso" width="13mm" height="13mm"><use href="#iso"/></svg></div>
+        <div class="pos sombra" style="width:24mm; height:24mm; border-radius:5.5mm; display:flex; align-items:center; justify-content:center"><svg class="iso" width="13mm" height="13mm"><use href="#iso"/></svg></div>
+        <div class="nota" style="margin:0">Icono de la aplicación</div>
+      </div>
+      <p>En la interfaz la marca aparece una vez, arriba a la izquierda, sin descriptor. Todo lo demás es blanco, tinta y sus grises.</p>
+      <p>El único color de la pantalla es el de las telas. Los estados no se distinguen por color sino por forma y palabra, para que también los lea quien no distingue el rojo del verde.</p>
+    </div>
+  </div>
+  <div class="pie"><span>Trama · Aplicaciones</span><span>26</span></div>
+</section>
+
+<!-- 27 · CIERRE -->
+<section class="page neg" style="align-items:center; justify-content:center; text-align:center">
+  <div class="etiqueta pos" style="width:52mm; height:65mm; gap:4.5mm">
+    <svg class="iso" width="19mm" height="19mm"><use href="#iso"/></svg>
+    <div><div class="logo" style="font-size:29pt">Trama</div><div class="desc" style="font-size:3.8pt; margin-top:2mm">Probador virtual de telas</div></div>
+  </div>
+  <p style="font-family:var(--serif); font-style:italic; font-size:15pt; margin-top:10mm">Elige la tela antes de cortarla.</p>
+  <p class="suave" style="font-size:8.5pt; margin-top:8mm; max-width:none">Camilo Ernesto Amaya López · Ángel Jhosep Sánchez Oviedo · Miguel Felipe Quintero Santos<br>Docente: Duvan Andrey Márquez Pinzón · Universidad Francisco de Paula Santander Ocaña · 2026</p>
+</section>
+
+</body>
+</html>

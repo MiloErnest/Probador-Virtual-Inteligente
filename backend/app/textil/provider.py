@@ -35,7 +35,7 @@ from app.core.config import settings
 from app.models.fabric_trial import TrialMethod
 from app.models.garment_upload import GarmentKind
 from app.textil.errores import ErrorDeMotor
-from app.textil.retexturizar import retexturizar, vestir_boceto
+from app.textil.retexturizar import retexturizar
 
 
 @dataclass(frozen=True)
@@ -45,6 +45,8 @@ class PeticionDeTela:
     prenda: Image.Image
     mascara: Image.Image
     caja: tuple[int, int, int, int]
+    #: De dónde salió la prenda. Ya no decide el camino: la de un boceto llega
+    #: aquí convertida en fotografía por `boceto_ia`, y se viste igual.
     tipo: GarmentKind
 
     #: Mosaico de la tela. Imprescindible para el retexturizado; el motor
@@ -79,11 +81,6 @@ class MotorDeTela(Protocol):
 #: Medido sobre la razón de luz dentro de la máscara.
 CONTRASTE_SOSO = 0.045
 
-#: Relieve a partir del cual el sombreado de un boceto manda sobre el volumen
-#: inventado. Es el punto medio de la mezcla de `vestir_boceto`. Medido: el
-#: croquis de vestido del usuario da 0,13; un plano técnico daría casi 0.
-SOMBREADO_APROVECHABLE = 0.045
-
 
 class MotorRetexturizado:
     """Reutiliza la luz de la fotografía. No es inteligencia artificial."""
@@ -95,33 +92,6 @@ class MotorRetexturizado:
             raise ErrorDeMotor(
                 "Esta tela no tiene mosaico cargado, así que no se puede estampar. "
                 "Súbele una imagen de la tela desde el catálogo."
-            )
-
-        # Un boceto y una fotografía necesitan caminos distintos, y no es un
-        # detalle: la foto TIENE luz que reutilizar y el dibujo no. Aplicarle a
-        # un boceto el camino de la foto da un recorte de papel pintado.
-        if peticion.tipo is GarmentKind.SKETCH:
-            salida = vestir_boceto(
-                peticion.prenda,
-                peticion.mascara,
-                peticion.mosaico,
-                repeticiones=peticion.repeticiones,
-                caja=peticion.caja,
-            )
-            if salida.contraste >= SOMBREADO_APROVECHABLE:
-                aviso = (
-                    "Los pliegues que ves son los que dibujaste: se ha usado el "
-                    "sombreado de tu propio boceto como luz, y el trazo se conserva "
-                    "por encima. Tu diseño no se ha tocado."
-                )
-            else:
-                aviso = (
-                    "Tu dibujo casi no trae sombreado, así que el volumen es "
-                    "aproximado: sale de la silueta, no del dibujo. Un figurín "
-                    "sombreado a lápiz da un resultado mucho mejor por esta vía."
-                )
-            return ResultadoDeTela(
-                imagen=salida.imagen, proveedor=f"{self.nombre}-boceto", aviso=aviso
             )
 
         salida = retexturizar(

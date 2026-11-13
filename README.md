@@ -15,11 +15,12 @@ probarlas una por una.
   determinista los reutiliza: la tela nueva cae por donde caía la original. Es
   instantáneo, gratis, y da siempre el mismo resultado — que es lo único que
   hace honesta una comparación entre cuatro telas.
-- Un **boceto** va sombreado a lápiz, y ese sombreado es dónde caen los
-  pliegues: la tela lo toma como luz y el trazo se conserva intacto encima.
-- La **IA generativa** (OpenAI) está integrada y es opcional, detrás de un
-  bloqueo estructural que le impide cambiar la prenda: solo aporta acabado.
-  Cuesta dinero, ver §6h.
+- Un **boceto** no es todavía una prenda. La **IA generativa** (OpenAI) lo
+  convierte, una sola vez, en la fotografía de la prenda —en su color, o en
+  tela cruda si es solo lápiz—, y la enseña junto al dibujo. Las telas se
+  prueban después sobre ella con el motor determinista. Cuesta dinero, ver §6h.
+- En una fotografía la IA no interviene: no puede cambiar una prenda que ya
+  existe.
 
 **El probador.** Subes una foto tuya, eliges una prenda del taller —con la tela
 que escogiste— y la ves puesta, en tu postura. La viste FASHN VTON 1.5, un
@@ -451,7 +452,8 @@ docker compose --profile full down
 |---|---|---|
 | `/` | Portada: que hace la aplicacion y hasta donde llega | Publica |
 | `/telas` | Catalogo de telas, con ficha tecnica y filtro por dibujo | Publica |
-| `/taller` | Tus prendas y bocetos. Subir, ver, borrar | Requiere cuenta |
+| `/taller` | Tus prendas. Subir una fotografia, ver, borrar | Requiere cuenta |
+| `/bocetos` | **Del boceto a la prenda**, con IA generativa. Lado a lado, con variantes | Requiere cuenta |
 | `/taller/:id` | **Probar telas y compararlas.** Es la pantalla del producto | Requiere cuenta |
 | `/probador` | **Pruebatela**: tu foto con una prenda del taller puesta | Requiere cuenta |
 | `/entrar`, `/registro` | Acceso y alta | Publicas |
@@ -469,7 +471,8 @@ docker compose --profile full down
 | `POST /api/fabrics/{id}/photo` | Subir la foto de catalogo | Token |
 | `POST /api/fabrics/{id}/texture` | Subir el mosaico que se estampa | Token |
 | `GET /api/garment-uploads` | Tus prendas | Token |
-| `POST /api/garment-uploads` | Subir una prenda o boceto (multipart) | Token |
+| `POST /api/garment-uploads` | Subir una prenda (multipart). Un boceto vuelve en `pending`: la IA genera su prenda, y hay que sondear | Token |
+| `POST /api/garment-uploads/{id}/variants` | Otra variante de la prenda de un boceto (202 + sondeo). Se cobra | Token |
 | `DELETE /api/garment-uploads/{id}` | Borrar prenda y archivos | Token |
 | `GET /api/trials` | Tus pruebas. `?garment_upload_id=` para comparar | Token |
 | `POST /api/trials` | Probar una tela (202 + sondeo) | Token |
@@ -532,6 +535,16 @@ desconocido **hace fallar el procesado**, nunca cae al motor local en silencio.
 **CUIDADO:** una clave valida SIN SALDO falla igual, con un 429 cuyo mensaje no
 dice que falte dinero. Hay que anadir fondos en Settings -> Billing, y conviene
 poner un limite mensual en Settings -> Limits.
+
+### Donde se usa hoy: solo en los bocetos
+
+Desde el 2026-10-01 la IA generativa convierte un boceto en la fotografia de la
+prenda, UNA vez, y las telas se prueban despues sobre ella sin IA. Medido con
+un vestido de noche a lapiz: fiel las tres veces, unos 3.400 tokens y 38 s por
+prenda. La pantalla de pruebas ya no ofrece el acabado generativo.
+
+Lo que sigue es por que NO se le pide la prenda con cada tela, que es lo que
+se intento primero:
 
 ### Por que es opcional y no el motor principal
 
@@ -628,8 +641,8 @@ El motor textil, que es donde está la matemática del producto:
 ```
 backend/app/textil/
   segmentar.py         Qué píxeles son prenda. Una vez por imagen subida.
-  retexturizar.py      Dos caminos: fotografía (reutiliza su luz) y boceto
-                       (rellena conservando el trazo).
+  retexturizar.py      Reutiliza la luz de la fotografía de la prenda.
+  boceto_ia.py         De un boceto a la fotografía de la prenda, con IA.
   filtros.py           Desenfoque y reescalado en coma flotante.
   veta.py              Por dónde corre el hilo: la raya sigue la manga.
   bloqueo.py           Lo que hace fiable a la IA: solo aporta textura.
@@ -695,5 +708,8 @@ Los archivos `.env.example` documentan cada variable y sí se versionan.
 | `alembic` no se reconoce como comando | Instalado después de abrir la terminal, o entorno virtual sin activar | Reabre la terminal, o usa `.\start-backend.ps1` |
 | El probador tarda minutos en fallar, o no conecta | La red no encamina IPv6 y `huggingface.co` lo anuncia: Python espera a que caduque | `VTO_SPACE` ya apunta a la dirección directa del Space; no la cambies por el nombre `fashn-ai/fashn-vton-1.5` |
 | «Se ha agotado la cuota gratuita de Hugging Face» | Sin cuenta, la cuota de ZeroGPU son unas dos pruebas al día | Crea un token de lectura gratuito y ponlo como `HF_TOKEN` en `backend/.env` |
+| En el probador, la prenda sale con partes que no tiene (otra capa, otras mangas, un collar) | El modelo inventa, y depende de la semilla | «Otra variante» la vuelve a generar. La ropa de más de otro color se quita sola donde tapaba piel, y la prueba lo avisa |
+| En el probador quedan restos de la prenda que llevabas puesta | Al modelo no se le pide que la borre: borrando, una prenda más grande que la vieja sale recortada | `VTO_ERASE_FIRST=true` en `backend/.env` y repite la prueba |
+| Se ha mejorado `app/probador/conservar.py` y las pruebas guardadas siguen igual | La composición se hace al crear la prueba | `python -m scripts.recomponer --aplicar` desde `backend/`: no llama a Hugging Face |
 | Todas las peticiones responden 401 | El token caducó (12 h) o cambió `SECRET_KEY` | Vuelve a entrar en la aplicación |
 | Al arrancar en producción: `SECRET_KEY sigue siendo un valor de ejemplo` | `ENVIRONMENT=production` con la clave del `.env.example` | Genera una real: `python -c "import secrets; print(secrets.token_urlsafe(48))"` |

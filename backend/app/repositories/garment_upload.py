@@ -1,9 +1,11 @@
 """Acceso a datos de las prendas subidas por el usuario."""
 
-from sqlalchemy import select
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models.garment_upload import GarmentUpload
+from app.models.garment_upload import GarmentKind, GarmentStatus, GarmentUpload
 
 
 class GarmentUploadRepository:
@@ -56,6 +58,37 @@ class GarmentUploadRepository:
             ).scalars()
             if clave
         ]
+
+    def tiene_pruebas(self, upload_id: int) -> bool:
+        from app.models.fabric_trial import FabricTrial
+
+        return (
+            self.session.execute(
+                select(FabricTrial.id).where(FabricTrial.garment_upload_id == upload_id).limit(1)
+            ).first()
+            is not None
+        )
+
+    def contar_bocetos_generados_hoy(self, user_id: int) -> int:
+        """Prendas generadas con IA a partir de un boceto en las últimas 24 horas.
+
+        Cuenta para el mismo techo de gasto que las pruebas con IA
+        (`FabricTrialRepository.contar_ia_hoy`), y con la misma ventana móvil.
+        Las que fallaron no cuentan: casi siempre fallan antes de generar.
+        """
+        desde = datetime.now(timezone.utc) - timedelta(hours=24)
+        return int(
+            self.session.execute(
+                select(func.count())
+                .select_from(GarmentUpload)
+                .where(
+                    GarmentUpload.user_id == user_id,
+                    GarmentUpload.kind == GarmentKind.SKETCH,
+                    GarmentUpload.created_at >= desde,
+                    GarmentUpload.status != GarmentStatus.FAILED,
+                )
+            ).scalar_one()
+        )
 
     def create(self, **campos) -> GarmentUpload:
         upload = GarmentUpload(**campos)

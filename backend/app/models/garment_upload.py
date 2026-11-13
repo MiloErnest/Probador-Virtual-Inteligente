@@ -10,25 +10,25 @@ Es deliberadamente de cada usuario y no compartido: el boceto de un diseñador
 es su trabajo, y el Vision Board habla de talleres y modistas que compiten
 entre sí.
 
-LA DISTINCIÓN FOTO/BOCETO NO ES UNA ETIQUETA
---------------------------------------------
-Decide qué motor puede vestir la prenda, y por una razón física:
+LA DISTINCIÓN FOTO/BOCETO DICE DE DÓNDE SALE LA PRENDA
+------------------------------------------------------
+- Una FOTOGRAFÍA es ya la prenda. Se recorta al subir y queda lista.
 
-- Una FOTOGRAFÍA ya trae los pliegues, las sombras y los brillos reales. El
-  motor determinista extrae ese mapa de luz y multiplica la tela nueva por él:
-  la tela cae siguiendo los pliegues de verdad de esa prenda. Sale gratis, es
-  instantáneo y da siempre el mismo resultado.
+- Un BOCETO no es una prenda: es el dibujo de una. La IA generativa lo
+  convierte en la fotografía de esa prenda (`app/textil/boceto_ia.py`), y es
+  esa fotografía la que queda en `image_key`. El dibujo se conserva en
+  `sketch_key`, para enseñarlos lado a lado y para poder pedir otra variante.
 
-- Un BOCETO es un dibujo de líneas: no tiene sombras. No hay nada que
-  multiplicar, así que el volumen y la caída hay que inventarlos. Ahí la IA
-  generativa no es un adorno, es la única forma de hacerlo.
+A partir de ahí las dos se visten igual, con el motor determinista: lo que
+cambia entre dos pruebas de la misma prenda es solo la tela.
 
-Por eso el campo existe y por eso se pregunta al subir.
+Hubo un camino intermedio —pintar la tela sobre el propio dibujo— que se
+retiró: un boceto con una tela encima sigue siendo un boceto.
 """
 
 import enum
 
-from sqlalchemy import Boolean, Enum as SAEnum, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Enum as SAEnum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin
@@ -37,6 +37,19 @@ from app.models.base import Base, TimestampMixin
 class GarmentKind(str, enum.Enum):
     PHOTO = "photo"
     SKETCH = "sketch"
+
+
+class GarmentStatus(str, enum.Enum):
+    """En qué punto está la prenda. Solo `ready` se puede probar.
+
+    Una fotografía nace `ready`. Un boceto pasa por los otros estados mientras
+    la IA genera su prenda, que tarda del orden de medio minuto.
+    """
+
+    READY = "ready"
+    PENDING = "pending"
+    PROCESSING = "processing"
+    FAILED = "failed"
 
 
 class GarmentUpload(Base, TimestampMixin):
@@ -59,7 +72,25 @@ class GarmentUpload(Base, TimestampMixin):
         nullable=False,
     )
 
+    status: Mapped[GarmentStatus] = mapped_column(
+        SAEnum(
+            GarmentStatus,
+            native_enum=False,
+            length=32,
+            values_callable=lambda e: [m.value for m in e],
+        ),
+        default=GarmentStatus.READY,
+        server_default=GarmentStatus.READY.value,
+        nullable=False,
+    )
+
+    #: La imagen sobre la que se prueban las telas. En una fotografía, la que
+    #: subió el usuario. En un boceto, la prenda generada; mientras no la hay
+    #: apunta al propio dibujo, para que la columna nunca esté vacía.
     image_key: Mapped[str] = mapped_column(String(512), nullable=False)
+
+    #: El dibujo original. Nulo en una fotografía.
+    sketch_key: Mapped[str | None] = mapped_column(String(512), default=None)
 
     # LA MÁSCARA SE GUARDA, NO SE RECALCULA
     # -------------------------------------
@@ -68,7 +99,7 @@ class GarmentUpload(Base, TimestampMixin):
     # subir y guardarla convierte «probar diez telas» en diez multiplicaciones
     # en vez de diez recortes.
     #
-    # Nula mientras el recorte está en marcha, o si falló.
+    # Nula mientras la prenda de un boceto no está generada, o si falló.
     mask_key: Mapped[str | None] = mapped_column(String(512), default=None)
 
     #: Fracción de la imagen que ocupa la prenda, de 0 a 1. Si es ridícula, el
@@ -76,16 +107,27 @@ class GarmentUpload(Base, TimestampMixin):
     #: telas sobre una máscara rota.
     mask_coverage: Mapped[float | None] = mapped_column(default=None)
 
-    #: El recorte salió dudoso: la prenda era casi del color del fondo, o el
-    #: contorno del boceto tenía un hueco por el que se coló el relleno. Se
+    #: El recorte salió dudoso: la prenda era casi del color del fondo. Se
     #: guarda al subir para poder avisar ANTES de que alguien gaste diez
     #: pruebas sobre una máscara rota.
     mask_suspect: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    #: Ancho y alto originales. Evita abrir el archivo solo para saber si la
-    #: imagen es apaisada, que es lo que decide el tamaño que se le pide a la IA.
+    #: Ancho y alto de `image_key`.
     width: Mapped[int | None] = mapped_column(Integer, default=None)
     height: Mapped[int | None] = mapped_column(Integer, default=None)
+
+    # --- Solo en un boceto: lo que dejó la generación ---
+
+    #: Por qué no se pudo generar la prenda, dicho para el usuario.
+    error_message: Mapped[str | None] = mapped_column(Text, default=None)
+
+    #: Coincidencia de la silueta de la prenda con la del dibujo, de 0 a 1.
+    #: Mide el contorno y nada de dentro: acompaña a la comparación a ojo.
+    similarity: Mapped[float | None] = mapped_column(default=None)
+
+    provider: Mapped[str | None] = mapped_column(String(64), default=None)
+    #: Tokens facturados por la generación. El gasto es un número que se suma.
+    tokens_used: Mapped[int | None] = mapped_column(Integer, default=None)
 
     def __repr__(self) -> str:
         return f"<GarmentUpload id={self.id} name={self.name!r} kind={self.kind.value}>"

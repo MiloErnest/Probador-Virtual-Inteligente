@@ -245,13 +245,20 @@ class Recorte:
     caja: tuple[int, int, int, int]
 
 
-def segmentar_prenda(imagen: Image.Image, *, boceto: bool = False) -> Recorte:
+def segmentar_prenda(
+    imagen: Image.Image, *, boceto: bool = False, figura: bool = True
+) -> Recorte:
     """Devuelve la máscara de la prenda dentro de la imagen.
 
     `boceto` cambia el último paso. En una fotografía, GrabCut aprende los
     colores de prenda y fondo y corta por el borde real; en un dibujo, el
     contorno a lápiz ya es la mejor barrera que hay, y un modelo de color
     confundiría el papel blanco con un vestido blanco.
+
+    `figura=False` se salta la búsqueda de la persona. Es para la prenda que
+    genera la IA a partir de un boceto (`boceto_ia`), donde se sabe que no hay
+    nadie: en un vestido crudo, la regla tomaba por piel las sombras cálidas de
+    los pliegues y dejaba dos agujeros de la cintura al bajo.
     """
     original = imagen.size
 
@@ -264,9 +271,9 @@ def segmentar_prenda(imagen: Image.Image, *, boceto: bool = False) -> Recorte:
         alfa = imagen.getchannel("A")
         trabajo = _reducir(imagen.convert("RGB"), LADO_DE_TRABAJO)
         alfa = alfa.resize(trabajo.size, Image.Resampling.BILINEAR)
-        return _empaquetar(
-            _quitar_la_figura(alfa, trabajo, boceto), original, guia=imagen, boceto=boceto
-        )
+        if figura:
+            alfa = _quitar_la_figura(alfa, trabajo, boceto)
+        return _empaquetar(alfa, original, guia=imagen, boceto=boceto)
 
     trabajo = _reducir(imagen.convert("RGB"), LADO_DE_TRABAJO)
     px = np.asarray(trabajo, dtype=np.float32)
@@ -330,7 +337,8 @@ def segmentar_prenda(imagen: Image.Image, *, boceto: bool = False) -> Recorte:
         mascara = _refinar_con_grabcut(trabajo, mascara, distancia > umbral * FACTOR_DE_COLOR_SEGURO)
 
     # PASO 4. Sacar a la persona dibujada, si la hay.
-    mascara = _quitar_la_figura(mascara, trabajo, boceto)
+    if figura:
+        mascara = _quitar_la_figura(mascara, trabajo, boceto)
 
     return _empaquetar(mascara, original, guia=imagen, boceto=boceto)
 

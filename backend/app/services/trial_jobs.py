@@ -67,3 +67,18 @@ def run_try_on_job(try_on_id: int) -> None:
             ).process(try_on_id)
     except Exception:  # noqa: BLE001
         logger.exception("Falló el procesado de la prueba sobre persona %s", try_on_id)
+
+
+def run_sketch_job(upload_id: int) -> None:
+    """Genera la prenda de un boceto. Mismas reglas que `run_trial_job`."""
+    from app.services.garment_upload import GarmentUploadService
+
+    try:
+        with SessionLocal() as session:
+            GarmentUploadService(
+                GarmentUploadRepository(session),
+                FabricTrialRepository(session),
+                get_storage(),
+            ).generar(upload_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("Falló la generación de la prenda del boceto %s", upload_id)

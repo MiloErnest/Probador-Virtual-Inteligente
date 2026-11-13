@@ -20,7 +20,7 @@ from PIL import Image
 
 from app.core.config import settings
 from app.models.fabric_trial import FabricTrial, TrialMethod, TrialStatus
-from app.models.garment_upload import GarmentKind
+from app.models.garment_upload import GarmentKind, GarmentStatus
 from app.repositories.fabric import FabricRepository
 from app.repositories.fabric_trial import FabricTrialRepository
 from app.repositories.garment_upload import GarmentUploadRepository
@@ -67,8 +67,15 @@ class FabricTrialService:
         prenda = self.uploads.get_for_user(data.garment_upload_id, user_id)
         if prenda is None:
             raise NotFoundError(f"No existe la prenda {data.garment_upload_id}.")
+        if prenda.status is not GarmentStatus.READY:
+            raise ValidationError(
+                "Este boceto todavía no tiene su prenda generada. Las telas se "
+                "prueban sobre la prenda, no sobre el dibujo."
+            )
 
-        tela = self.fabrics.get_by_id(data.fabric_id)
+        # Del catálogo o del taller de ESTE usuario. La tela de otro taller
+        # responde igual que una que no existe (Ep6-Hu8).
+        tela = self.fabrics.get_visible(data.fabric_id, user_id)
         if tela is None or not tela.active:
             raise NotFoundError(f"No existe la tela {data.fabric_id}.")
 
@@ -200,19 +207,10 @@ class FabricTrialService:
     def _motor_por_defecto(tipo: GarmentKind) -> TrialMethod:
         """Qué motor corre si nadie lo dice: SIEMPRE el que no cuesta dinero.
 
-        Al principio los bocetos iban a la IA por defecto, porque un dibujo no
-        tiene sombras que reutilizar. Se probó contra la API real —con el
-        modelo mini, con el completo y con `input_fidelity="high"`— y el
-        resultado fue el mismo las tres veces: el modelo devolvía una prenda
-        distinta. Un boceto con cartera de botones, bolsillo y cuello camisero
-        volvía convertido en una túnica lisa de cuello barco.
-
-        Para un producto que promete «mira TU diseño con otra tela», eso es el
-        resultado equivocado, y además se cobraba por él. Así que el boceto
-        tiene ahora su propio camino determinista, que conserva el trazo.
-
-        La IA sigue estando, y para lo que sí sabe hacer: convertir el dibujo
-        en algo fotorrealista. Pero se pide a conciencia.
+        También para la prenda de un boceto. La IA ya hizo su parte al
+        convertir el dibujo en prenda (`boceto_ia`), una vez; de ahí en
+        adelante cada tela se prueba con el motor determinista, gratis, y lo
+        único que cambia entre dos pruebas es la tela.
         """
         return TrialMethod.RETEXTURE
 
@@ -224,12 +222,16 @@ class FabricTrialService:
         return prueba
 
     def _comprobar_techo_de_gasto(self, user_id: int) -> None:
-        usadas = self.repository.contar_ia_hoy(user_id)
+        # El techo es uno solo: suma las pruebas con IA y las prendas generadas
+        # a partir de bocetos, que salen de la misma cuenta.
+        usadas = self.repository.contar_ia_hoy(
+            user_id
+        ) + self.uploads.contar_bocetos_generados_hoy(user_id)
         if usadas >= settings.AI_TRIALS_PER_USER_PER_DAY:
             raise ValidationError(
                 f"Has llegado al límite de {settings.AI_TRIALS_PER_USER_PER_DAY} "
-                "pruebas con IA en 24 horas. Las pruebas sobre fotografías no "
-                "gastan nada y no tienen límite."
+                "usos de la IA en 24 horas. Probar telas con el retexturizado no "
+                "gasta nada y no tiene límite."
             )
 
 

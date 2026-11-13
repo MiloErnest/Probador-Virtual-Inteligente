@@ -212,38 +212,6 @@ def test_una_foto_usa_el_motor_determinista_por_defecto(
     assert prueba["method"] == "retexture"
 
 
-def test_un_boceto_usa_su_propio_camino_y_no_cuesta_dinero(
-    auth_client: TestClient, fabric_with_texture: dict
-) -> None:
-    """Un boceto se rellena conservando el trazo, no se manda a la IA.
-
-    Al principio los bocetos iban a la IA por defecto. Se probó contra la API
-    real —modelo mini, modelo completo, e `input_fidelity="high"`— y las tres
-    veces devolvió una prenda DISTINTA: un boceto con cartera de botones,
-    bolsillo y cuello camisero volvía convertido en una túnica lisa.
-
-    Para un producto que promete enseñar TU diseño con otra tela, eso está mal,
-    y encima se cobraba. El camino por defecto conserva el dibujo y es gratis.
-    """
-    boceto = auth_client.post(
-        "/api/garment-uploads",
-        data={"name": "Boceto", "kind": "sketch"},
-        files={"file": ("b.png", make_prenda_bytes(), "image/png")},
-    ).json()
-
-    creada = auth_client.post(
-        "/api/trials",
-        json={"garment_upload_id": boceto["id"], "fabric_id": fabric_with_texture["id"]},
-    )
-    assert creada.status_code == 202
-    assert creada.json()["method"] == "retexture"
-
-    prueba = auth_client.get(f"/api/trials/{creada.json()['id']}").json()
-    assert prueba["status"] == "completed", prueba["error_message"]
-    assert prueba["provider"] == "retexturizado-local-boceto"
-    assert prueba["tokens_used"] is None
-
-
 def test_la_ia_hay_que_pedirla_y_avisa_si_no_esta_configurada(
     auth_client: TestClient, uploaded_garment: dict, fabric_with_texture: dict
 ) -> None:
@@ -386,6 +354,7 @@ def test_los_endpoints_del_producto_exigen_token(client: TestClient) -> None:
         ("POST", "/api/garment-uploads"),
         ("GET", "/api/garment-uploads/1"),
         ("DELETE", "/api/garment-uploads/1"),
+        ("POST", "/api/garment-uploads/1/variants"),
         ("GET", "/api/trials"),
         ("POST", "/api/trials"),
         ("GET", "/api/trials/1"),

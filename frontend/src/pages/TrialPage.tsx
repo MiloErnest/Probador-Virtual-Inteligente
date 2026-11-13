@@ -16,8 +16,14 @@
  * EL SONDEO
  * ---------
  * Crear una prueba responde 202: el resultado no viene en esa respuesta. Se
- * pregunta cada segundo y medio hasta que esté. Con el motor determinista es
- * un solo sondeo; con el generativo son veinte.
+ * pregunta cada segundo y medio hasta que esté; casi siempre basta un sondeo.
+ *
+ * AQUÍ NO HAY IA
+ * --------------
+ * Las telas se prueban siempre con el retexturizado: exacto, gratis e igual
+ * cada vez. Hubo un selector para pedir un acabado generativo, y se quitó: la
+ * IA generativa se usa solo para convertir un boceto en prenda, en «Bocetos»,
+ * antes de llegar a esta pantalla.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -28,25 +34,15 @@ import { useApi } from '@/hooks/useApi'
 import {
   createTrial,
   deleteTrial,
-  fetchFabrics,
+  fetchFabricsToTry,
   fetchGarmentUpload,
   fetchTrials,
 } from '@/services/endpoints'
-import {
-  GARMENT_KIND_LABELS,
-  TRIAL_METHOD_LABELS,
-  type Fabric,
-  type Trial,
-  type TrialMethod,
-} from '@/types'
+import { GARMENT_KIND_LABELS, TRIAL_METHOD_LABELS, type Fabric, type Trial } from '@/types'
 
 /** Cada cuánto se pregunta por una prueba en marcha. */
 const SONDEO_MS = 1500
-/**
- * Cuándo dejar de esperar. Tiene que pasar de la suma del corte de la llamada
- * al modelo (100 s en el backend) más el render exacto y el bloqueo que van
- * antes y después: una prueba real con IA sobre una foto de 2048 px tardó 71 s.
- */
+/** Cuándo dejar de esperar. Una prueba tarda segundos; esto es para un servidor colgado. */
 const CORTE_MS = 150_000
 
 export default function TrialPage() {
@@ -59,12 +55,11 @@ export default function TrialPage() {
   )
   const { data: prenda, loading, error } = useApi(prendaFetcher, [prendaId])
 
-  // Se piden TODAS y se filtran aquí abajo. El retexturizado estampa el
-  // mosaico de la tela y sin mosaico no puede hacer nada; la IA trabaja con la
-  // descripción de la ficha, así que le sirve una tela que aún no esté
-  // fotografiada. Filtrar en el servidor dejaría fuera telas que sí se pueden
-  // probar por el otro camino.
-  const telasFetcher = useCallback((signal: AbortSignal) => fetchFabrics({ signal }), [])
+  // Se piden todas y se filtran aquí abajo: el retexturizado estampa el mosaico
+  // de la tela, y una tela que aún no lo tiene no se puede probar.
+  // Catálogo y mis telas: las del taller también se prueban (Ep6-Hu7). Las
+  // retiradas vienen solo para que el historial siga sabiendo su nombre.
+  const telasFetcher = useCallback((signal: AbortSignal) => fetchFabricsToTry(signal), [])
   const { data: telas } = useApi(telasFetcher)
 
   const pruebasFetcher = useCallback(
@@ -76,11 +71,6 @@ export default function TrialPage() {
   const [pruebas, setPruebas] = useState<Trial[]>([])
   const [fallo, setFallo] = useState<string | null>(null)
   const [lanzando, setLanzando] = useState<number | null>(null)
-
-  // Arranca en el determinista, y no por preferencia: está medido. La IA
-  // devuelve una prenda distinta de la que se le manda, y encima se cobra.
-  // Quien la quiera, que la pida.
-  const [motor, setMotor] = useState<TrialMethod>('retexture')
 
   useEffect(() => {
     if (pruebasIniciales) setPruebas(pruebasIniciales)
@@ -132,7 +122,6 @@ export default function TrialPage() {
       const prueba = await createTrial({
         garmentUploadId: prendaId,
         fabricId: tela.id,
-        method: motor,
       })
       setPruebas((actuales) => [prueba, ...actuales])
     } catch (causa) {
@@ -156,10 +145,7 @@ export default function TrialPage() {
     [telas],
   )
 
-  const telasVisibles = useMemo(
-    () => (motor === 'retexture' ? (telas ?? []).filter((t) => t.texture_url) : (telas ?? [])),
-    [telas, motor],
-  )
+  const telasVisibles = useMemo(() => (telas ?? []).filter((t) => t.texture_url && t.active), [telas])
 
   if (loading) return <LoadingBlock label="Cargando la prenda…" />
 
@@ -179,6 +165,8 @@ export default function TrialPage() {
     )
   }
 
+  const lista = prenda.status === 'ready'
+
   return (
     <div className="wrap space-y-10">
       <header>
@@ -190,7 +178,7 @@ export default function TrialPage() {
             <h1 className="font-display text-titulo">{prenda.name}</h1>
             <p className="mt-2 text-sm text-ink-60">
               {GARMENT_KIND_LABELS[prenda.kind]}
-              {prenda.kind === 'sketch' && ' · se rellena conservando el trazo'}
+              {prenda.kind === 'sketch' && ' · prenda generada con IA'}
             </p>
           </div>
           <p className="text-sm text-ink-60">
@@ -207,24 +195,37 @@ export default function TrialPage() {
         </Notice>
       )}
 
+      {!lista && (
+        <Notice title="Este boceto todavía no tiene su prenda">
+          <p>
+            Las telas se prueban sobre la prenda, no sobre el dibujo.{' '}
+            {prenda.status === 'failed'
+              ? (prenda.error_message ?? 'No se pudo generar.')
+              : 'La IA la está generando: tarda alrededor de un minuto.'}
+          </p>
+          <p>
+            <Link to="/bocetos" className="font-medium text-ink underline underline-offset-4">
+              Ir a Bocetos
+            </Link>
+          </p>
+        </Notice>
+      )}
+
+      {lista && (
       <section className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
           <h2 className="rotulo">Elige una tela</h2>
-          <SelectorDeMotor valor={motor} onCambiar={setMotor} />
+          <p className="text-[11px] text-ink-60">
+            En segundos, gratis, y siempre el mismo resultado.
+          </p>
         </div>
-
-        {motor === 'ai' && <AvisoDeIA />}
 
         {telas === null ? (
           <LoadingBlock label="Cargando telas…" />
         ) : telasVisibles.length === 0 ? (
           <EmptyBlock
             title="No hay telas que se puedan probar"
-            detail={
-              motor === 'retexture'
-                ? 'El retexturizado estampa el mosaico de la tela, y ninguna lo tiene cargado. Súbelo desde el catálogo, o cambia a IA generativa.'
-                : 'El catálogo de telas está vacío.'
-            }
+            detail="Para estampar una tela hace falta su mosaico, y ninguna lo tiene cargado. Súbelo desde el catálogo."
           />
         ) : (
           <ul className="grid grid-cols-3 gap-3 sm:grid-cols-5 lg:grid-cols-8">
@@ -251,7 +252,7 @@ export default function TrialPage() {
                     )}
                   </span>
                   <span className="mt-1.5 block truncate text-[11px] leading-tight text-ink-60">
-                    {lanzando === tela.id ? 'Lanzando…' : tela.name}
+                    {lanzando === tela.id ? 'Lanzando…' : tela.own ? `${tela.name} · mía` : tela.name}
                   </span>
                 </button>
               </li>
@@ -259,6 +260,7 @@ export default function TrialPage() {
           </ul>
         )}
       </section>
+      )}
 
       <section className="space-y-4">
         <div className="flex items-baseline justify-between gap-4">
@@ -273,8 +275,24 @@ export default function TrialPage() {
           />
         ) : (
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {/* En una prenda de boceto, el dibujo va antes que nada: es de
+                donde salió todo lo demás. */}
+            {prenda.sketch_url && (
+              <figure className="space-y-2">
+                <div className="aspect-[4/5] overflow-hidden rounded border border-ink-10 bg-bone">
+                  <img
+                    src={prenda.sketch_url}
+                    alt={`Boceto de ${prenda.name}`}
+                    className="h-full w-full object-contain"
+                  />
+                </div>
+                <figcaption className="text-xs font-medium">Tu boceto</figcaption>
+              </figure>
+            )}
+
             {/* La prenda original va la primera, como referencia. Comparar
                 cuatro telas sin ver de qué se partía no dice nada. */}
+            {lista && (
             <figure className="space-y-2">
               <div className="aspect-[4/5] overflow-hidden rounded border border-ink bg-bone">
                 {prenda.image_url && (
@@ -285,8 +303,11 @@ export default function TrialPage() {
                   />
                 )}
               </div>
-              <figcaption className="text-xs font-medium">Original</figcaption>
+              <figcaption className="text-xs font-medium">
+                {prenda.kind === 'sketch' ? 'Prenda generada' : 'Original'}
+              </figcaption>
             </figure>
+            )}
 
             {pruebas.map((prueba) => (
               <ResultadoDePrueba
@@ -383,80 +404,5 @@ function ResultadoDePrueba({
         </div>
       </figcaption>
     </figure>
-  )
-}
-
-/**
- * Con qué motor se prueba.
- *
- * NO SE DISTINGUE SOLO POR EL RELLENO
- * -----------------------------------
- * El botón elegido va en negro, pero debajo hay una frase que dice qué cuesta
- * el motor seleccionado. Quien no distinga el contraste lee la frase, y el
- * lector de pantalla oye el `aria-pressed`. Es la misma regla que sigue el
- * resto de la interfaz: los estados se dicen con palabras, no con color.
- */
-function SelectorDeMotor({
-  valor,
-  onCambiar,
-}: {
-  valor: TrialMethod
-  onCambiar: (motor: TrialMethod) => void
-}) {
-  return (
-    <div className="flex flex-col gap-1.5 sm:items-end">
-      <div
-        role="group"
-        aria-label="Motor de la prueba"
-        className="inline-flex self-start rounded border border-ink p-0.5 sm:self-auto"
-      >
-        {(['retexture', 'ai'] as const).map((opcion) => (
-          <button
-            key={opcion}
-            type="button"
-            aria-pressed={valor === opcion}
-            onClick={() => onCambiar(opcion)}
-            className={`rounded-sm px-3 py-1.5 text-xs font-medium transition ${
-              valor === opcion ? 'bg-ink text-paper' : 'text-ink-60 hover:text-ink'
-            }`}
-          >
-            {TRIAL_METHOD_LABELS[opcion]}
-          </button>
-        ))}
-      </div>
-      <p className="text-[11px] text-ink-60">
-        {valor === 'retexture'
-          ? 'En segundos, gratis, y siempre el mismo resultado.'
-          : 'Alrededor de un minuto, y consume tokens de OpenAI.'}
-      </p>
-    </div>
-  )
-}
-
-/**
- * Lo que va a pasar, dicho ANTES de que cueste dinero.
- *
- * Antes este aviso decía que la IA devolvía otra prenda, porque era verdad. Lo
- * sigue siendo del modelo —medido siete veces, la última devolvió la espalda
- * de la camiseta—, pero ya no de la salida: el bloqueo estructural
- * (`app/textil/bloqueo.py`) toma de la IA solo la textura fina donde coincide
- * con la prenda. Lo que el aviso tiene que dejar claro ahora es lo contrario:
- * que la prenda está garantizada, y que el aporte de la IA es de acabado, no
- * de diseño — para que nadie pague esperando otra cosa.
- */
-function AvisoDeIA() {
-  return (
-    <Notice title="Tu prenda está garantizada; la IA solo aporta acabado">
-      <p>
-        La silueta, los pliegues, las costuras y el color salen siempre de tu
-        prenda y de la ficha de la tela. De la IA se toma solo la textura fotográfica
-        más fina, y únicamente donde coincide con tu prenda.
-      </p>
-      <p>
-        Si la IA devuelve otra cosa —otro corte, o la prenda de espaldas, que pasa—
-        se descarta entera y ves tu prenda exacta. La prueba te dirá qué parte aportó.
-      </p>
-      <p>Tarda alrededor de un minuto, gasta tokens de tu cuenta, y el tope son 20 pruebas cada 24 h.</p>
-    </Notice>
   )
 }

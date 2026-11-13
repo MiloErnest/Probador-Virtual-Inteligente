@@ -21,7 +21,7 @@ const PASOS = [
   {
     titulo: 'Sube tu prenda',
     detalle:
-      'La fotografía de una prenda que ya existe, o el boceto de una que todavía no. Se recorta del fondo automáticamente.',
+      'La fotografía de una prenda que ya existe, o el boceto de una que todavía no: la IA lo convierte en la prenda. Se recorta del fondo automáticamente.',
   },
   {
     titulo: 'Elige telas del catálogo',
@@ -148,9 +148,10 @@ export default function HomePage() {
               único que hace honesta una comparación entre cuatro telas.
             </p>
             <p>
-              <strong className="font-medium">Con un boceto, igual.</strong> Un figurín va
-              sombreado a lápiz, y ese sombreado es dónde caen los pliegues: la tela lo toma
-              como luz y tu trazo se conserva por encima.
+              <strong className="font-medium">Con un boceto, primero la prenda.</strong> Un
+              dibujo todavía no tiene pliegues de verdad, así que la IA generativa lo
+              convierte, una sola vez, en la fotografía de la prenda. Las telas se prueban
+              después sobre ella, con el mismo método exacto.
             </p>
             <p>
               <strong className="font-medium">Y en una persona.</strong> Para verte la prenda

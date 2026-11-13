@@ -12,6 +12,6 @@ servicio lo traduce.
 """
 
 from app.probador.prenda import recortar_prenda
-from app.probador.vestir import PersonaVestida, vestir_persona
+from app.probador.vestir import PersonaVestida, recomponer, vestir_persona
 
-__all__ = ["PersonaVestida", "recortar_prenda", "vestir_persona"]
+__all__ = ["PersonaVestida", "recomponer", "recortar_prenda", "vestir_persona"]

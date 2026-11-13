@@ -1,13 +1,15 @@
 /**
- * Mi taller: las prendas que ha subido el usuario.
+ * Mi taller: las prendas del usuario, listas para probarles telas.
  *
- * LA DECISIÓN FOTO/BOCETO SE PIDE AL SUBIR, Y SE EXPLICA
- * ------------------------------------------------------
- * No es una etiqueta para ordenar la galería: decide cómo se recorta la prenda
- * y cómo se le pone la tela. En una foto se reutilizan la luz y los pliegues;
- * en un dibujo se conserva el trazo y se usa el sombreado a lápiz. Los dos
- * caminos son gratis e instantáneos: el texto antiguo decía que un boceto
- * necesitaba IA, y dejó de ser verdad cuando el boceto tuvo su propio camino.
+ * DOS ORÍGENES, UN SOLO TALLER
+ * ----------------------------
+ * Una prenda llega aquí por dos caminos. La fotografía se sube en esta misma
+ * pantalla: ya es la prenda, se recorta y queda lista, gratis. El boceto se
+ * sube en «Bocetos», donde la IA lo convierte en prenda; cuando está lista
+ * aparece aquí, marcada como «De boceto».
+ *
+ * A partir de ahí no hay diferencia: a las dos se les prueban las telas con el
+ * mismo motor, que no usa IA.
  */
 
 import { useCallback, useRef, useState } from 'react'
@@ -17,18 +19,20 @@ import { Link } from 'react-router-dom'
 import { EmptyBlock, ErrorBlock, LoadingBlock, Notice } from '@/components/StateBlocks'
 import { useApi } from '@/hooks/useApi'
 import { deleteGarmentUpload, fetchGarmentUploads, uploadGarment } from '@/services/endpoints'
-import { GARMENT_KIND_LABELS, type GarmentKind, type GarmentUpload } from '@/types'
+import { GARMENT_KIND_LABELS, type GarmentUpload } from '@/types'
 
 export default function TallerPage() {
   const fetcher = useCallback((signal: AbortSignal) => fetchGarmentUploads(signal), [])
   const { data, loading, error, reload } = useApi(fetcher)
 
   const [nombre, setNombre] = useState('')
-  const [tipo, setTipo] = useState<GarmentKind>('photo')
   const [archivo, setArchivo] = useState<File | null>(null)
   const [subiendo, setSubiendo] = useState(false)
   const [fallo, setFallo] = useState<string | null>(null)
   const entradaRef = useRef<HTMLInputElement | null>(null)
+
+  // Un boceto cuya prenda aún no existe no es una prenda: vive en «Bocetos».
+  const prendas = (data ?? []).filter((p) => p.status === 'ready')
 
   async function subir(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault()
@@ -37,7 +41,7 @@ export default function TallerPage() {
     setFallo(null)
     setSubiendo(true)
     try {
-      await uploadGarment(nombre.trim() || archivo.name, tipo, archivo)
+      await uploadGarment(nombre.trim() || archivo.name, 'photo', archivo)
       setNombre('')
       setArchivo(null)
       if (entradaRef.current) entradaRef.current.value = ''
@@ -65,8 +69,8 @@ export default function TallerPage() {
         <div className="mt-4 border-b border-ink-10 pb-6">
           <h1 className="font-display text-titulo">Tus prendas</h1>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-ink-60">
-            Sube la fotografía de una prenda o el boceto de un diseño, y pruébale telas del
-            catálogo sin gastar ni un metro.
+            Sube la fotografía de una prenda y pruébale telas del catálogo sin gastar ni
+            un metro.
           </p>
         </div>
       </header>
@@ -74,81 +78,78 @@ export default function TallerPage() {
       {fallo && <ErrorBlock title="Algo ha fallado" detail={fallo} />}
 
       <section className="grid gap-8 lg:grid-cols-[360px_minmax(0,1fr)] lg:gap-12">
-        <form onSubmit={subir} className="space-y-5 rounded border border-ink-10 p-6">
-          <h2 className="rotulo">Subir una prenda</h2>
+        <div className="space-y-5">
+          <form onSubmit={subir} className="space-y-5 rounded border border-ink-10 p-6">
+            <h2 className="rotulo">Subir una fotografía</h2>
 
-          <div className="space-y-1.5">
-            <label htmlFor="nombre" className="block text-sm font-medium">
-              Nombre
-            </label>
-            <input
-              id="nombre"
-              type="text"
-              maxLength={160}
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-              placeholder="Camisa de lino, modelo 3"
-              className="campo"
-            />
-          </div>
+            <div className="space-y-1.5">
+              <label htmlFor="nombre" className="block text-sm font-medium">
+                Nombre
+              </label>
+              <input
+                id="nombre"
+                type="text"
+                maxLength={160}
+                value={nombre}
+                onChange={(e) => setNombre(e.target.value)}
+                placeholder="Camisa de lino, modelo 3"
+                className="campo"
+              />
+            </div>
 
-          <fieldset className="space-y-2">
-            <legend className="text-sm font-medium">Qué estás subiendo</legend>
-            <TipoDePrenda
-              valor="photo"
-              actual={tipo}
-              onChange={setTipo}
-              titulo="Una fotografía"
-              detalle="La foto ya tiene pliegues y sombras: la tela los reutiliza. Es instantáneo, gratis, y sale igual cada vez."
-            />
-            <TipoDePrenda
-              valor="sketch"
-              actual={tipo}
-              onChange={setTipo}
-              titulo="Un boceto"
-              detalle="Se conserva tu trazo y la tela toma los pliegues de tu sombreado a lápiz. Gratis e instantáneo, igual que una foto."
-            />
-          </fieldset>
+            <div className="space-y-1.5">
+              <label htmlFor="archivo" className="block text-sm font-medium">
+                Imagen
+              </label>
+              <input
+                id="archivo"
+                ref={entradaRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                required
+                onChange={(e) => setArchivo(e.target.files?.[0] ?? null)}
+                className="block w-full text-sm text-ink-60 file:mr-3 file:rounded-full file:border file:border-ink-20 file:bg-paper file:px-4 file:py-1.5 file:text-sm file:text-ink hover:file:border-ink"
+              />
+              <p className="text-xs leading-relaxed text-ink-60">
+                Sobre fondo liso y que contraste con la prenda. La foto ya tiene pliegues y
+                sombras, y la tela los reutiliza: es instantáneo, gratis, y sale igual cada
+                vez.
+              </p>
+            </div>
 
-          <div className="space-y-1.5">
-            <label htmlFor="archivo" className="block text-sm font-medium">
-              Imagen
-            </label>
-            <input
-              id="archivo"
-              ref={entradaRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              required
-              onChange={(e) => setArchivo(e.target.files?.[0] ?? null)}
-              className="block w-full text-sm text-ink-60 file:mr-3 file:rounded-full file:border file:border-ink-20 file:bg-paper file:px-4 file:py-1.5 file:text-sm file:text-ink hover:file:border-ink"
-            />
-            <p className="text-xs leading-relaxed text-ink-60">
-              Sobre fondo liso y que contraste con la prenda. Si la prenda es casi del
-              color del fondo, no se puede recortar y te avisaremos.
+            <button type="submit" className="btn-primary w-full" disabled={subiendo || !archivo}>
+              {subiendo ? 'Subiendo y recortando…' : 'Subir'}
+            </button>
+          </form>
+
+          <Notice title="¿Lo que tienes es un boceto?">
+            <p>
+              Un dibujo no es todavía una prenda. En Bocetos, la IA lo convierte en su
+              fotografía, y después aparece aquí para probarle telas.
             </p>
-          </div>
-
-          <button type="submit" className="btn-primary w-full" disabled={subiendo || !archivo}>
-            {subiendo ? 'Subiendo y recortando…' : 'Subir'}
-          </button>
-        </form>
+            <p>
+              <Link to="/bocetos" className="font-medium text-ink underline underline-offset-4">
+                Ir a Bocetos
+              </Link>
+            </p>
+          </Notice>
+        </div>
 
         <div className="space-y-6">
           {loading && <LoadingBlock label="Cargando tus prendas…" />}
 
           {error && !loading && <ErrorBlock title="No se pudieron cargar" detail={error} />}
 
-          {!loading && !error && data?.length === 0 && (
+          {!loading && !error && prendas.length === 0 && (
             <EmptyBlock
-              title="Todavía no has subido nada"
-              detail="Sube una fotografía o un boceto para empezar a probar telas."
+              title="Todavía no tienes ninguna prenda"
+              detail="Sube una fotografía, o genera una prenda a partir de un boceto."
             />
           )}
 
-          {!loading && !error && data && data.length > 0 && (
+          {!loading && !error && prendas.length > 0 && (
             <ul className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-              {data.map((prenda) => (
+              {prendas.map((prenda) => (
                 <TarjetaDePrenda key={prenda.id} prenda={prenda} onBorrar={borrar} />
               ))}
             </ul>
@@ -156,42 +157,6 @@ export default function TallerPage() {
         </div>
       </section>
     </div>
-  )
-}
-
-function TipoDePrenda({
-  valor,
-  actual,
-  onChange,
-  titulo,
-  detalle,
-}: {
-  valor: GarmentKind
-  actual: GarmentKind
-  onChange: (v: GarmentKind) => void
-  titulo: string
-  detalle: string
-}) {
-  const elegido = actual === valor
-  return (
-    <label
-      className={`flex cursor-pointer gap-3 rounded border p-3 transition ${
-        elegido ? 'border-ink bg-bone' : 'border-ink-10 hover:border-ink-40'
-      }`}
-    >
-      <input
-        type="radio"
-        name="tipo"
-        value={valor}
-        checked={elegido}
-        onChange={() => onChange(valor)}
-        className="mt-1 accent-[#0A0A0B]"
-      />
-      <span>
-        <span className="block text-sm font-medium">{titulo}</span>
-        <span className="mt-0.5 block text-xs leading-relaxed text-ink-60">{detalle}</span>
-      </span>
-    </label>
   )
 }
 
@@ -226,14 +191,12 @@ function TarjetaDePrenda({
           <Link to={`/taller/${prenda.id}`} className="text-xs text-ink underline underline-offset-4">
             Probar telas
           </Link>
-          {prenda.kind === 'photo' && (
-            <Link
-              to={`/probador?prenda=${prenda.id}`}
-              className="text-xs text-ink underline underline-offset-4"
-            >
-              Probármela
-            </Link>
-          )}
+          <Link
+            to={`/probador?prenda=${prenda.id}`}
+            className="text-xs text-ink underline underline-offset-4"
+          >
+            Probármela
+          </Link>
           <button
             type="button"
             onClick={() => onBorrar(prenda.id)}

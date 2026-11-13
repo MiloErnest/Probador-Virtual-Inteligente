@@ -14,18 +14,31 @@ la camiseta de rayas azul rey, y otra haciéndose una foto en un espejo con la
 camiseta de palmeras. Las dos veces colocó la prenda con su dibujo y su color,
 siguiendo la postura, en unos 28 s.
 
-SE LE PIDE QUE BORRE LA PRENDA VIEJA ANTES DE PINTAR
-----------------------------------------------------
+NO SE LE PIDE QUE BORRE LA PRENDA VIEJA, Y SE LE DAN 50 PASOS
+--------------------------------------------------------------
 FASHN tiene dos modos. El que trae por defecto no borra nada («sin máscara»);
-el otro borra primero la ropa de la categoría con su propio analizador. Se usa
-el segundo, y por una prueba real del usuario: una foto frente al espejo con
-el brazo levantado sujetando el móvil y una camiseta negra. Sin borrar, el
-modelo dejó un trozo de la manga negra en el hombro, bajo el brazo. Borrando,
-desapareció. En las otras dos fotos de prueba los dos modos salen parecidos,
-y borrando tardó 13 s en dos de las tres llamadas, frente a 28 s.
+el otro borra primero la ropa de la categoría con su propio analizador y
+pinta dentro de ese hueco.
 
-Lo que el modo de borrar tiene de malo —redibuja más, manos incluidas— no
-llega al resultado: `conservar.py` solo toma del modelo la ropa.
+Hasta el 10/11/2026 se usaba el de borrar, por una prueba del 28/09: una foto
+frente al espejo con el brazo levantado y una camiseta negra, en la que el
+modo por defecto dejó un trozo de manga negra en el hombro. Lo que no se vio
+entonces, porque las tres pruebas eran camisetas sobre camisetas, es lo que
+ese modo le hace a una prenda MÁS GRANDE que la que se lleva puesta: la
+recorta al hueco de la vieja. Medido con un vestido largo de manga larga
+sobre una persona en camiseta y pantalón corto: borrando, salió un minivestido
+y el estampado tapó el móvil que sujetaba delante; sin borrar, el vestido
+llega a los tobillos y el móvil y las manos quedan como estaban. Lo dice el
+propio modelo en su ficha: sin máscara, «unconstrained garment volume».
+
+Y los pasos: 30 se quedaba corto. Con la misma foto, el mismo vestido y la
+misma semilla, a 30 pasos el vestido salió con dos agujeros por los que
+asomaban las rodillas; a 50 —el valor que trae el Space— sale entero. La
+ficha del modelo lo llama así: 20 rápido, 30 equilibrado, 50 calidad.
+
+Lo que se pierde: el modelo avisa de que sin máscara pueden quedar restos de
+la prenda vieja al pasar de larga a corta o de holgada a ceñida. Si pasa,
+`VTO_ERASE_FIRST=true` vuelve al modo de borrar sin tocar código.
 
 LO QUE CUESTA: NADA, PERO CON CUOTA
 -----------------------------------
@@ -91,6 +104,13 @@ ESPERAS = (2.0, 5.0, 10.0)
 class ModeloFashn:
     nombre = "fashn-vton-1.5"
 
+    def parametros(self, peticion: PeticionDePrueba) -> str:
+        """Con qué se llama al modelo, para dejarlo escrito junto a la prueba."""
+        return (
+            f"steps={settings.VTO_STEPS};guidance=1.5;seed={SEMILLA + peticion.variante};"
+            f"erase={int(settings.VTO_ERASE_FIRST)};photo=flat-lay"
+        )
+
     def vestir(self, peticion: PeticionDePrueba) -> Image.Image:
         from gradio_client import Client, handle_file
 
@@ -114,8 +134,8 @@ class ModeloFashn:
                 guidance_scale=1.5,
                 # Una semilla por prueba. Ver `PeticionDePrueba.variante`.
                 seed=SEMILLA + peticion.variante,
-                # Borrar la prenda vieja antes de pintar. Ver la cabecera.
-                segmentation_free=False,
+                # Sin borrar la prenda vieja, salvo que se pida. Ver la cabecera.
+                segmentation_free=not settings.VTO_ERASE_FIRST,
                 api_name="/try_on",
             )
             try:

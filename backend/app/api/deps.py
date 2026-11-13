@@ -26,7 +26,7 @@ from app.services.fabric import FabricService
 from app.services.fabric_trial import FabricTrialService
 from app.services.garment_upload import GarmentUploadService
 from app.services.storage import Storage, get_storage
-from app.services.trial_jobs import run_trial_job, run_try_on_job
+from app.services.trial_jobs import run_sketch_job, run_trial_job, run_try_on_job
 from app.services.try_on import PersonPhotoService, TryOnService
 from app.services.user import UserService
 
@@ -58,7 +58,15 @@ def get_fabric_service(session: SessionDep, storage: StorageDep) -> FabricServic
 def get_garment_upload_service(
     session: SessionDep, storage: StorageDep
 ) -> GarmentUploadService:
-    return GarmentUploadService(GarmentUploadRepository(session), storage)
+    return GarmentUploadService(
+        GarmentUploadRepository(session), FabricTrialRepository(session), storage
+    )
+
+
+def get_sketch_runner() -> Callable[[int], None]:
+    """Igual que `get_trial_runner`: inyectable para que los tests no abran
+    la sesión de PostgreSQL."""
+    return run_sketch_job
 
 
 def get_trial_service(session: SessionDep, storage: StorageDep) -> FabricTrialService:
@@ -108,6 +116,7 @@ FabricServiceDep = Annotated[FabricService, Depends(get_fabric_service)]
 GarmentUploadServiceDep = Annotated[
     GarmentUploadService, Depends(get_garment_upload_service)
 ]
+SketchRunnerDep = Annotated[Callable[[int], None], Depends(get_sketch_runner)]
 TrialServiceDep = Annotated[FabricTrialService, Depends(get_trial_service)]
 TrialRunnerDep = Annotated[Callable[[int], None], Depends(get_trial_runner)]
 PersonPhotoServiceDep = Annotated[PersonPhotoService, Depends(get_person_photo_service)]

@@ -92,5 +92,15 @@ class TryOn(Base, TimestampMixin):
     #: tocado de la foto, y por eso se guarda con la prueba.
     edited_fraction: Mapped[float | None] = mapped_column(Float, default=None)
 
+    #: Lo que devolvió el modelo, SIN componer, y la caja de la foto a la que
+    #: corresponde («x0,y0,x1,y1»). No se enseña a nadie: sirve para repetir la
+    #: composición sin volver a llamar al modelo. Hasta el 10/11/2026 solo se
+    #: guardaba el resultado ya compuesto, y cada ajuste de `conservar.py`
+    #: obligaba a gastar cuota de Hugging Face para ver su efecto.
+    raw_output_key: Mapped[str | None] = mapped_column(String(512), default=None)
+    raw_box: Mapped[str | None] = mapped_column(String(64), default=None)
+    #: Con qué se llamó al modelo: pasos, modo y semilla.
+    model_params: Mapped[str | None] = mapped_column(String(128), default=None)
+
     def __repr__(self) -> str:
         return f"<TryOn id={self.id} status={self.status.value} category={self.category.value}>"

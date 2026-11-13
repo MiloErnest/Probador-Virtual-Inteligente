@@ -24,6 +24,13 @@ postura. Sustituyó en 2026-09-27 a un probador con cámara en vivo que tenía s
 propio catálogo de ropa: el usuario pidió explícitamente que no fuera cámara, y
 que no fuera un flujo aparte que duplicara el taller. Ver «El probador» abajo.
 
+**Los bocetos:** el único sitio donde la IA generativa INVENTA. Un boceto no es
+una prenda; la IA lo convierte, una vez, en la fotografía de la prenda, y sobre
+ella se prueban las telas con el motor de siempre. Desde 2026-10-01 es una
+pantalla aparte (`/bocetos`). Sustituyó al texturizado directo del dibujo, que
+el usuario descartó: «un boceto con un color encima, nadie lo quiere». Ver
+«Los bocetos» abajo.
+
 Ver [PROJECT_STATUS.md](PROJECT_STATUS.md) para el detalle vivo: qué funciona,
 qué falta, errores conocidos, decisiones técnicas y próximos pasos.
 
@@ -98,11 +105,13 @@ Base `vfit`, rol de aplicación `vfit` / `vfit_dev_password`. Son las mismas
 credenciales que `docker-compose.yml`, a propósito.
 
 Ejecutar pruebas: `pytest` desde `backend/` con el venv activo. Usan SQLite en
-memoria — **no necesitan PostgreSQL levantado**. Son 103: las del contrato de la
+memoria — **no necesitan PostgreSQL levantado**. Son 156: las del contrato de la
 API; en `tests/test_motor.py`, las propiedades medidas del motor — cada una
-es un caso que falló de verdad antes de arreglarse—; y en
+es un caso que falló de verdad antes de arreglarse—; en `tests/test_mis_telas.py`,
+una por criterio de aceptación de Ep6-Hu7 a Hu11; y en
 `tests/test_probador.py`, la garantía del probador con un modelo que inventa
-fondo, como el de verdad.
+fondo, como el de verdad, y los defectos medidos el 10 y el 12/11/2026 con sus
+salidas reales.
 
 **El esquema lo gobierna Alembic, no `create_all`.** Sobre una base nueva:
 
@@ -127,6 +136,15 @@ guardados — se calculan al subir y no se recalculan solos:
 
 ```powershell
 python -m scripts.resegmentar --aplicar
+```
+
+Y si cambia `app/probador/conservar.py`, las pruebas sobre persona ya guardadas
+se recomponen SIN llamar a Hugging Face ni gastar cuota (solo las que guardan
+la salida del modelo: las hechas desde el 10/11/2026). Sin `--aplicar` dice
+cuánto cambiaría cada una:
+
+```powershell
+python -m scripts.recomponer --aplicar
 ```
 
 Y para que los mosaicos del catálogo sean fotográficos en vez de procedurales
@@ -228,14 +246,69 @@ Ruta (HTTP) → Servicio (negocio) → Repositorio (SQL) → Modelo
 
 | Tabla | Qué es |
 |---|---|
-| `fabrics` | El catálogo de la tienda textil. **El centro del producto.** |
-| `garment_uploads` | La prenda o el boceto que sube el usuario. |
+| `fabrics` | Las telas. **El centro del producto.** `owner_id` vacío: del catálogo de la tienda, público. Con valor: una tela que ese usuario fotografió en su taller, y solo la ve él (`/api/my-fabrics`). |
+| `garment_uploads` | La prenda del usuario: una foto, o la que la IA generó de su boceto (el dibujo queda en `sketch_key`). Solo `status=ready` se puede probar. |
 | `fabric_trials` | Una prueba: prenda × tela → imagen. La unidad de negocio. |
 | `person_photos` | La foto de una persona. Sin metadatos; borrarla borra sus pruebas. |
-| `try_ons` | Esa persona con una prenda del taller puesta. |
+| `try_ons` | Esa persona con una prenda del taller puesta. Guarda también lo que devolvió el modelo, sin componer. |
 
 `garments` —el catálogo del probador con cámara— se eliminó en la migración
 `32d71eca2214`, con la cámara.
+
+---
+
+## Los bocetos — lo que hay que saber antes de tocarlos
+
+`backend/app/textil/boceto_ia.py`, `GarmentUploadService.generar` y
+`frontend/src/pages/BocetosPage.tsx`.
+
+```
+boceto --[IA, UNA VEZ POR BOCETO, se cobra]--> fotografía de la prenda, sola,
+                                               en su color o en crudo
+prenda + máscara + mosaico --[determinista, SIEMPRE]--> la prenda con la tela
+```
+
+Subir un boceto responde con la prenda en `pending`; la generación corre en
+segundo plano (`run_sketch_job`) y el cliente sondea. Las telas solo se pueden
+probar con la prenda en `ready`.
+
+### Lo que costó encontrar
+
+1. **Esto ya se había intentado y había fallado**, y la diferencia no es el
+   prompt. Antes se pedía «un vestido de tafetán»: imaginar la prenda e
+   imaginar la tela a la vez, con un modelo que no admitía `input_fidelity`,
+   una vez por cada tela y sin que nadie mirase el resultado. Ahora se pide
+   SOLO la prenda, una vez, y el usuario la ve junto a su dibujo. Medido tres
+   veces con el vestido de noche del usuario (palabra de honor con drapeado
+   cruzado, sirena, sobrefalda con cola): las tres salieron con todo eso.
+   Unos 3.400 tokens y 38 s cada una.
+2. **No se puede prometer que sea idéntica.** `images.edit` interpreta el
+   dibujo; no hay condicionamiento estructural. Por eso hay dos redes: el
+   **parecido de silueta** (`parecido_de_silueta`, 0 a 1) y la comparación a
+   ojo, con el dibujo y la prenda siempre lado a lado y un botón «Otra
+   variante». El parecido mide el CONTORNO y nada de dentro: unos botones de
+   más no lo mueven.
+3. **`PARECIDO_MINIMO = 0.72` está medido.** Las prendas fieles del vestido dan
+   0,87–0,88; contra siete prendas que no son la suya, 0,42–0,57.
+4. **El recorte de la prenda generada no busca figura** (`figura=False`). El
+   paso que quita a la modelo de un figurín tomaba por piel las sombras
+   cálidas de los pliegues de una tela cruda, y dejaba dos agujeros de la
+   cintura al bajo. **Se culpó primero al fondo gris** —«la sombra gris se
+   confunde con el fondo gris»—, se montó un fondo azul de croma, y salieron
+   LOS MISMOS agujeros. Se pagó una imagen por no medir antes de suponer.
+5. **Si el boceto no tiene color, la prenda va en crudo**, y eso lo decide el
+   código (`boceto_a_color`), no el modelo: dejándoselo a él, el sombreado
+   gris del lápiz lo toma por un vestido gris.
+6. **Cada variante es una prenda nueva.** No pisa la anterior: las telas ya
+   probadas se hicieron sobre ELLA. Una prenda fallida sin pruebas se
+   reintenta en su misma fila. Sin semilla: la API no la tiene, y cada
+   llamada sale distinta sola.
+7. **Los bocetos cuentan para `AI_TRIALS_PER_USER_PER_DAY`**, y el techo se
+   comprueba ANTES de guardar el dibujo.
+8. **Los bocetos subidos antes del cambio** quedaron en `failed` con un
+   mensaje que dice qué hacer. La migración no los genera: cuesta dinero.
+9. **Sin `AI_PROVIDER=openai`, un boceto falla diciendo cómo activarlo.** No
+   hay camino gratuito al que caer en silencio.
 
 ---
 
@@ -249,8 +322,8 @@ Ruta (HTTP) → Servicio (negocio) → Repositorio (SQL) → Modelo
 | `partes.py` | Analizador de personas (SegFormer B2 ropa, ONNX, CPU, 0,8 s). |
 | `proveedor.py` | El contrato del modelo y el selector (`VTO_PROVIDER`). |
 | `fashn.py` | FASHN VTON 1.5 en su Space gratuito de Hugging Face. |
-| `conservar.py` | Qué se toma del modelo y qué vuelve a ser la foto original. |
-| `vestir.py` | El camino: encuadrar, vestir, conservar. |
+| `conservar.py` | Qué se toma del modelo y qué vuelve a ser la foto original. El fondo, siempre el de la foto. |
+| `vestir.py` | El camino: encuadrar según la prenda, vestir, conservar (`recomponer`, que no llama al modelo). |
 
 ### Lo que costó encontrar
 
@@ -275,14 +348,28 @@ Ruta (HTTP) → Servicio (negocio) → Repositorio (SQL) → Modelo
    analizador se carga primero de la caché local.
 5. **Se encuadra a la persona antes de mandarla**: el modelo trabaja a 864 px
    de alto, y en una foto de cuerpo entero la prenda salía con un tercio de los
-   píxeles.
+   píxeles. Desde el 10/11/2026 el encuadre depende de la prenda: para una
+   «parte de arriba» va de la cabeza a medio muslo (`BAJO_LA_PRENDA`). Medido
+   en las dos fotos de cuerpo entero: la persona pasa de 193 a 318 px de ancho
+   en lo que ve el modelo, y de 220 a 338. Si la prenda llega al pie del
+   cuadro se avisa de que se pruebe como «Vestido o mono». Solo arriba: no
+   había ninguna prenda de abajo en el taller con la que medirlo.
 6. **Licencias**: FASHN y onnxruntime son libres; los pesos del analizador
    derivan de SegFormer de NVIDIA, de uso NO comercial. Vale para un proyecto
    universitario, no para venderlo.
-7. **FASHN va en el modo que BORRA la prenda vieja** (`segmentation_free=False`).
-   El que trae por defecto no borra, y en la foto del usuario frente al espejo,
-   con el brazo levantado, dejó un trozo de su manga negra en el hombro.
-   Borrando desapareció, y en las otras dos fotos de prueba salen parecidos.
+7. **FASHN va en el modo que NO borra la prenda vieja** (`segmentation_free=True`,
+   el suyo por defecto) **y con 50 pasos**. Hasta el 10/11/2026 iba en el que
+   borra, por una manga negra que quedó en un hombro el 28/09. Lo que no se
+   había probado —las tres pruebas eran camisetas sobre camisetas— es una
+   prenda MÁS GRANDE que la que se lleva puesta: borrando, el modelo la
+   recorta al hueco de la vieja. Medido con un vestido largo de manga larga
+   sobre camiseta y pantalón corto: borrando salió un minivestido y el
+   estampado tapó el móvil que sujetaba; sin borrar llega a los tobillos y el
+   móvil y las manos quedan como estaban. Y a 30 pasos ese mismo vestido, con
+   la misma semilla, salió con dos agujeros en las rodillas; a 50, entero.
+   `VTO_ERASE_FIRST=true` vuelve al modo de borrar: el modelo avisa de que sin
+   borrar pueden quedar restos al pasar de larga a corta, y eso no se ha
+   vuelto a medir.
 8. **La piel NO entra en la zona por haber cambiado.** Así era, y el modelo
    (en modo borrar redibuja más) cortó el móvil del usuario, redibujó su mano
    y dejó un borrón beige: todo pasó al resultado. La piel que la prenda
@@ -304,8 +391,73 @@ Ruta (HTTP) → Servicio (negocio) → Repositorio (SQL) → Modelo
     roja, y repetir los devolvía idénticos—. El botón «Otra variante» vuelve a
     lanzar la misma combinación con otra semilla. Se descartó contar los
     intentos previos: el usuario borra pruebas, y la cuenta volvía atrás.
-    Y se descartó detectar lo inventado por color: daba falsos positivos en el
-    canto de la zona y se dejaba el collar, que tiene tono de piel.
+    Y se descartó detectar lo inventado por color PÍXEL A PÍXEL dentro de la
+    prenda: daba falsos positivos en el canto de la zona y se dejaba el
+    collar, que tiene tono de piel. Lo del punto 14 es otra cosa —manchas
+    enteras contra la paleta de la prenda—, y el collar sigue sin detectarse.
+12. **El fondo no se toma NUNCA del modelo.** El «fantasma» claro junto al
+    hombro y el ribete claro de la prenda eran NUESTROS, no del modelo: donde
+    la prenda vieja era más ancha que la nueva, y en el margen del canto, se
+    copiaba el fondo que el modelo regenera, que no es el de la foto (cambió
+    una línea de árboles por un horizonte claro). Ahí va ahora el fondo de la
+    FOTO, continuado desde los píxeles de al lado (relleno de Telea).
+    Promediarlo dejaba una mancha pálida sobre un fondo en franjas; y hay que
+    alejarse del canto de la prenda vieja (`SOMBRA_DE_LA_PRENDA_VIEJA`), o su
+    sombra tiñe el relleno de gris.
+13. **«Fondo» es lo de FUERA de la silueta, no lo que el analizador llama
+    fondo.** No tiene etiqueta para lo que la persona sostiene: el móvil sale
+    como fondo, y en la primera prueba del vestido de noche el relleno
+    arrastró su dorado y el negro de su cámara hasta los hombros. Y parte del
+    abdomen que deja al aire una chaqueta corta también salió como fondo. Se
+    tapan los huecos de la figura (`_solida`) y se exige el color del fondo
+    de alrededor (4–15 de mediana el hueco de verdad, 73 la piel) y más
+    parecido a él que a la piel de al lado.
+14. **La ropa que el modelo se inventa se delata por el color.** Con una
+    camiseta roja y la semilla 66 pintó debajo unas mangas largas verdes —en
+    sus dos modos y con 30 y 50 pasos—; con la 70, no. Es azar de la semilla:
+    para eso está «Otra variante». Distancia a la paleta de la prenda en Lab:
+    18 de percentil 99 en las prendas bien puestas, 40–65 en lo inventado
+    (`LEJOS_DE_LA_PRENDA = 30`). Donde tapaba piel vuelve la foto, y se
+    avisa. Si «inventado» es más de media prenda no se quita nada: es la
+    prenda entera con otra luz.
+15. **Cada prueba guarda lo que devolvió el modelo, sin componer**
+    (`raw_output_key`, `raw_box`, `model_params`), y `scripts/recomponer.py`
+    rehace la composición sin gastar cuota. Sin eso, todo lo de arriba hubo
+    que medirlo con un arnés aparte, pagando una prueba por cada idea.
+16. **La «falta de nitidez» no era un defecto, y medirla lo demostró.** El
+    diagnóstico vio 1,55 de laplaciano en la prenda frente a 4,29 en el resto
+    y lo llamó «pegada». Las fotos de prueba no tienen grano que igualar
+    (0,25 sobre 255), y con una prenda estampada la zona generada da MÁS
+    detalle que el resto (17,7 frente a 4,3): la camiseta era lisa, nada más.
+    No se añadió ni grano ni enfoque.
+17. **El modelo dibuja a la persona más delgada, y la ropa se comía el brazo.**
+    Medido el 12/11/2026 con un hombre musculoso y una camiseta de manga corta
+    (prueba 30): el antebrazo que pinta el modelo tiene el borde de fuera en
+    su sitio pero es mucho más fino, y el hueco de dentro lo ocupa la
+    camiseta, que entraba encima del brazo real por «ser ropa». Ahora, en los
+    tramos del brazo que la imagen generada deja al aire, el brazo de la foto
+    se queda entero (`_brazos_al_aire`). Tres cosas que costaron: el eje se le
+    busca al brazo GENERADO (largo y fino), no al de la foto, cuyo trozo
+    visible puede ser corto y sin dirección; el corte sigue el dobladillo que
+    dibujó el modelo, que es la parte del extremo que da a ropa y no a fondo;
+    y sin dobladillo reconocible se corta donde acaba la piel generada —nunca
+    «todo lo de más allá», que con una chaqueta de manga larga devolvía el
+    brazo entero y borraba la manga—. Se descartó, midiéndolo, deformar la
+    imagen del modelo hasta su silueta: el contorno exterior casi no se mueve
+    (0,6 px). Lo que NO se arregla: la caída holgada de la prenda sobre el
+    pecho, que es dibujo del modelo.
+18. **Este modelo no reproduce un vestido de noche, y no es cuestión de
+    parámetros.** El vestido del boceto (hombros caídos con drapeado, sirena,
+    sobrefalda con cola) sale siempre como un palabra de honor en línea A a
+    media pierna. Medido con la misma foto y semilla en cuatro
+    configuraciones: `flat-lay`, tipo de foto `model`, guía 2,5 (deja además
+    restos de la camiseta vieja) y la prenda estirada ×1,3 a lo alto. Y se
+    descartó colocar la imagen de la prenda encima con su forma exacta: se ve
+    pegada y tapa los muebles, porque una imagen plana no sabe qué hay
+    delante. De paso salió por qué «tal cual» no puede ser: el vestido del
+    boceto tiene proporciones de figurín —de la cintura al bajo hay 7,9 veces
+    el ancho de la cintura; en una persona, unas 3,7—. El camino que queda es
+    medir otro modelo (`ModeloDePrueba` ya lo permite), no ajustar este.
 
 ---
 
@@ -317,14 +469,16 @@ corregido los errores más caros.
 | Archivo | Qué hace |
 |---|---|
 | `segmentar.py` | Qué píxeles son prenda. Se calcula UNA vez al subir y se guarda. |
-| `retexturizar.py` | El motor determinista: dos caminos, foto y boceto. |
+| `retexturizar.py` | El motor determinista. Un solo camino: la fotografía de la prenda. |
+| `boceto_ia.py` | De un boceto a la fotografía de la prenda. La IA, una vez. |
 | `veta.py` | Por dónde corre el hilo en cada pieza: la raya sigue la manga. |
 | `bloqueo.py` | Lo que hace fiable a la IA: solo aporta textura donde coincide. |
 | `digitalizar.py` | De la foto de un rollo a un mosaico limpio: lisos, rayas, estampados. |
+| `tela_propia.py` | La tela del usuario: una foto de móvil → mosaico, con avisos sobre la foto y la junta medida. Sin IA. |
 | `tejido_ia.py` | Mosaicos sintetizados con IA y el cierre de juntas. |
 | `filtros.py` | Desenfoque, reescalado, filtro guiado; todo en coma flotante. |
 | `provider.py` | El contrato y el selector. |
-| `openai_provider.py` | El motor generativo, siempre detrás del bloqueo. |
+| `openai_provider.py` | El acabado generativo de una prueba, tras el bloqueo. Ya sin botón en la interfaz. |
 
 ### La idea, en una frase
 
@@ -350,7 +504,9 @@ que queda se traslada a la tela nueva.
    y la cobertura no se mueve ni una milésima.
 4. **El cierre morfológico sella el túnel pero deja la cavidad.** Hace falta un
    segundo paso que rellene los huecos ya desconectados del borde.
-5. **Un boceto SÍ tiene luz, y darlo por supuesto costó el motor entero.**
+5. *(Camino RETIRADO el 2026-10-01: `vestir_boceto` ya no existe; la tela ya no
+   se pinta sobre el dibujo. Se deja porque explica por qué.)*
+   **Un boceto SÍ tiene luz, y darlo por supuesto costó el motor entero.**
    Aquí ponía —escrito en el propio módulo— que un dibujo no tiene sombras. Es
    verdad de un plano técnico y falso del dibujo que de verdad hace un
    diseñador: un figurín va sombreado a lápiz, y ese sombreado es dónde caen
@@ -426,6 +582,11 @@ que queda se traslada a la tela nueva.
 15. **Cerrar la junta de un mosaico periódico: desplazar un múltiplo del
     período y cortar por el camino de mínimo error.** Fundir a media anchura
     dejó fantasmales los vichy; fundir con rampa, hojas dobles en las palmeras.
+    **Y el corte entra y sale por la misma columna** (13/11/2026): al cerrar el
+    segundo eje, un corte que entraba por un sitio y salía por otro reabría la
+    junta del primero. Con un estampado de motivos sueltos daba junta 7,4 y los
+    motivos partidos; no se había visto porque las telas del catálogo no tienen
+    motivos sueltos sobre un fondo liso.
 16. **El cierre morfológico sella también el hueco entre el brazo y el cuerpo.**
     No sabe de colores: en el vestido negro del usuario la tela rellenaba ese
     hueco de axila a mano. Lo añadido por el cierre se devuelve al fondo si es
@@ -445,6 +606,15 @@ que queda se traslada a la tela nueva.
     canto se mezclaba con la foto, que en esos píxeles aún tiene la prenda
     vieja: se mezcla con el FONDO de al lado. En un boceto no se aplica lo
     primero: el trazo, más oscuro que papel y vestido, sí lo encuentra el color.
+19. **La tela del usuario (`tela_propia.py`) no tiene a nadie que elija el
+    recorte**, como sí lo hubo con las fotos de la tienda: se toma el 80%
+    central. La nitidez se mide con la medida de Crete et al. (2007), que
+    compara la imagen consigo misma desenfocada y no depende de cuánto dibujo
+    tenga la tela; la dirección sin cambios (a lo largo de una raya) no cuenta,
+    o una raya perfecta sale «desenfocada». En una lisa no se mide: de ella
+    solo se toma el color. Umbrales medidos en la tabla del módulo.
+    `medir_junta` da 2,0 en un liso o una raya perfectos (la trama de tafetán
+    va en contrafase con su período): el tope es 3,0, el mismo de las pruebas.
 
 ### Los parámetros están medidos, no elegidos a ojo
 
@@ -464,11 +634,14 @@ se nota, y 0 deja una rejilla recta sobre una manga curva.
 
 ### Resumen, porque es lo primero que se pregunta
 
-La IA está en tres sitios y en ninguno puede cambiar la prenda:
+La IA está en tres sitios. Solo en el primero inventa, y ahí se le pide:
 
 1. **Los materiales**: sintetiza el mosaico fotográfico de cada tela y
    reconstruye los estampados de los que la foto solo enseña una franja. Una
    vez por tela; lo usan todas las pruebas.
+0. **La prenda de un boceto**: convierte el dibujo en la fotografía de la
+   prenda. Una vez por boceto; el usuario la ve junto a su dibujo. Es lo único
+   que la interfaz ofrece hoy con IA. Ver «Los bocetos».
 2. **El acabado de una prueba** (opción «IA generativa»): detrás del BLOQUEO
    ESTRUCTURAL (`bloqueo.py`). Forma, estructura y color salen del render
    exacto; de la IA solo la textura fina donde coincide, y un tono monótono.
@@ -476,7 +649,11 @@ La IA está en tres sitios y en ninguno puede cambiar la prenda:
    entera. Medido: las cuatro salidas antiguas que eran otra prenda quedan
    descartadas al 100%; la prueba real sobre la camiseta, en la que el modelo
    devolvió la ESPALDA, sale como el frente con su etiqueta.
-3. No en la geometría. Nunca.
+3. No en la geometría de una FOTOGRAFÍA. Nunca.
+
+El acabado (2) sigue en el backend —`method: "ai"`— pero la pantalla de
+pruebas ya no lo ofrece: el usuario pidió que la IA generativa se use solo
+para los bocetos.
 
 **`AI_PROVIDER=openai`.** El valor por defecto del repositorio es `none`, porque
 que clonarlo empiece a gastar dinero de alguien sería una trampa. Un valor
@@ -539,7 +716,8 @@ Ninguno era el prompt.
 ### Control de gasto, en tres sitios
 
 1. El límite mensual del panel de OpenAI. Lo puso el usuario.
-2. `AI_TRIALS_PER_USER_PER_DAY` (20), ventana móvil de 24 h.
+2. `AI_TRIALS_PER_USER_PER_DAY` (20), ventana móvil de 24 h. Suma las prendas
+   generadas de bocetos y las pruebas con IA.
 3. **Las pruebas automatizadas no pueden gastar nunca.** `conftest.py` tiene un
    fixture `autouse` que fuerza `AI_PROVIDER="none"`. Sin él, la suite entera
    —71 tests, decenas de veces al día— generaría imágenes facturadas.
@@ -553,8 +731,13 @@ tabla de qué modelo admite qué caducaría con el siguiente modelo.
 ## Reparto de acceso
 
 Públicos: `/api/health`, el catálogo de telas en lectura, `POST /api/users` y
-`POST /api/auth/login`. Todo lo demás —prendas, pruebas, fotos de persona y
-pruebas sobre ellas— exige `Authorization: Bearer <token>`.
+`POST /api/auth/login`. Todo lo demás —prendas, telas propias, pruebas, fotos
+de persona y pruebas sobre ellas— exige `Authorization: Bearer <token>`.
+
+El catálogo (`/api/fabrics`) busca SOLO telas con `owner_id` vacío, y las telas
+propias (`/api/my-fabrics`) SOLO las del usuario del token: una tela de un
+taller no aparece ni se toca por el camino del otro. Al probar, la tela tiene
+que ser del catálogo o del usuario (`FabricRepository.get_visible`).
 
 Tres reglas al añadir endpoints:
 

@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from '@/auth/AuthContext'
 import RequireAuth from '@/auth/RequireAuth'
 import MainLayout from '@/layouts/MainLayout'
+import BocetosPage from '@/pages/BocetosPage'
 import FabricsPage from '@/pages/FabricsPage'
 import HomePage from '@/pages/HomePage'
 import LoginPage from '@/pages/LoginPage'
@@ -29,6 +30,7 @@ export default function App() {
           <Route element={<RequireAuth />}>
             <Route path="taller" element={<TallerPage />} />
             <Route path="taller/:id" element={<TrialPage />} />
+            <Route path="bocetos" element={<BocetosPage />} />
             <Route path="probador" element={<ProbadorPage />} />
             <Route path="perfil" element={<ProfilePage />} />
           </Route>

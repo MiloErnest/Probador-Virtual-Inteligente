@@ -4,6 +4,7 @@ Un único punto donde se registran todos los routers, de modo que `main.py`
 no necesite conocerlos uno a uno.
 
 - `fabrics`, `garment_uploads` y `trials`: probar telas sobre una prenda.
+- `my_fabrics`: las telas que cada usuario fotografía en su taller.
 - `try_ons`: probarse la prenda — la foto de la persona y la prueba sobre ella.
 """
 
@@ -14,6 +15,7 @@ from app.api.routes import (
     fabrics,
     garment_uploads,
     health,
+    my_fabrics,
     trials,
     try_ons,
     users,
@@ -26,6 +28,7 @@ api_router.include_router(users.router)
 
 # Probar telas sobre una prenda.
 api_router.include_router(fabrics.router)
+api_router.include_router(my_fabrics.router)
 api_router.include_router(garment_uploads.router)
 api_router.include_router(trials.router)
 

@@ -6,7 +6,8 @@ Dos piezas y una costura:
 - `retexturizar.py`  el motor determinista: reutiliza la luz de la fotografía.
 - `provider.py`  el contrato y el selector. Un motor desconocido falla en voz
   alta; nunca cae al local en silencio.
-- `openai_provider.py`  el motor generativo, para bocetos.
+- `openai_provider.py`  el acabado generativo de una prueba, tras el bloqueo.
+- `boceto_ia.py`  de un boceto a la fotografía de la prenda. La IA, una vez.
 """
 
 from app.textil.errores import ErrorDeMotor

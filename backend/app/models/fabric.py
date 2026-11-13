@@ -21,7 +21,7 @@ la modista necesita saber si con ese ancho le salen las piezas del patrón.
 
 import enum
 
-from sqlalchemy import Boolean, Enum as SAEnum, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Enum as SAEnum, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin
@@ -100,6 +100,21 @@ class Fabric(Base, TimestampMixin):
     default_repeat: Mapped[int] = mapped_column(Integer, default=6, nullable=False)
 
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+
+    # DE QUIÉN ES LA TELA
+    # -------------------
+    # Vacío: es del catálogo de la tienda, y lo ve cualquiera. Con valor: es una
+    # tela que un usuario fotografió en SU taller, y solo la ve él (Ep6-Hu8). La
+    # misma tabla para las dos porque una prueba de tela no distingue: estampa un
+    # mosaico, venga de donde venga.
+    #
+    # CASCADE: si algún día se borra una cuenta, sus telas se van con ella. Hoy
+    # no existe borrar una cuenta; quien lo añada tiene que tener en cuenta que
+    # `fabric_trials.fabric_id` es RESTRICT y que PostgreSQL lo comprueba fila a
+    # fila: hay que borrar antes las pruebas.
+    owner_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), default=None, index=True
+    )
 
     def __repr__(self) -> str:
         return f"<Fabric id={self.id} name={self.name!r} ref={self.reference!r}>"

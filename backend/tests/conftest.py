@@ -25,7 +25,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.api.deps import get_trial_runner, get_try_on_runner
+from app.api.deps import get_sketch_runner, get_trial_runner, get_try_on_runner
 from app.core.config import settings
 from app.core.database import get_session
 from app.main import app
@@ -36,8 +36,10 @@ from app.repositories.garment_upload import GarmentUploadRepository
 from app.repositories.person_photo import PersonPhotoRepository
 from app.repositories.try_on import TryOnRepository
 from app.services.fabric_trial import FabricTrialService
+from app.services.garment_upload import GarmentUploadService
 from app.services.storage import LocalStorage, Storage, get_storage
 from app.services.try_on import TryOnService
+from app.textil import boceto_ia
 
 
 @pytest.fixture(autouse=True)
@@ -140,6 +142,15 @@ def client(db_session: Session, storage: Storage) -> Generator[TestClient, None,
         ).process(try_on_id)
 
     app.dependency_overrides[get_try_on_runner] = lambda: procesar_prueba_sobre_persona
+
+    def generar_prenda_de_boceto(upload_id: int) -> None:
+        GarmentUploadService(
+            GarmentUploadRepository(db_session),
+            FabricTrialRepository(db_session),
+            storage,
+        ).generar(upload_id)
+
+    app.dependency_overrides[get_sketch_runner] = lambda: generar_prenda_de_boceto
 
     with TestClient(app) as test_client:
         yield test_client
@@ -251,6 +262,66 @@ def make_prenda_bytes(width: int = 300, height: int = 400) -> bytes:
     buffer = BytesIO()
     imagen.save(buffer, format="PNG")
     return buffer.getvalue()
+
+
+def make_boceto_bytes(width: int = 300, height: int = 400) -> bytes:
+    """Un «boceto» sintético: papel blanco, contorno a lápiz y sombreado gris.
+
+    La prenda ocupa la misma caja que la de `make_prenda_bytes`, para que la
+    prenda que devuelve `GeneradorFalso` tenga su misma silueta.
+    """
+    from io import BytesIO
+
+    from PIL import Image, ImageDraw
+
+    imagen = Image.new("RGB", (width, height), (250, 250, 248))
+    dibujo = ImageDraw.Draw(imagen)
+    caja = (width // 5, height // 6, width * 4 // 5, height * 5 // 6)
+    dibujo.rectangle(caja, fill=(226, 226, 224), outline=(40, 40, 40), width=3)
+
+    buffer = BytesIO()
+    imagen.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+class GeneradorFalso:
+    """Hace de modelo generativo sin llamar a nadie, y cuenta las llamadas.
+
+    Devuelve lo que devuelve el de verdad: la prenda sola, en crudo, sobre
+    gris. `caja` son las fracciones que ocupa; por defecto, las del boceto de
+    `make_boceto_bytes`, que es «la prenda le ha salido fiel».
+    """
+
+    nombre = "falso-boceto"
+
+    def __init__(self, caja: tuple[float, float, float, float] = (0.2, 1 / 6, 0.8, 5 / 6)):
+        self.caja = caja
+        self.llamadas = 0
+
+    def generar(self, boceto, *, con_color: bool):
+        from PIL import Image, ImageDraw
+
+        self.llamadas += 1
+        ancho, alto = 600, 800
+        imagen = Image.new("RGB", (ancho, alto), (140, 140, 140))
+        dibujo = ImageDraw.Draw(imagen)
+        x0, y0 = round(self.caja[0] * ancho), round(self.caja[1] * alto)
+        x1, y1 = round(self.caja[2] * ancho), round(self.caja[3] * alto)
+        for y in range(y0, y1):
+            t = (y - y0) / max(1, y1 - y0)
+            tono = int(200 + 40 * (1 - abs(t - 0.35) * 1.6))
+            dibujo.line([(x0, y), (x1, y)], fill=(tono, tono - 6, tono - 22))
+        return boceto_ia.PrendaGenerada(imagen=imagen, proveedor=self.nombre, tokens=1234)
+
+
+@pytest.fixture
+def generador_de_bocetos(monkeypatch) -> GeneradorFalso:
+    """Sustituye el modelo generativo por uno falso. Sin esto, un boceto falla
+    diciendo que la IA no está configurada — que es lo que impone
+    `sin_gastar_dinero`."""
+    falso = GeneradorFalso()
+    monkeypatch.setattr(boceto_ia, "generador_configurado", lambda: falso)
+    return falso
 
 
 @pytest.fixture

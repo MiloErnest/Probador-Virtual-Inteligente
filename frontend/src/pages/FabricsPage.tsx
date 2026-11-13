@@ -14,6 +14,7 @@ import { useCallback, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { useAuth } from '@/auth/AuthContext'
+import MisTelas from '@/components/MisTelas'
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '@/components/StateBlocks'
 import { useApi } from '@/hooks/useApi'
 import { fetchFabrics } from '@/services/endpoints'
@@ -42,11 +43,19 @@ export default function FabricsPage() {
               Elige una tela y pruébala sobre tu propia prenda antes de comprar el metraje.
             </p>
           </div>
-          {data && (
-            <p className="text-sm text-ink-60">
-              {data.length} {data.length === 1 ? 'tela' : 'telas'}
-            </p>
-          )}
+          <div className="flex items-center gap-5">
+            {data && (
+              <p className="text-sm text-ink-60">
+                {data.length} {data.length === 1 ? 'tela' : 'telas'}
+              </p>
+            )}
+            {/* «Mis telas» va debajo del catálogo, que puede ser largo. */}
+            {isAuthenticated && (
+              <a href="#mis-telas" className="btn-ghost">
+                Añadir mi tela
+              </a>
+            )}
+          </div>
         </div>
       </header>
 
@@ -94,10 +103,13 @@ export default function FabricsPage() {
         </div>
       )}
 
+      {/* Las telas del propio taller: solo con sesión, porque solo las ve su dueño. */}
+      {isAuthenticated && <MisTelas />}
+
       <div className="flex flex-col items-start gap-4 border-t border-ink-10 pt-8 sm:flex-row sm:items-center sm:justify-between">
         <p className="max-w-lg text-sm text-ink-60">
-          Para ver una tela sobre tu diseño, sube una fotografía de la prenda o un boceto
-          en tu taller.
+          Para ver una tela sobre tu diseño, sube una fotografía de la prenda en tu
+          taller, o genera la prenda a partir de un boceto.
         </p>
         <Link to={isAuthenticated ? '/taller' : '/entrar'} className="btn-primary shrink-0">
           {isAuthenticated ? 'Ir a mi taller' : 'Entrar'}

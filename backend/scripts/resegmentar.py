@@ -32,8 +32,9 @@ import sys
 from PIL import Image
 
 from app.core.database import SessionLocal
-from app.models.garment_upload import GarmentKind, GarmentUpload
+from app.models.garment_upload import GarmentKind, GarmentStatus, GarmentUpload
 from app.services.storage import get_storage
+from app.textil.boceto_ia import recortar_prenda_generada
 from app.textil.segmentar import segmentar_prenda
 
 CARPETA_MASCARAS = "masks"
@@ -56,6 +57,9 @@ def main() -> int:
         cambiadas = 0
 
         for prenda in prendas:
+            if prenda.status is not GarmentStatus.READY:
+                print(f"  #{prenda.id} {prenda.name}: boceto sin prenda generada. Se salta.")
+                continue
             try:
                 imagen = Image.open(io.BytesIO(almacen.read(prenda.image_key)))
                 imagen.load()
@@ -63,7 +67,12 @@ def main() -> int:
                 print(f"  #{prenda.id} {prenda.name}: falta el archivo original. Se salta.")
                 continue
 
-            recorte = segmentar_prenda(imagen, boceto=prenda.kind is GarmentKind.SKETCH)
+            # La prenda de un boceto es una imagen generada, no el dibujo: se
+            # recorta como una foto y sin buscar figura. Ver `boceto_ia`.
+            if prenda.kind is GarmentKind.SKETCH:
+                recorte = recortar_prenda_generada(imagen)
+            else:
+                recorte = segmentar_prenda(imagen)
             antes = prenda.mask_coverage or 0.0
             delta = recorte.cobertura - antes
 
